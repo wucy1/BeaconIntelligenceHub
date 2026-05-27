@@ -44,9 +44,31 @@ In R2 bucket **Settings → CORS**, allow your Pages origin:
 ]
 ```
 
-## Cloudflare Pages
+## Cloudflare（前端）
 
-### GitHub → Cloudflare Pages（建議 A 階段上線方式）
+### 方式 A：Workers Builds（你目前畫面：必填 Deploy command）
+
+Cloudflare「Connect to a repository」若出現 **Deploy command（Required）**，代表走的是 **Workers Builds**，不是傳統 Pages。本 repo 已在 `frontend/wrangler.toml` 設定靜態資產目錄為 `dist`（含 SPA 路由）。
+
+| 欄位 | 值 |
+|------|-----|
+| Path / Root | `frontend` |
+| Build command | `npm ci && npm run build` |
+| **Deploy command** | `npx wrangler deploy` |
+| Non-production deploy（可選） | `npx wrangler versions upload` |
+
+**Build variables（可選）：**
+
+| 變數 | 說明 |
+|------|------|
+| `NODE_VERSION` | `20` |
+| `VITE_API_BASE` | API 上線後再填；未部署前可留空 |
+
+首次 Connect 前請確認 GitHub `main` 已包含 `frontend/wrangler.toml`（否則 deploy 找不到設定）。
+
+### 方式 B：Cloudflare Pages（無 Deploy command 欄位時）
+
+### GitHub → Cloudflare Pages
 
 1. **GitHub 儲存庫**
    - 建立 repo（例如 `crointel/BeaconIntelligenceHub`）。
