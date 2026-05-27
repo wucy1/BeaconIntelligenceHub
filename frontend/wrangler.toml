@@ -1,7 +1,7 @@
 # Cloudflare Workers static assets (Vite build output).
 # Used when connecting repo via Workers Builds (deploy command: npx wrangler deploy).
 
-name = "beacon-intelligence-hub"
+name = "beacon"
 compatibility_date = "2024-12-01"
 
 [assets]
