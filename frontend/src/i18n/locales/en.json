@@ -215,5 +215,9 @@
   "map.sheet.edit": "Edit my report",
   "map.sheet.capturedAt": "Observed at",
   "map.sheet.delete": "Delete",
-  "map.sheet.deleteConfirm": "Delete this report permanently?"
+  "map.sheet.deleteConfirm": "Delete this report permanently?",
+  "map.offline.downloadCenter": "Download center: {{lat}}, {{lng}}",
+  "map.offline.storageSummary": "Stored locally: {{count}} tiles (IndexedDB)",
+  "map.offline.savedRegions": "Saved regions: {{count}}",
+  "map.offline.regionItem": "Center {{lat}}, {{lng}} | radius {{km}}km | z{{zMin}}-{{zMax}}"
 }

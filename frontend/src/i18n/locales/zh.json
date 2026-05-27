@@ -197,5 +197,9 @@
   "map.sheet.edit": "編輯我的回报",
   "map.sheet.capturedAt": "观测时间",
   "map.sheet.delete": "删除",
-  "map.sheet.deleteConfirm": "確定永久删除此回报？"
+  "map.sheet.deleteConfirm": "確定永久删除此回报？",
+  "map.offline.downloadCenter": "下载中心：{{lat}}, {{lng}}",
+  "map.offline.storageSummary": "本机已储存 {{count}} 张瓦片（IndexedDB）",
+  "map.offline.savedRegions": "已下载区域 {{count}} 笔",
+  "map.offline.regionItem": "中心 {{lat}}, {{lng}}｜半径 {{km}}km｜z{{zMin}}-{{zMax}}"
 }

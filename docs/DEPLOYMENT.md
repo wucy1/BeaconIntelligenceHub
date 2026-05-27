@@ -58,6 +58,12 @@ Cloudflare 現在把兩者都放在 **Workers & Pages** 底下，但流程不同
 | 網址樣式 | `beacon.<帳號>.workers.dev` 或自訂網域 | `*.pages.dev` |
 | BIH 建議 | **已採用**（repo 已含 wrangler） | 亦可，但不必兩套同時建 |
 
+### PWA / Service Worker（離線可開首頁）
+
+前端已啟用 `vite-plugin-pwa` 產生 `sw.js`。第一次線上開啟後會預快取首頁殼與資產，使離線時仍可進入首頁並使用離線回報/離線瓦片。
+
+- 若遇到桌機仍在舊版：請清除本站資料（Cache/Storage/Service Worker）後再試。
+
 路徑記法：**同一個 repo、Root = `frontend/`**；差別只在 Cloudflare 用 Worker 還是 Pages 專案去接 Git。
 
 ### 方式 A：Workers Builds（你目前畫面：必填 Deploy command）

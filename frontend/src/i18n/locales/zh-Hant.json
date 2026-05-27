@@ -215,5 +215,9 @@
   "map.sheet.edit": "編輯我的回報",
   "map.sheet.capturedAt": "觀測時間",
   "map.sheet.delete": "刪除",
-  "map.sheet.deleteConfirm": "確定永久刪除此回報？"
+  "map.sheet.deleteConfirm": "確定永久刪除此回報？",
+  "map.offline.downloadCenter": "下載中心：{{lat}}, {{lng}}",
+  "map.offline.storageSummary": "本機已儲存 {{count}} 張瓦片（IndexedDB）",
+  "map.offline.savedRegions": "已下載區域 {{count}} 筆",
+  "map.offline.regionItem": "中心 {{lat}}, {{lng}}｜半徑 {{km}}km｜z{{zMin}}-{{zMax}}"
 }

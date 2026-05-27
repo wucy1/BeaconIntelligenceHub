@@ -63,6 +63,31 @@ export async function loadRegionMeta(regionId: string): Promise<MapRegionMeta | 
   });
 }
 
+export async function listRegionMeta(): Promise<MapRegionMeta[]> {
+  const db = await openOfflineDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(REGION_STORE, 'readonly');
+    const req = tx.objectStore(REGION_STORE).getAll();
+    req.onsuccess = () => {
+      const rows = (req.result as MapRegionMeta[]).sort((a, b) =>
+        b.downloadedAt.localeCompare(a.downloadedAt),
+      );
+      resolve(rows);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function countCachedTiles(): Promise<number> {
+  const db = await openOfflineDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(TILE_STORE, 'readonly');
+    const req = tx.objectStore(TILE_STORE).count();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 export function listTilesForRegion(
   center: LatLng,
   radiusKm = DEFAULT_RADIUS_KM,

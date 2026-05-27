@@ -217,7 +217,7 @@ flowchart LR
 | `OfflineBanner` + `syncQueue` | 已有，待 E2E 驗收 |
 | 同步狀態機細分（uploading_image 等） | 待做 |
 | 佇列列表／失敗重試 UI | 待做 |
-| PWA / SW | 待做（C2） |
+| PWA / SW（離線可開首頁） | **已做**（`vite-plugin-pwa` 產生 `sw.js` + precache + runtime cache） |
 | 離線地圖瓦片預下載（2km, z14-z17） | **已做**（`tilePrefetch.ts` + `CachedOsmTileLayer.tsx`） |
 | 離線視野鎖定（防灰屏） | 已移除（改為預下載 + 區域限制） |
 

@@ -51,6 +51,10 @@ function centerFromBbox(bbox: string | null): { lat: number; lng: number } | nul
   return { lat: (south + north) / 2, lng: (west + east) / 2 };
 }
 
+function fmtCoord(v: number): string {
+  return v.toFixed(5);
+}
+
 export function MapPage() {
   const { t, locale } = useI18n();
   const {
@@ -531,6 +535,14 @@ export function MapPage() {
           <p className="map-offline-download-title">
             {t('map.offline.downloadTitle', { km: DEFAULT_RADIUS_KM })}
           </p>
+          {tileCenter && (
+            <p className="map-offline-download-meta">
+              {t('map.offline.downloadCenter', {
+                lat: fmtCoord(tileCenter.lat),
+                lng: fmtCoord(tileCenter.lng),
+              })}
+            </p>
+          )}
           <p className="map-offline-download-meta">
             {offlineTiles.coverage
               ? t('map.offline.downloadCoverage', {
@@ -565,6 +577,25 @@ export function MapPage() {
                 failed: offlineTiles.progress.failed,
               })}
             </p>
+          )}
+          <p className="map-offline-download-meta">
+            {t('map.offline.storageSummary', { count: offlineTiles.cachedTileCount })}
+          </p>
+          {offlineTiles.regions.length > 0 && (
+            <details className="map-offline-download-regions">
+              <summary>{t('map.offline.savedRegions', { count: offlineTiles.regions.length })}</summary>
+              {offlineTiles.regions.slice(0, 5).map((r) => (
+                <p key={r.id} className="map-offline-download-meta">
+                  {t('map.offline.regionItem', {
+                    lat: fmtCoord(r.center.lat),
+                    lng: fmtCoord(r.center.lng),
+                    km: r.radiusKm,
+                    zMin: r.zMin,
+                    zMax: r.zMax,
+                  })}
+                </p>
+              ))}
+            </details>
           )}
         </div>
       )}

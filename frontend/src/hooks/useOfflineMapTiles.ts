@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+  countCachedTiles,
   hasOfflineTilesReady,
+  listRegionMeta,
+  type MapRegionMeta,
   tileCoverageRatio,
 } from '../offline/tileCache';
 import { prefetchMapTiles, type PrefetchProgress } from '../offline/tilePrefetch';
@@ -15,7 +18,15 @@ export function useOfflineMapTiles(center: LatLng | null) {
   );
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<PrefetchProgress | null>(null);
+  const [regions, setRegions] = useState<MapRegionMeta[]>([]);
+  const [cachedTileCount, setCachedTileCount] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
+
+  const refreshRegions = useCallback(async () => {
+    const [rows, count] = await Promise.all([listRegionMeta(), countCachedTiles()]);
+    setRegions(rows);
+    setCachedTileCount(count);
+  }, []);
 
   const refresh = useCallback(async (loc: LatLng) => {
     setChecking(true);
@@ -40,6 +51,10 @@ export function useOfflineMapTiles(center: LatLng | null) {
     void refresh(center);
   }, [center?.lat, center?.lng, refresh, center]);
 
+  useEffect(() => {
+    void refreshRegions();
+  }, [refreshRegions]);
+
   const download = useCallback(
     async (loc: LatLng) => {
       abortRef.current?.abort();
@@ -54,6 +69,7 @@ export function useOfflineMapTiles(center: LatLng | null) {
           onProgress: setProgress,
         });
         await refresh(loc);
+        await refreshRegions();
         return result;
       } finally {
         setDownloading(false);
@@ -78,5 +94,8 @@ export function useOfflineMapTiles(center: LatLng | null) {
     cancel,
     refresh,
     hasOfflineTilesReady,
+    regions,
+    cachedTileCount,
+    refreshRegions,
   };
 }

@@ -91,5 +91,11 @@ export function useActiveWindow() {
     };
   }, [reloadKey]);
 
+  useEffect(() => {
+    const onOnline = () => reload();
+    globalThis.window.addEventListener('online', onOnline);
+    return () => globalThis.window.removeEventListener('online', onOnline);
+  }, [reload]);
+
   return { window, error, loading, reload, fromCache, needsFirstOnline };
 }
