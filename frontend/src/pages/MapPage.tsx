@@ -43,6 +43,14 @@ function emptyPlacement(): Placement {
   return { buildingId: null, buildingName: null, pin: null };
 }
 
+function centerFromBbox(bbox: string | null): { lat: number; lng: number } | null {
+  if (!bbox) return null;
+  const parts = bbox.split(',').map((n) => Number(n));
+  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return null;
+  const [west, south, east, north] = parts;
+  return { lat: (south + north) / 2, lng: (west + east) / 2 };
+}
+
 export function MapPage() {
   const { t, locale } = useI18n();
   const {
@@ -106,9 +114,10 @@ export function MapPage() {
     if (geo.position) return [geo.position.lat, geo.position.lng];
     return DEFAULT_CENTER;
   }, [geo.position]);
-  const tileCenter = geo.position
-    ? { lat: geo.position.lat, lng: geo.position.lng }
-    : null;
+  const tileCenter = useMemo(() => {
+    if (geo.position) return { lat: geo.position.lat, lng: geo.position.lng };
+    return centerFromBbox(bbox);
+  }, [geo.position, bbox]);
   const offlineTiles = useOfflineMapTiles(tileCenter);
 
   const offlineBounds = useMemo(() => {

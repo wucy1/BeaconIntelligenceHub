@@ -5,11 +5,12 @@ export type TileCoord = { z: number; x: number; y: number };
 export const DEFAULT_RADIUS_KM = 2;
 export const PREFETCH_ZOOM_MIN = 14;
 export const PREFETCH_ZOOM_MAX = 17;
+export const TILE_CACHE_SCHEMA = 'v1';
 
 const OSM_SUBDOMAINS = ['a', 'b', 'c'] as const;
 
 export function tileKey(z: number, x: number, y: number): string {
-  return `${z}/${x}/${y}`;
+  return `${TILE_CACHE_SCHEMA}/${z}/${x}/${y}`;
 }
 
 export function osmTileUrl(z: number, x: number, y: number): string {

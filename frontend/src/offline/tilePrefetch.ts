@@ -31,18 +31,43 @@ export type PrefetchOptions = {
 };
 
 const DEFAULT_CONCURRENCY = 6;
+const PER_TILE_TIMEOUT_MS = 8_000;
+const MAX_RETRIES = 1;
 
-async function fetchTile(coord: TileCoord, signal?: AbortSignal): Promise<Blob | null> {
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchTileOnce(coord: TileCoord, signal?: AbortSignal): Promise<Blob | null> {
   const url = osmTileUrl(coord.z, coord.x, coord.y);
+  const localController = new AbortController();
+  const timer = setTimeout(() => localController.abort(), PER_TILE_TIMEOUT_MS);
+  const mergedSignal = signal
+    ? AbortSignal.any([signal, localController.signal])
+    : localController.signal;
   try {
-    const res = await fetch(url, { signal, mode: 'cors', credentials: 'omit' });
+    const res = await fetch(url, { signal: mergedSignal, mode: 'cors', credentials: 'omit' });
     if (!res.ok) return null;
     const blob = await res.blob();
     if (!blob.size) return null;
     return blob;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+async function fetchTile(coord: TileCoord, signal?: AbortSignal): Promise<Blob | null> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    if (signal?.aborted) return null;
+    const blob = await fetchTileOnce(coord, signal);
+    if (blob) return blob;
+    if (attempt < MAX_RETRIES) {
+      await sleep(160 * (attempt + 1));
+    }
+  }
+  return null;
 }
 
 export async function prefetchMapTiles(opts: PrefetchOptions): Promise<PrefetchProgress> {

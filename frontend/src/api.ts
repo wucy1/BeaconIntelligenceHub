@@ -1,10 +1,25 @@
 import { getDeviceId } from './utils/deviceId';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
+const API_FALLBACK_BASE = import.meta.env.VITE_API_FALLBACK ?? 'https://beaconintelligencehub.onrender.com';
 const DEFAULT_TIMEOUT_MS = 12_000;
 
 export function apiBase(): string {
   return API_BASE;
+}
+
+function shouldUseFallbackBase(): boolean {
+  if (API_BASE) return false;
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return host.endsWith('.workers.dev') || host === 'beacon.cila.workers.dev';
+}
+
+function resolveBase(path: string): string {
+  if (path.startsWith('http')) return '';
+  if (API_BASE) return API_BASE;
+  if (shouldUseFallbackBase() && path.startsWith('/v1/')) return API_FALLBACK_BASE;
+  return '';
 }
 
 function deviceHeaders(extra?: HeadersInit): HeadersInit {
@@ -17,7 +32,8 @@ function deviceHeaders(extra?: HeadersInit): HeadersInit {
 async function fetchApi(path: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
-  const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
+  const base = resolveBase(path);
+  const url = path.startsWith('http') ? path : `${base}${path}`;
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (e) {
@@ -57,7 +73,7 @@ async function parseJson<T>(res: Response): Promise<T> {
   }
   const ct = res.headers.get('content-type') ?? '';
   if (!ct.includes('application/json') && text.trimStart().startsWith('<')) {
-    const base = API_BASE || '(未設定 VITE_API_BASE)';
+    const base = API_BASE || API_FALLBACK_BASE || '(未設定 VITE_API_BASE)';
     throw new Error(
       `API 回傳了 HTML 而非 JSON（常見原因：前端仍打到本站 /v1、或瀏覽器快取舊版 JS）。` +
         ` 請在 Network 確認請求網址為後端 API；Build 變數 VITE_API_BASE=${base}；並清除本站資料後重試。`,
