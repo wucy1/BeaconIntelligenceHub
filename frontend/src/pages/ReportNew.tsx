@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { apiGet } from '../api';
 import { AppendixFields } from '../components/AppendixFields';
+import { PhotoPicker } from '../components/PhotoPicker';
 import { MapPicker } from '../components/MapPicker';
 import {
   CRISIS_TYPES,
@@ -161,15 +162,10 @@ export function ReportNew() {
         {t('report.crisisId')}: <code>{crisisId}</code>
       </p>
 
-      <label className="field">
-        <span>{t('report.photo')}</span>
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-        />
-      </label>
+      <section className="form-section">
+        <h3 className="form-section-title">{t('report.photo')}</h3>
+        <PhotoPicker onSelect={setFile} />
+      </section>
       {preview && <img src={preview} alt="preview" style={{ maxWidth: '100%', borderRadius: 8 }} />}
 
       <SiteConditionField value={siteCondition} onChange={setSiteCondition} />

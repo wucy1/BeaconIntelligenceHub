@@ -15,6 +15,7 @@ import {
   type SiteCondition,
 } from '../../utils/siteCondition';
 import { AppendixFields } from '../AppendixFields';
+import { PhotoPicker } from '../PhotoPicker';
 import { SiteConditionField } from './SiteConditionField';
 
 type ReportDetail = {
@@ -325,16 +326,7 @@ export function ReportSheet({
             {mode === 'create' && (
               <section className="form-section">
                 <h3 className="form-section-title">{t('report.photo')}</h3>
-                <label className="field field-file">
-                  <input
-                    key={file ? file.name : 'no-file'}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  />
-                  <span className="field-file-hint">{t('report.photoHint')}</span>
-                </label>
+                <PhotoPicker onSelect={setFile} />
                 {preview && (
                   <img src={preview} alt="" className="report-sheet-preview" loading="lazy" />
                 )}
