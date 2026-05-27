@@ -133,9 +133,20 @@ Cloudflare「Connect to a repository」若出現 **Deploy command（Required）*
 - **Output directory:** `dist`
 - **Environment variable:** `VITE_API_BASE=https://your-api.example.com`
 
-## 後端 API（Fly.io，建議下一步）
+## 後端 API
 
 前端已上線（例如 `https://beacon.cila.workers.dev`）時，畫面報 `Unexpected token '<'` 代表瀏覽器打到 **Worker 的 HTML**，不是 JSON API——需部署 FastAPI 並設定 `VITE_API_BASE`。
+
+### 平台怎麼選？
+
+| 平台 | 信用卡 | 說明 |
+|------|--------|------|
+| **Fly.io** | **通常必填**（驗證用，免費額度內多數不扣款） | 有 `fly.toml`；無法完成驗證就改 Render |
+| **Render** | 註冊有時較寬鬆；Free 方案可能仍會要求驗證 | **無 Fly 時建議用這個**；`backend/render.yaml` |
+| **Railway** | 多數需綁卡後才有額度 | GitHub 一鍵部署，Root=`backend` |
+| **自有 VPS** | 無 | Docker 跑 `backend/Dockerfile` |
+
+> 多數 PaaS 會要求付款方式以防濫用；若完全不想綁卡，只能自建主機或請已開通帳號的團隊代部署。
 
 ### 步驟 1：Neon 資料庫（若尚未建立）
 
@@ -146,19 +157,48 @@ Cloudflare「Connect to a repository」若出現 **Deploy command（Required）*
 
 詳見 `docs/NEON_CONNECTIVITY.md`。
 
-### 步驟 2：部署 API 到 Fly.io
+### 步驟 2A：部署到 Render（無 Fly / 不想先綁 Fly 卡時）
 
-本 repo 已含 `backend/Dockerfile`、`backend/fly.toml`。
+1. [render.com](https://render.com) 註冊並連 GitHub `wucy1/BeaconIntelligenceHub`。
+2. **New → Web Service** → 選該 repo。
+3. 設定：
+
+| 欄位 | 值 |
+|------|-----|
+| Root Directory | `backend` |
+| Runtime | **Docker** |
+| Dockerfile Path | `./Dockerfile` |
+| Plan | Free（冷啟動較慢，可接受） |
+| Health Check Path | `/health` |
+
+4. **Environment**（至少）：
+
+| Key | Value |
+|-----|--------|
+| `DATABASE_URL` | Neon pooled 連線字串（`postgresql+psycopg2://...`） |
+| `PUBLIC_BASE_URL` | 部署完成後 Render 給的 URL，如 `https://bih-api.onrender.com` |
+| `CORS_ORIGINS` | `https://beacon.cila.workers.dev` |
+| `REPORTER_SALT` | 隨機長字串 |
+| `ADMIN_TOKEN` | 管理密鑰 |
+| `PORT` | `8080`（Dockerfile 預設） |
+
+5. **Create Web Service**，等第一次 deploy 成功。
+6. 瀏覽器測：`https://你的服務.onrender.com/v1/public/active-window` → 應為 JSON。
+
+也可用 **Blueprint**：`backend/render.yaml`（於 Render 選 Blueprint 並指向該檔）。
+
+### 步驟 2B：部署到 Fly.io（需完成信用卡驗證）
+
+本 repo 已含 `backend/Dockerfile`、`backend/fly.toml`。Windows 指令為 **`flyctl`**（安裝：`iwr https://fly.io/install.ps1 -useb | iex`）。
 
 ```powershell
-# 安裝 Fly CLI：https://fly.io/docs/hands-on/install-flyctl/
 cd d:\Cursor-Projects\BeaconIntelligenceHub\backend
-fly auth login
-fly apps create bih-api   # 名稱若被占用可改 fly.toml 的 app =
-fly deploy
+flyctl auth login
+flyctl apps create bih-api
+flyctl deploy
 ```
 
-### 步驟 3：設定 Fly secrets（環境變數）
+### 步驟 3：設定 API 環境變數（Fly 用 secrets）
 
 將下列值換成你的實際內容（**不要**提交到 Git）：
 
@@ -177,7 +217,7 @@ fly secrets set `
 **有 R2 時再加：**
 
 ```powershell
-fly secrets set `
+flyctl secrets set `
   R2_ACCOUNT_ID="..." `
   R2_ACCESS_KEY_ID="..." `
   R2_SECRET_ACCESS_KEY="..." `
@@ -190,24 +230,25 @@ R2 bucket CORS 需允許 `https://beacon.cila.workers.dev`（PUT/GET）。
 ### 步驟 4：驗證 API
 
 ```text
-https://bih-api.fly.dev/health
-https://bih-api.fly.dev/v1/public/active-window
+https://你的-api網址/health
+https://你的-api網址/v1/public/active-window
 ```
 
 應回 JSON，不是 HTML。
 
 ### 步驟 5：接回 Cloudflare 前端
 
-1. Worker **Build variables**：`VITE_API_BASE` = `https://bih-api.fly.dev`（你的 API URL，無尾 `/`）。
+1. Worker **Build variables**：`VITE_API_BASE` = 你的 API URL（無尾 `/`）。
 2. **Retry deployment**（Vite 會把 API 網址 bake 進 bundle）。
 3. 重新開 `https://beacon.cila.workers.dev`，地圖應能載入 markers。
 
-### 替代平台
+### Railway（備選）
 
-| 平台 | 作法 |
-|------|------|
-| **Railway** | New Project → Deploy from GitHub → Root `backend` → Start：`uvicorn app.main:app --host 0.0.0.0 --port $PORT` → 同上 env |
-| **Render** | Web Service + `backend/Dockerfile` 或 Python，設定相同 env |
+New Project → GitHub repo → Root `backend` → Start command：
+
+`uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+
+環境變數同 Render 表格。
 
 ---
 
