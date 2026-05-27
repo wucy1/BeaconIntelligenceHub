@@ -1,6 +1,7 @@
-import { Circle } from 'react-leaflet';
+import { Rectangle } from 'react-leaflet';
 
 import type { MapRegionMeta } from '../../offline/tileCache';
+import { bboxForDisk } from '../../offline/tileMath';
 
 type Props = {
   regions: MapRegionMeta[];
@@ -8,22 +9,29 @@ type Props = {
   onSelect?: (regionId: string) => void;
 };
 
+function boundsForRegion(r: MapRegionMeta): [[number, number], [number, number]] {
+  const box = bboxForDisk(r.center, r.radiusKm);
+  return [
+    [box.south, box.west],
+    [box.north, box.east],
+  ];
+}
+
 export function OfflineRegionLayers({ regions, activeRegionId, onSelect }: Props) {
   return (
     <>
       {regions.map((r) => {
         const active = r.id === activeRegionId;
         return (
-          <Circle
+          <Rectangle
             key={r.id}
-            center={[r.center.lat, r.center.lng]}
-            radius={r.radiusKm * 1000}
+            bounds={boundsForRegion(r)}
             pathOptions={{
               color: active ? '#2563eb' : '#64748b',
               weight: active ? 3 : 2,
               dashArray: active ? undefined : '6 4',
               fillColor: active ? '#3b82f6' : '#94a3b8',
-              fillOpacity: active ? 0.18 : 0.08,
+              fillOpacity: active ? 0.2 : 0.1,
             }}
             eventHandlers={{
               click: () => onSelect?.(r.id),

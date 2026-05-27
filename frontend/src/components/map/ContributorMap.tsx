@@ -21,6 +21,7 @@ import { centroidOfFeature } from '../../utils/buildingAtPoint';
 import { resolveGroupDisplay } from '../../utils/mapMarkers';
 import { CachedOsmTileLayer, type OfflineZoomLimits } from './CachedOsmTileLayer';
 import { ClusteredReportMarkers } from './ClusteredReportMarkers';
+import { DownloadPreviewLayer } from './DownloadPreviewLayer';
 import { OfflineRegionLayers } from './OfflineRegionLayers';
 import type { MapRegionMeta } from '../../offline/tileCache';
 
@@ -68,6 +69,8 @@ type Props = {
   onSavedRegionSelect?: (regionId: string) => void;
   regionFitBounds?: L.LatLngBounds | null;
   regionFitTick?: number;
+  /** 連線時、下載前：橘色虛線方框預覽將下載的範圍 */
+  downloadPreview?: { center: { lat: number; lng: number }; radiusKm: number } | null;
 };
 
 const reportPinIcon = new L.Icon({
@@ -263,6 +266,7 @@ export function ContributorMap({
   onSavedRegionSelect,
   regionFitBounds,
   regionFitTick = 0,
+  downloadPreview = null,
 }: Props) {
   const [buildingPopup, setBuildingPopup] = useState<{
     buildingId: string;
@@ -318,6 +322,12 @@ export function ContributorMap({
     >
       <ZoomControl position="bottomright" />
       <CachedOsmTileLayer offlineZoomLimits={offlineZoomLimits} />
+      {downloadPreview && (
+        <DownloadPreviewLayer
+          center={downloadPreview.center}
+          radiusKm={downloadPreview.radiusKm}
+        />
+      )}
       {savedRegions.length > 0 && (
         <OfflineRegionLayers
           regions={savedRegions}

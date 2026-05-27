@@ -68,7 +68,7 @@ export function MapPage() {
     error: windowError,
     loading: windowLoading,
     reload: reloadWindow,
-    fromCache: crisisFromCache,
+    fromCache: _crisisFromCache,
     needsFirstOnline,
   } = useActiveWindow();
   const { online, showRestoredBanner, dismissRestoredBanner } = useStableOnlineRestore();
@@ -145,16 +145,37 @@ export function MapPage() {
     );
   }, []);
 
+  /** 僅在真正離線且已選區域時限制 z14–17；連線時不鎖縮放 */
   const offlineZoomLimits = useMemo(() => {
-    if (online || offlineTiles.regions.length === 0) return null;
+    if (online || !activeRegionId) return null;
     return { minZoom: PREFETCH_ZOOM_MIN, maxZoom: PREFETCH_ZOOM_MAX };
-  }, [online, offlineTiles.regions.length]);
+  }, [online, activeRegionId]);
 
-  const goToRegion = useCallback((r: MapRegionMeta) => {
-    setActiveRegionId(r.id);
-    setFlyTarget({ lat: r.center.lat, lng: r.center.lng });
-    setRegionFitTick((n) => n + 1);
-  }, []);
+  const downloadPreview = useMemo(() => {
+    if (!online || !tileCenter) return null;
+    return { center: tileCenter, radiusKm: DEFAULT_RADIUS_KM };
+  }, [online, tileCenter]);
+
+  const switchToOnlineMode = useCallback(() => {
+    setActiveRegionId(null);
+    setRegionFitTick(0);
+    dismissRestoredBanner();
+    reloadWindow();
+    setRefreshKey((k) => k + 1);
+  }, [dismissRestoredBanner, reloadWindow]);
+
+  const goToRegion = useCallback(
+    (r: MapRegionMeta) => {
+      setActiveRegionId(r.id);
+      setFlyTarget({ lat: r.center.lat, lng: r.center.lng });
+      if (!online) setRegionFitTick((n) => n + 1);
+    },
+    [online],
+  );
+
+  useEffect(() => {
+    if (online) setActiveRegionId(null);
+  }, [online]);
 
   useEffect(() => {
     if (online || offlineTiles.regions.length === 0 || activeRegionId) return;
@@ -520,7 +541,7 @@ export function MapPage() {
     );
   }
 
-  const offlineReportMode = !online || crisisFromCache;
+  const offlineReportMode = !online;
   const unspecifiedPhase = activeWindow.reporting_phase !== 'defined';
 
   return (
@@ -553,8 +574,9 @@ export function MapPage() {
           const r = offlineTiles.regions.find((x) => x.id === id);
           if (r) goToRegion(r);
         }}
-        regionFitBounds={activeRegion ? regionToBounds(activeRegion) : null}
+        regionFitBounds={!online && activeRegion ? regionToBounds(activeRegion) : null}
         regionFitTick={regionFitTick}
+        downloadPreview={downloadPreview}
       />
 
       {unspecifiedPhase && (
@@ -566,6 +588,9 @@ export function MapPage() {
       {showRestoredBanner && (
         <div className="map-online-restored-banner" role="status">
           <p>{t('map.offline.onlineRestored')}</p>
+          <button type="button" className="small primary" onClick={switchToOnlineMode}>
+            {t('map.offline.switchToOnline')}
+          </button>
           <button type="button" className="small" onClick={dismissRestoredBanner}>
             {t('map.offline.onlineRestoredDismiss')}
           </button>
@@ -639,6 +664,9 @@ export function MapPage() {
               })}
             </p>
           )}
+          <p className="map-offline-download-meta map-offline-legend-hint">
+            {t('map.offline.previewBoxHint')}
+          </p>
           <p className="map-offline-download-meta">
             {offlineTiles.coverage
               ? t('map.offline.downloadCoverage', {

@@ -1253,6 +1253,7 @@ button.danger {
   transform: translateX(-50%);
   z-index: 620;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   max-width: min(26rem, calc(100% - 1rem));
