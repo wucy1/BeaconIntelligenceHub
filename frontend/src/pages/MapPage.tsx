@@ -17,6 +17,7 @@ import { ReportSheet } from '../components/map/ReportSheet';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { useActiveWindow } from '../hooks/useActiveWindow';
 import { useGeolocation } from '../hooks/useGeolocation';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { useI18n } from '../i18n/I18nContext';
 import {
   buildingFeatureById,
@@ -46,7 +47,10 @@ export function MapPage() {
     error: windowError,
     loading: windowLoading,
     reload: reloadWindow,
+    fromCache: crisisFromCache,
+    needsFirstOnline,
   } = useActiveWindow();
+  const online = useOnlineStatus();
   const geo = useGeolocation();
   const bboxRef = useRef<string | null>(null);
 
@@ -155,7 +159,7 @@ export function MapPage() {
   );
 
   useEffect(() => {
-    if (!crisisId || !bbox) return;
+    if (!online || !crisisId || !bbox) return;
     const timer = setTimeout(() => {
       const q = encodeURIComponent(bbox);
       setBuildingsError(null);
@@ -170,10 +174,10 @@ export function MapPage() {
         });
     }, 350);
     return () => clearTimeout(timer);
-  }, [crisisId, bbox, refreshKey]);
+  }, [online, crisisId, bbox, refreshKey]);
 
   useEffect(() => {
-    if (!bbox || mapMode === 'new') {
+    if (!online || !bbox || mapMode === 'new') {
       if (mapMode === 'new') setMarkers([]);
       return;
     }
@@ -192,7 +196,7 @@ export function MapPage() {
         });
     }, 350);
     return () => clearTimeout(timer);
-  }, [bbox, mapMode, refreshKey]);
+  }, [online, bbox, mapMode, refreshKey]);
 
   const showOthers = mapMode === 'all';
 
@@ -415,6 +419,18 @@ export function MapPage() {
   if (windowLoading) {
     return <p className="map-status">{t('common.loading')}</p>;
   }
+  if (needsFirstOnline) {
+    return (
+      <section className="map-status card">
+        <p className="error">{t('map.offline.needFirstVisit')}</p>
+        <p className="muted">{t('map.offline.needFirstVisitHint')}</p>
+        <button type="button" onClick={reloadWindow}>
+          {t('map.retry')}
+        </button>
+      </section>
+    );
+  }
+
   if (windowError || !activeWindow) {
     return (
       <section className="map-status card">
@@ -427,6 +443,8 @@ export function MapPage() {
       </section>
     );
   }
+
+  const offlineReportMode = !online || crisisFromCache;
 
   return (
     <div className="map-page">
@@ -453,13 +471,19 @@ export function MapPage() {
         onReportPinMove={onReportPinMove}
       />
 
+      {offlineReportMode && (
+        <p className="map-offline-report-banner" role="status">
+          {t('map.offline.reportMode')}
+        </p>
+      )}
+
       <div className="map-overlay-top">
         <span className="map-window-title">{windowTitle}</span>
         <div className="map-overlay-right">
           <LanguageSwitcher />
           <ContributionStrip
             crisisId={crisisId}
-            visible={mapMode !== 'new' && Boolean(crisisId)}
+            visible={online && mapMode !== 'new' && Boolean(crisisId)}
             refreshKey={refreshKey}
           />
           <nav className="map-dev-links">
@@ -496,11 +520,11 @@ export function MapPage() {
         <p className="map-hint map-hint-warn">{t('map.err.buildingsLoad', { msg: buildingsError })}</p>
       )}
 
-      {mapMode === 'all' && markers.length === 0 && bbox && !buildingsError && (
+      {online && mapMode === 'all' && markers.length === 0 && bbox && !buildingsError && (
         <p className="map-hint map-hint-empty">{t('map.hint.noMarkers')}</p>
       )}
 
-      {mapMode === 'mine' && markers.length === 0 && bbox && (
+      {online && mapMode === 'mine' && markers.length === 0 && bbox && (
         <p className="map-hint map-hint-empty">{t('map.hint.noMineInView')}</p>
       )}
 

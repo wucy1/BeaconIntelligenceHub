@@ -192,53 +192,44 @@ flowchart LR
 
 
 
-## 第二階段：離線 PWA（待 A/B 完成後啟動）
+## 第二階段：離線填報（進行中 — C1 填報閉環）
 
+### 產品決案（2026-05-27）
 
+- **離線重點**：僅 **新增回報** 入佇列並同步；**不做** 離線瀏覽 markers／footprint。
+- **優先順序**：**C1 填報閉環** → C2 PWA 殼 → C4 地圖瓦片（選做）。
 
-### 目標
+### C1 目標
 
-
-
-- 飛航模式可填報；恢復網路後自動或手動同步。
-
-- PWA 殼（`vite-plugin-pwa`）、圖片壓縮強化、同步狀態機（`queued` → `uploading_image` → `submitting_metadata` → `synced` / `failed`）。
-
-- Capacitor 與 Web 共用同一 `dist` 產線（拍照能力應在 B 階段就緒）。
-
-
+- 曾 **連線開過一次** → 危機設定寫入本機；之後飛航模式可進地圖、**+／◎** 新增回報、拍照／相簿、送出入佇列。
+- 恢復網路 → `OfflineBanner` 自動／手動 `syncQueue`。
+- 從未連線且無快照 → 明確提示「請先連線載入危機」。
 
 ### 現況
 
-
-
 | 項目 | 狀態 |
-
 |------|------|
+| IndexedDB 佇列（相片 + payload） | 已有（`queue.ts`） |
+| 危機快照 `crisis_snapshot` | **已做**（`crisisCache.ts` + `useActiveWindow`） |
+| `MapPage` 離線填報模式 | **已做**（跳過 markers/buildings API、離線橫幅） |
+| `ReportSheet` 離線入佇列 | 已有 |
+| `OfflineBanner` + `syncQueue` | 已有，待 E2E 驗收 |
+| 同步狀態機細分（uploading_image 等） | 待做 |
+| 佇列列表／失敗重試 UI | 待做 |
+| PWA / SW | 待做（C2） |
+| 離線地圖瓦片 | **不做**（C1 範圍外） |
 
-| IndexedDB 佇列 | 已有（`queue.ts`） |
+### C1 剩餘待辦
 
-| `OfflineBanner` + `syncQueue` | 已有，需與 `MapPage` 完整驗收 |
+1. 飛航模式 E2E 驗收（填報含圖 → 上線 → Neon 有資料）。
+2. 佇列明細 UI（待同步筆數已有 banner）。
+3. 對齊 `MODULE_SPEC` 同步狀態枚舉（可選）。
+4. `docs/OFFLINE.md` 離線限制說明。
 
-| PWA manifest / service worker | 依 `MODULE_SPEC`，需確認 precache 範圍與更新策略 |
+### C2 之後（摘要）
 
-| 離線地圖快取 | 未做 |
-
-| 離線填報 E2E | 未做 |
-
-
-
-### 第二階段待辦（摘要）
-
-
-
-1. 定案 PWA 設定與離線頁面行為。  
-
-2. 實作／對齊 `MODULE_SPEC` 同步狀態機與重試 UI。  
-
-3. 離線填報 E2E（瀏覽器 + Capacitor）。  
-
-4. 文件：離線限制（瓦片、首次需連線載入危機視窗等）。
+- `vite-plugin-pwa`、安全 SW、可安裝到主畫面。
+- Capacitor Network 插件、背景同步（選做）。
 
 
 

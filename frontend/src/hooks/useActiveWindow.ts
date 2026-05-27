@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiGet } from '../api';
+import { loadActiveWindowSnapshot, saveActiveWindowSnapshot } from '../offline/crisisCache';
 
 export type ActiveWindow = {
   window_id: string;
@@ -19,36 +20,74 @@ export function useActiveWindow() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
+  /** 目前危機資料來自本機快照（離線填報模式） */
+  const [fromCache, setFromCache] = useState(false);
+  /** 從未連線成功過，無快照可填報 */
+  const [needsFirstOnline, setNeedsFirstOnline] = useState(false);
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
 
-    apiGet<ActiveWindow>('/v1/public/active-window')
-      .then((w) => {
-        if (!cancelled) {
-          setWindow(w);
-          setError(null);
-        }
-      })
-      .catch((e: Error) => {
-        if (!cancelled) {
+    const finish = () => {
+      if (!cancelled) setLoading(false);
+    };
+
+    const applyCache = (data: ActiveWindow) => {
+      setWindow(data);
+      setError(null);
+      setFromCache(true);
+      setNeedsFirstOnline(false);
+    };
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      setFromCache(false);
+      setNeedsFirstOnline(false);
+
+      if (!navigator.onLine) {
+        const cached = await loadActiveWindowSnapshot();
+        if (cancelled) return;
+        if (cached?.data) {
+          applyCache(cached.data);
+        } else {
           setWindow(null);
-          setError(e.message);
+          setNeedsFirstOnline(true);
         }
-      })
-      .finally(() => {
-        // 一律結束 loading（避免 React Strict Mode 取消後永遠卡在 Loading）
-        setLoading(false);
-      });
+        finish();
+        return;
+      }
+
+      try {
+        const w = await apiGet<ActiveWindow>('/v1/public/active-window');
+        if (cancelled) return;
+        setWindow(w);
+        setError(null);
+        setFromCache(false);
+        setNeedsFirstOnline(false);
+        void saveActiveWindowSnapshot(w).catch(() => {});
+      } catch (e) {
+        if (cancelled) return;
+        const cached = await loadActiveWindowSnapshot();
+        if (cached?.data) {
+          applyCache(cached.data);
+        } else {
+          setWindow(null);
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      } finally {
+        finish();
+      }
+    };
+
+    void load();
 
     return () => {
       cancelled = true;
     };
   }, [reloadKey]);
 
-  return { window, error, loading, reload };
+  return { window, error, loading, reload, fromCache, needsFirstOnline };
 }

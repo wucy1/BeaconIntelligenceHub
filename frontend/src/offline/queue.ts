@@ -2,7 +2,8 @@ import { apiGet, apiPost, apiPutRaw, sha256Hex } from '../api';
 
 const DB_NAME = 'bih-offline';
 const STORE = 'pending_reports';
-const DB_VERSION = 1;
+const CRISIS_STORE = 'crisis_snapshot';
+const DB_VERSION = 2;
 
 export type PendingReport = {
   id: string;
@@ -24,6 +25,9 @@ function openDb(): Promise<IDBDatabase> {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(CRISIS_STORE)) {
+        db.createObjectStore(CRISIS_STORE);
       }
     };
   });
