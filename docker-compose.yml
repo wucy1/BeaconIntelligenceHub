@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: crisis
+      POSTGRES_PASSWORD: crisis
+      POSTGRES_DB: crisis
+    ports:
+      - "5432:5432"
+    volumes:
+      - crisis_pg_data:/var/lib/postgresql/data
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+
+volumes:
+  crisis_pg_data:

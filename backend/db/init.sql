@@ -1,0 +1,151 @@
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+CREATE TABLE crises (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug TEXT UNIQUE NOT NULL,
+  name JSONB NOT NULL,
+  bounds GEOMETRY(Polygon, 4326),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE buildings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  crisis_id UUID NOT NULL REFERENCES crises(id) ON DELETE CASCADE,
+  external_ref TEXT,
+  geom GEOMETRY(MultiPolygon, 4326) NOT NULL,
+  name TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_buildings_geom ON buildings USING GIST (geom);
+CREATE INDEX idx_buildings_crisis ON buildings (crisis_id);
+
+CREATE TABLE reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_generated_uuid UUID NOT NULL,
+  crisis_id UUID NOT NULL REFERENCES crises(id) ON DELETE CASCADE,
+  building_id UUID REFERENCES buildings(id),
+  geom GEOMETRY(Point, 4326),
+  textual_location TEXT,
+  damage_level TEXT NOT NULL CHECK (damage_level IN ('minimal','partial','complete')),
+  infrastructure_types TEXT[] NOT NULL,
+  infrastructure_name TEXT NOT NULL,
+  crisis_types TEXT[] NOT NULL,
+  debris_clearing_required BOOLEAN NOT NULL,
+  description TEXT NOT NULL,
+  description_language TEXT NOT NULL,
+  appendix_answers JSONB NOT NULL DEFAULT '{}',
+  captured_at_client TIMESTAMPTZ NOT NULL,
+  received_at_server TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reporter_hash TEXT,
+  duplicate_of UUID REFERENCES reports(id),
+  admin_reviewed BOOLEAN NOT NULL DEFAULT false,
+  admin_flagged BOOLEAN NOT NULL DEFAULT false,
+  UNIQUE (crisis_id, client_generated_uuid)
+);
+CREATE INDEX idx_reports_crisis_time ON reports (crisis_id, received_at_server DESC);
+CREATE INDEX idx_reports_building_time ON reports (building_id, received_at_server DESC);
+
+CREATE TABLE report_images (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  report_id UUID NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+  object_key TEXT NOT NULL,
+  thumb_object_key TEXT,
+  mime_type TEXT NOT NULL,
+  width INT,
+  height INT,
+  checksum_sha256 TEXT NOT NULL
+);
+
+CREATE OR REPLACE VIEW latest_report_per_building AS
+SELECT DISTINCT ON (building_id)
+  r.*
+FROM reports r
+WHERE r.building_id IS NOT NULL
+ORDER BY
+  r.building_id,
+  CASE r.damage_level
+    WHEN 'complete' THEN 3
+    WHEN 'partial' THEN 2
+    WHEN 'minimal' THEN 1
+    ELSE 0
+  END DESC,
+  r.captured_at_client DESC,
+  r.received_at_server DESC;
+
+-- Seed: demo crisis + 3 footprints (Taipei Demo AOI)
+-- bounds 可為 NULL：災害發生時管理員未必能即時劃定影響範圍，Contributor 可在任意地點回報
+INSERT INTO crises (id, slug, name, bounds) VALUES (
+  'a0000000-0000-0000-0000-000000000001',
+  'demo-taipei',
+  '{"en": "Demo Earthquake (open reporting)", "zh": "示范地震（开放回报）"}'::jsonb,
+  NULL
+);
+
+INSERT INTO buildings (id, crisis_id, external_ref, geom, name) VALUES
+(
+  'b0000000-0000-0000-0000-000000000001',
+  'a0000000-0000-0000-0000-000000000001',
+  'B1',
+  ST_Multi(ST_SetSRID(ST_GeomFromText(
+    'POLYGON((121.5593 25.0292, 121.5603 25.0292, 121.5603 25.0300, 121.5593 25.0300, 121.5593 25.0292))'
+  ), 4326)),
+  'Demo Building A'
+),
+(
+  'b0000000-0000-0000-0000-000000000002',
+  'a0000000-0000-0000-0000-000000000001',
+  'B2',
+  ST_Multi(ST_SetSRID(ST_GeomFromText(
+    'POLYGON((121.5605 25.0292, 121.5615 25.0292, 121.5615 25.0300, 121.5605 25.0300, 121.5605 25.0292))'
+  ), 4326)),
+  'Demo Building B'
+),
+(
+  'b0000000-0000-0000-0000-000000000003',
+  'a0000000-0000-0000-0000-000000000001',
+  'B3',
+  ST_Multi(ST_SetSRID(ST_GeomFromText(
+    'POLYGON((121.5595 25.0302, 121.5610 25.0302, 121.5610 25.0315, 121.5595 25.0315, 121.5595 25.0302))'
+  ), 4326)),
+  'Demo Building C'
+);
+
+-- Demo report markers (「全部」模式可見的彩色圓點)
+INSERT INTO reports (
+  id, client_generated_uuid, crisis_id, building_id,
+  damage_level, infrastructure_types, infrastructure_name,
+  crisis_types, debris_clearing_required, description, description_language,
+  appendix_answers, captured_at_client, received_at_server
+) VALUES
+(
+  'c0000000-0000-0000-0000-000000000001',
+  'd0000000-0000-0000-0000-000000000001',
+  'a0000000-0000-0000-0000-000000000001',
+  'b0000000-0000-0000-0000-000000000001',
+  'partial',
+  ARRAY['residential'],
+  'Demo Building A',
+  ARRAY['earthquake'],
+  false,
+  'Demo report — partial damage on Building A',
+  'en',
+  '{"electricity_condition":"moderate","health_services":"partial","pressing_needs":["food_water"]}'::jsonb,
+  now() - interval '2 hours',
+  now() - interval '2 hours'
+),
+(
+  'c0000000-0000-0000-0000-000000000002',
+  'd0000000-0000-0000-0000-000000000002',
+  'a0000000-0000-0000-0000-000000000001',
+  'b0000000-0000-0000-0000-000000000002',
+  'complete',
+  ARRAY['commercial'],
+  'Demo Building B',
+  ARRAY['earthquake'],
+  true,
+  'Demo report — severe damage on Building B',
+  'en',
+  '{"electricity_condition":"severe","health_services":"disrupted","pressing_needs":["shelter","health"]}'::jsonb,
+  now() - interval '1 hour',
+  now() - interval '1 hour'
+);

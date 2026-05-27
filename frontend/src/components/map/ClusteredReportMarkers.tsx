@@ -1,0 +1,135 @@
+import L from 'leaflet';
+import 'leaflet.markercluster';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
+import { useEffect, useRef } from 'react';
+import { useMap } from 'react-leaflet';
+
+import type { MapMarker } from './ContributorMap';
+import {
+  aggregateMarkersForDisplay,
+  pinFillColor,
+  type DisplayMapMarker,
+} from '../../utils/mapMarkers';
+
+type Labels = {
+  damageLabel: (level: string) => string;
+  mineLabel: string;
+  reportCount: (count: number) => string;
+  viewDetails: string;
+  siteRepaired: string;
+  siteDemolished: string;
+};
+
+type Props = {
+  markers: MapMarker[];
+  showOthers: boolean;
+  mapMode: 'all' | 'mine' | 'new';
+  labels: Labels;
+  onViewDetails: (m: MapMarker) => void;
+};
+
+function popupHtml(m: DisplayMapMarker, labels: Labels): string {
+  const statusLine =
+    m.pinDisplay === 'repaired'
+      ? labels.siteRepaired
+      : m.pinDisplay === 'demolished'
+        ? labels.siteDemolished
+        : labels.damageLabel(m.displayDamageLevel);
+  const thumb = m.thumb_url
+    ? `<img src="${m.thumb_url}" alt="" style="max-width:120px;border-radius:6px;display:block" loading="lazy" />`
+    : '';
+  const count =
+    m.reportCount > 1
+      ? `<p style="margin:0.25rem 0 0;font-size:0.78rem;color:#64748b">${labels.reportCount(m.reportCount)}</p>`
+      : '';
+  const mine = m.is_mine ? ` · ${labels.mineLabel}` : '';
+  const time = new Date(m.captured_at_client).toLocaleString();
+  return `<div class="marker-popup">${thumb}<p style="margin:0.35rem 0 0"><strong>${statusLine}</strong>${mine}</p><time style="font-size:0.78rem;color:#64748b">${time}</time>${count}<p style="margin:0.5rem 0 0"><button type="button" class="primary small marker-popup-btn" data-report-id="${m.id}">${labels.viewDetails}</button></p></div>`;
+}
+
+export function ClusteredReportMarkers({
+  markers,
+  showOthers,
+  mapMode,
+  labels,
+  onViewDetails,
+}: Props) {
+  const map = useMap();
+  const groupRef = useRef<L.MarkerClusterGroup | null>(null);
+  const onViewRef = useRef(onViewDetails);
+  const labelsRef = useRef(labels);
+  onViewRef.current = onViewDetails;
+  labelsRef.current = labels;
+
+  useEffect(() => {
+    const display = aggregateMarkersForDisplay(markers).filter(
+      (m) => showOthers || m.is_mine,
+    );
+
+    if (!groupRef.current) {
+      groupRef.current = (L as typeof L & { markerClusterGroup: (o?: object) => L.MarkerClusterGroup }).markerClusterGroup({
+        maxClusterRadius: 56,
+        spiderfyOnMaxZoom: true,
+        showCoverageOnHover: false,
+        disableClusteringAtZoom: 17,
+      });
+      map.addLayer(groupRef.current);
+
+      groupRef.current.on('clusterclick', (e) => {
+        const layer = e.layer as L.MarkerCluster;
+        if (map.getZoom() >= 17) return;
+        map.fitBounds(layer.getBounds(), { padding: [24, 24], maxZoom: 17 });
+      });
+    }
+
+    const group = groupRef.current;
+    group.clearLayers();
+
+    const showActions = mapMode === 'all' || mapMode === 'mine';
+
+    for (const m of display) {
+      const [lng, lat] = m.geom.coordinates;
+      const color = pinFillColor(m);
+      const layer = L.circleMarker([lat, lng], {
+        radius: m.is_mine ? 11 : 9,
+        color: '#fff',
+        weight: 2,
+        fillColor: color,
+        fillOpacity: 0.95,
+      });
+
+      if (showActions) {
+        const popup = L.popup({ maxWidth: 280 }).setContent(popupHtml(m, labelsRef.current));
+        layer.bindPopup(popup);
+        layer.on('popupopen', () => {
+          const el = document.querySelector(
+            `.marker-popup-btn[data-report-id="${m.id}"]`,
+          ) as HTMLButtonElement | null;
+          if (!el) return;
+          el.onclick = () => {
+            map.closePopup();
+            onViewRef.current(m);
+          };
+        });
+      }
+
+      group.addLayer(layer);
+    }
+
+    return () => {
+      group.clearLayers();
+    };
+  }, [markers, showOthers, mapMode, map]);
+
+  useEffect(() => {
+    return () => {
+      if (groupRef.current) {
+        map.removeLayer(groupRef.current);
+        groupRef.current = null;
+      }
+    };
+  }, [map]);
+
+  return null;
+}

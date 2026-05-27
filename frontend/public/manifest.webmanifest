@@ -1,0 +1,17 @@
+{
+  "name": "Beacon Intelligence Hub",
+  "short_name": "BIH",
+  "description": "UNDP RAPIDA community damage reporting",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#1d4ed8",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
