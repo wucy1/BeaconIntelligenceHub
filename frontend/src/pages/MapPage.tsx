@@ -19,7 +19,8 @@ import { OfflineBanner } from '../components/OfflineBanner';
 import { useActiveWindow } from '../hooks/useActiveWindow';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useOfflineMapTiles } from '../hooks/useOfflineMapTiles';
-import { useOnlineStatus } from '../hooks/useOnlineStatus';
+import { useStableOnlineRestore } from '../hooks/useStableOnlineRestore';
+import type { MapRegionMeta } from '../offline/tileCache';
 import { useI18n } from '../i18n/I18nContext';
 import { DEFAULT_RADIUS_KM, bboxForDisk } from '../offline/tileMath';
 import {
@@ -65,7 +66,7 @@ export function MapPage() {
     fromCache: crisisFromCache,
     needsFirstOnline,
   } = useActiveWindow();
-  const online = useOnlineStatus();
+  const { online, showRestoredBanner, dismissRestoredBanner } = useStableOnlineRestore();
   const geo = useGeolocation();
   const bboxRef = useRef<string | null>(null);
 
@@ -94,6 +95,7 @@ export function MapPage() {
   });
   const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number } | null>(null);
   const [fitBoundsTick, setFitBoundsTick] = useState(0);
+  const [regionFitTick, setRegionFitTick] = useState(0);
   const [locatePending, setLocatePending] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   /** 每次開啟「新增」表單遞增，強制 ReportSheet 重掛載以免殘留編輯資料 */
@@ -101,6 +103,7 @@ export function MapPage() {
   const [duplicateBanner, setDuplicateBanner] = useState(false);
   /** 首次取得 GPS 後自動飛一次（同意定位或 ◎），避免一直停在台北示範預設中心 */
   const autoFlewToUserRef = useRef(false);
+  const [activeRegionId, setActiveRegionId] = useState<string | null>(null);
 
   bboxRef.current = bbox;
 
@@ -124,14 +127,53 @@ export function MapPage() {
   }, [geo.position, bbox]);
   const offlineTiles = useOfflineMapTiles(tileCenter);
 
-  const offlineBounds = useMemo(() => {
-    if (!offlineTiles.ready || !tileCenter) return null;
-    const box = bboxForDisk(tileCenter, DEFAULT_RADIUS_KM);
+  const activeRegion = useMemo(
+    () => offlineTiles.regions.find((r) => r.id === activeRegionId) ?? null,
+    [offlineTiles.regions, activeRegionId],
+  );
+
+  const regionToBounds = useCallback((r: MapRegionMeta) => {
+    const box = bboxForDisk(r.center, r.radiusKm);
     return L.latLngBounds(
       L.latLng(box.south, box.west),
       L.latLng(box.north, box.east),
     );
-  }, [offlineTiles.ready, tileCenter]);
+  }, []);
+
+  const offlineBounds = useMemo(() => {
+    if (online) return null;
+    if (activeRegion) return regionToBounds(activeRegion);
+    if (offlineTiles.ready && tileCenter) {
+      const box = bboxForDisk(tileCenter, DEFAULT_RADIUS_KM);
+      return L.latLngBounds(
+        L.latLng(box.south, box.west),
+        L.latLng(box.north, box.east),
+      );
+    }
+    return null;
+  }, [online, activeRegion, offlineTiles.ready, tileCenter, regionToBounds]);
+
+  const goToRegion = useCallback((r: MapRegionMeta) => {
+    setActiveRegionId(r.id);
+    setFlyTarget({ lat: r.center.lat, lng: r.center.lng });
+    setRegionFitTick((n) => n + 1);
+  }, []);
+
+  useEffect(() => {
+    if (online || offlineTiles.regions.length === 0 || activeRegionId) return;
+    const point = tileCenter ?? { lat: mapCenter[0], lng: mapCenter[1] };
+    let pick = offlineTiles.regions[0];
+    let bestD = Infinity;
+    for (const r of offlineTiles.regions) {
+      const d =
+        (r.center.lat - point.lat) ** 2 + (r.center.lng - point.lng) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        pick = r;
+      }
+    }
+    goToRegion(pick);
+  }, [online, offlineTiles.regions, activeRegionId, tileCenter, mapCenter, goToRegion]);
 
   const setPinWithDetect = useCallback(
     (lat: number, lng: number, buildingsFc: GeoJSON.FeatureCollection) => {
@@ -507,7 +549,15 @@ export function MapPage() {
         reportPin={mapMode === 'new' ? placement.pin : null}
         onMapPlace={onMapPlace}
         onReportPinMove={onReportPinMove}
-        offlineBounds={!online ? offlineBounds : null}
+        offlineBounds={offlineBounds}
+        savedRegions={offlineTiles.regions}
+        activeSavedRegionId={activeRegionId}
+        onSavedRegionSelect={(id) => {
+          const r = offlineTiles.regions.find((x) => x.id === id);
+          if (r) goToRegion(r);
+        }}
+        regionFitBounds={activeRegion ? regionToBounds(activeRegion) : null}
+        regionFitTick={regionFitTick}
       />
 
       {unspecifiedPhase && (
@@ -516,10 +566,19 @@ export function MapPage() {
         </p>
       )}
 
+      {showRestoredBanner && (
+        <div className="map-online-restored-banner" role="status">
+          <p>{t('map.offline.onlineRestored')}</p>
+          <button type="button" className="small" onClick={dismissRestoredBanner}>
+            {t('map.offline.onlineRestoredDismiss')}
+          </button>
+        </div>
+      )}
+
       {offlineReportMode && (
         <p className="map-offline-report-banner" role="status">
           {t('map.offline.reportMode')}
-          {!online && !offlineTiles.ready && (
+          {!online && offlineTiles.regions.length === 0 && (
             <>
               <br />
               <span className="map-offline-report-banner-sub">
@@ -527,7 +586,46 @@ export function MapPage() {
               </span>
             </>
           )}
+          {!online && offlineTiles.regions.length > 0 && (
+            <>
+              <br />
+              <span className="map-offline-report-banner-sub">
+                {t('map.offline.useSavedHint')}
+              </span>
+            </>
+          )}
         </p>
+      )}
+
+      {!online && offlineTiles.regions.length > 0 && (
+        <div className="map-offline-download-panel map-offline-use-panel">
+          <p className="map-offline-download-title">{t('map.offline.useSavedTitle')}</p>
+          <p className="map-offline-download-meta">{t('map.offline.useSavedBody')}</p>
+          <p className="map-offline-download-meta map-offline-legend-hint">
+            {t('map.offline.regionBoxHint')}
+          </p>
+          <ul className="map-offline-region-list">
+            {offlineTiles.regions.map((r) => (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  className={
+                    r.id === activeRegionId
+                      ? 'map-offline-region-btn active'
+                      : 'map-offline-region-btn'
+                  }
+                  onClick={() => goToRegion(r)}
+                >
+                  {t('map.offline.goToRegion', {
+                    lat: fmtCoord(r.center.lat),
+                    lng: fmtCoord(r.center.lng),
+                    km: r.radiusKm,
+                  })}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {online && (
@@ -582,19 +680,32 @@ export function MapPage() {
             {t('map.offline.storageSummary', { count: offlineTiles.cachedTileCount })}
           </p>
           {offlineTiles.regions.length > 0 && (
-            <details className="map-offline-download-regions">
+            <details className="map-offline-download-regions" open>
               <summary>{t('map.offline.savedRegions', { count: offlineTiles.regions.length })}</summary>
-              {offlineTiles.regions.slice(0, 5).map((r) => (
-                <p key={r.id} className="map-offline-download-meta">
-                  {t('map.offline.regionItem', {
-                    lat: fmtCoord(r.center.lat),
-                    lng: fmtCoord(r.center.lng),
-                    km: r.radiusKm,
-                    zMin: r.zMin,
-                    zMax: r.zMax,
-                  })}
-                </p>
-              ))}
+              <p className="map-offline-download-meta map-offline-legend-hint">
+                {t('map.offline.regionBoxHint')}
+              </p>
+              <ul className="map-offline-region-list">
+                {offlineTiles.regions.map((r) => (
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      className={
+                        r.id === activeRegionId
+                          ? 'map-offline-region-btn active'
+                          : 'map-offline-region-btn'
+                      }
+                      onClick={() => goToRegion(r)}
+                    >
+                      {t('map.offline.goToRegion', {
+                        lat: fmtCoord(r.center.lat),
+                        lng: fmtCoord(r.center.lng),
+                        km: r.radiusKm,
+                      })}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </details>
           )}
         </div>

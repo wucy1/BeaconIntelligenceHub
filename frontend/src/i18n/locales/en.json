@@ -219,5 +219,12 @@
   "map.offline.downloadCenter": "Download center: {{lat}}, {{lng}}",
   "map.offline.storageSummary": "Stored locally: {{count}} tiles (IndexedDB)",
   "map.offline.savedRegions": "Saved regions: {{count}}",
-  "map.offline.regionItem": "Center {{lat}}, {{lng}} | radius {{km}}km | z{{zMin}}-{{zMax}}"
+  "map.offline.regionItem": "Center {{lat}}, {{lng}} | radius {{km}}km | z{{zMin}}-{{zMax}}",
+  "map.offline.regionBoxHint": "Blue circles on the map = downloaded areas; solid border = active area.",
+  "map.offline.goToRegion": "Go to {{lat}}, {{lng}} ({{km}} km)",
+  "map.offline.useSavedTitle": "Offline map mode",
+  "map.offline.useSavedBody": "Tap a saved area below or a circle on the map to load cached tiles, then report.",
+  "map.offline.useSavedHint": "You are offline — pick a saved area (map circle) to start.",
+  "map.offline.onlineRestored": "Connection is stable again. Switch back to online map mode for latest data.",
+  "map.offline.onlineRestoredDismiss": "Got it"
 }

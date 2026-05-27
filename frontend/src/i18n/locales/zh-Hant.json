@@ -219,5 +219,12 @@
   "map.offline.downloadCenter": "下載中心：{{lat}}, {{lng}}",
   "map.offline.storageSummary": "本機已儲存 {{count}} 張瓦片（IndexedDB）",
   "map.offline.savedRegions": "已下載區域 {{count}} 筆",
-  "map.offline.regionItem": "中心 {{lat}}, {{lng}}｜半徑 {{km}}km｜z{{zMin}}-{{zMax}}"
+  "map.offline.regionItem": "中心 {{lat}}, {{lng}}｜半徑 {{km}}km｜z{{zMin}}-{{zMax}}",
+  "map.offline.regionBoxHint": "地圖上的藍色圓框＝已下載範圍；實線為目前使用中區域。",
+  "map.offline.goToRegion": "前往 {{lat}}, {{lng}}（{{km}} km）",
+  "map.offline.useSavedTitle": "離線地圖模式",
+  "map.offline.useSavedBody": "請點選下方區域或地圖上的圓框，載入該處已下載地圖後再回報。",
+  "map.offline.useSavedHint": "已偵測離線：請選擇已下載區域（地圖圓框）開始作業。",
+  "map.offline.onlineRestored": "連線已恢復穩定，建議切回連線地圖模式以取得最新資料。",
+  "map.offline.onlineRestoredDismiss": "知道了"
 }

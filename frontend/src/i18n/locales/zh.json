@@ -201,5 +201,12 @@
   "map.offline.downloadCenter": "下载中心：{{lat}}, {{lng}}",
   "map.offline.storageSummary": "本机已储存 {{count}} 张瓦片（IndexedDB）",
   "map.offline.savedRegions": "已下载区域 {{count}} 笔",
-  "map.offline.regionItem": "中心 {{lat}}, {{lng}}｜半径 {{km}}km｜z{{zMin}}-{{zMax}}"
+  "map.offline.regionItem": "中心 {{lat}}, {{lng}}｜半径 {{km}}km｜z{{zMin}}-{{zMax}}",
+  "map.offline.regionBoxHint": "地图上的蓝色圆框＝已下载范围；实线为当前使用区域。",
+  "map.offline.goToRegion": "前往 {{lat}}, {{lng}}（{{km}} km）",
+  "map.offline.useSavedTitle": "离线地图模式",
+  "map.offline.useSavedBody": "请点选下方区域或地图上的圆框，载入该处已下载地图后再回报。",
+  "map.offline.useSavedHint": "已检测离线：请选择已下载区域（地图圆框）开始作业。",
+  "map.offline.onlineRestored": "连线已恢复稳定，建议切回连线地图模式以取得最新资料。",
+  "map.offline.onlineRestoredDismiss": "知道了"
 }

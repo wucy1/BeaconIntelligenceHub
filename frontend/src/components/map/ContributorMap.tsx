@@ -21,6 +21,8 @@ import { centroidOfFeature } from '../../utils/buildingAtPoint';
 import { resolveGroupDisplay } from '../../utils/mapMarkers';
 import { CachedOsmTileLayer } from './CachedOsmTileLayer';
 import { ClusteredReportMarkers } from './ClusteredReportMarkers';
+import { OfflineRegionLayers } from './OfflineRegionLayers';
+import type { MapRegionMeta } from '../../offline/tileCache';
 
 export type MapMarker = {
   id: string;
@@ -61,6 +63,11 @@ type Props = {
   onMapPlace?: (lat: number, lng: number) => void;
   onReportPinMove?: (lat: number, lng: number) => void;
   offlineBounds?: L.LatLngBounds | null;
+  savedRegions?: MapRegionMeta[];
+  activeSavedRegionId?: string | null;
+  onSavedRegionSelect?: (regionId: string) => void;
+  regionFitBounds?: L.LatLngBounds | null;
+  regionFitTick?: number;
 };
 
 const reportPinIcon = new L.Icon({
@@ -142,6 +149,21 @@ function FitBoundsOnce({
     if (b.isValid()) {
       map.fitBounds(b, { padding: [32, 32], maxZoom: 17 });
     }
+  }, [bounds, tick, map]);
+  return null;
+}
+
+function FitLatLngBoundsOnce({
+  bounds,
+  tick,
+}: {
+  bounds: L.LatLngBounds | null | undefined;
+  tick: number;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (!bounds || tick < 1 || !bounds.isValid()) return;
+    map.fitBounds(bounds, { padding: [32, 32], maxZoom: 17 });
   }, [bounds, tick, map]);
   return null;
 }
@@ -234,6 +256,11 @@ export function ContributorMap({
   onMapPlace,
   onReportPinMove,
   offlineBounds,
+  savedRegions = [],
+  activeSavedRegionId = null,
+  onSavedRegionSelect,
+  regionFitBounds,
+  regionFitTick = 0,
 }: Props) {
   const [buildingPopup, setBuildingPopup] = useState<{
     buildingId: string;
@@ -289,11 +316,21 @@ export function ContributorMap({
     >
       <ZoomControl position="bottomright" />
       <CachedOsmTileLayer offlineBounds={offlineBounds} />
+      {savedRegions.length > 0 && (
+        <OfflineRegionLayers
+          regions={savedRegions}
+          activeRegionId={activeSavedRegionId}
+          onSelect={onSavedRegionSelect}
+        />
+      )}
       <BboxWatcher onBboxChange={onBboxChange} />
       <FlyTo target={flyTo} />
       <MapPlaceClick enabled={mapMode === 'new'} onPlace={onMapPlace} />
       {crisisBounds && fitBoundsTick > 0 && (
         <FitBoundsOnce bounds={crisisBounds} tick={fitBoundsTick} />
+      )}
+      {regionFitBounds && regionFitTick > 0 && (
+        <FitLatLngBoundsOnce bounds={regionFitBounds} tick={regionFitTick} />
       )}
 
       {buildings.features.length > 0 && (
