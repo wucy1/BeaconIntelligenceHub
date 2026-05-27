@@ -240,9 +240,14 @@ https://你的-api網址/v1/public/active-window
 
 ### 步驟 5：接回 Cloudflare 前端
 
-1. Worker **Build variables**：`VITE_API_BASE` = 你的 API URL（無尾 `/`）。
-2. **Retry deployment**（Vite 會把 API 網址 bake 進 bundle）。
-3. 重新開 `https://beacon.cila.workers.dev`，地圖應能載入 markers。
+1. Worker **Build variables**（Production）：`VITE_API_BASE` = `https://beaconintelligencehub.onrender.com`（無尾 `/`）。
+2. **Retry deployment**（必須重新 `npm run build`，才會寫進 JS）。
+3. Render **Environment**：`CORS_ORIGINS` = `https://beacon.cila.workers.dev`（無尾 `/`），儲存後 Redeploy API。
+4. 瀏覽器 **清除本站資料**（或 DevTools → Application → Clear site data），避免舊版 JS / Service Worker。
+5. 重新開前端；DevTools → **Network** 應看到請求打到 `onrender.com/v1/...`，**不是** `beacon.cila.workers.dev/v1/...`。
+
+**若錯誤含 `Unexpected token '<'` 或 HTML 而非 JSON：**  
+代表請求仍打到 Worker 的 SPA（`/v1` 會回 `index.html`），通常是 **快取舊 bundle** 或 **VITE_API_BASE 未進入該次 build**。
 
 ### Railway（備選）
 

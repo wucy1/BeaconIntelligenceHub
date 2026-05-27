@@ -51,11 +51,25 @@ function formatApiError(status: number, text: string): string {
 }
 
 async function parseJson<T>(res: Response): Promise<T> {
+  const text = await res.text();
   if (!res.ok) {
-    const text = await res.text();
     throw new Error(formatApiError(res.status, text));
   }
-  return res.json() as Promise<T>;
+  const ct = res.headers.get('content-type') ?? '';
+  if (!ct.includes('application/json') && text.trimStart().startsWith('<')) {
+    const base = API_BASE || '(未設定 VITE_API_BASE)';
+    throw new Error(
+      `API 回傳了 HTML 而非 JSON（常見原因：前端仍打到本站 /v1、或瀏覽器快取舊版 JS）。` +
+        ` 請在 Network 確認請求網址為後端 API；Build 變數 VITE_API_BASE=${base}；並清除本站資料後重試。`,
+    );
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(
+      `無法解析 API 回應為 JSON：${text.slice(0, 80)}…（請確認 VITE_API_BASE 與 Render CORS_ORIGINS）`,
+    );
+  }
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
