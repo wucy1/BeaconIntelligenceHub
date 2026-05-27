@@ -84,6 +84,50 @@ function htmlLang(locale: UiLocale): string {
 
 
 
+function detectDeviceLocale(): UiLocale {
+
+  if (typeof navigator === 'undefined') return 'en';
+
+  const candidates = navigator.languages?.length
+
+    ? navigator.languages
+
+    : [navigator.language];
+
+  for (const raw of candidates) {
+
+    const tag = raw.toLowerCase().replace(/_/g, '-');
+
+    if (tag.startsWith('zh-tw') || tag.startsWith('zh-hk') || tag.startsWith('zh-hant')) {
+
+      return 'zh-Hant';
+
+    }
+
+    if (tag.startsWith('zh')) return 'zh';
+
+    if (tag.startsWith('de')) return 'de';
+
+    if (tag.startsWith('pt')) return 'pt';
+
+    if (tag.startsWith('ar')) return 'ar';
+
+    if (tag.startsWith('fr')) return 'fr';
+
+    if (tag.startsWith('ru')) return 'ru';
+
+    if (tag.startsWith('es')) return 'es';
+
+    if (tag.startsWith('en')) return 'en';
+
+  }
+
+  return 'en';
+
+}
+
+
+
 function interpolate(template: string, vars?: Record<string, string | number>): string {
 
   if (!vars) return template;
@@ -118,7 +162,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
     const saved = localStorage.getItem(STORAGE_KEY) as UiLocale | null;
 
-    return saved && UI_LOCALES.includes(saved) ? saved : 'en';
+    if (saved && UI_LOCALES.includes(saved)) return saved;
+
+    return detectDeviceLocale();
 
   });
 

@@ -80,6 +80,8 @@ export function MapPage() {
   /** 每次開啟「新增」表單遞增，強制 ReportSheet 重掛載以免殘留編輯資料 */
   const [formSession, setFormSession] = useState(0);
   const [duplicateBanner, setDuplicateBanner] = useState(false);
+  /** 首次取得 GPS 後自動飛一次（同意定位或 ◎），避免一直停在台北示範預設中心 */
+  const autoFlewToUserRef = useRef(false);
 
   bboxRef.current = bbox;
 
@@ -342,6 +344,12 @@ export function MapPage() {
     setPinWithDetect(geo.position.lat, geo.position.lng, buildings);
     setLocatePending(false);
   }, [locatePending, geo.position, buildings, setPinWithDetect]);
+
+  useEffect(() => {
+    if (!geo.position || autoFlewToUserRef.current) return;
+    autoFlewToUserRef.current = true;
+    setFlyTarget({ lat: geo.position.lat, lng: geo.position.lng });
+  }, [geo.position]);
 
   const reportGeom = useMemo((): GeoJSON.Point | null => {
     if (!placement.pin) return null;

@@ -1207,13 +1207,30 @@ button.danger {
   }
 
   .map-legend {
-    top: 2.35rem;
-    max-width: 9.5rem;
+    top: auto;
+    bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px));
+    left: 0.5rem;
+    max-width: min(10.5rem, 46vw);
     font-size: 0.7rem;
+    z-index: 520;
   }
 
   .map-legend:not([open]) {
-    max-width: 5.5rem;
+    max-width: 5.75rem;
+  }
+
+  .map-legend[open] {
+    max-height: min(38vh, 14rem);
+    overflow-y: auto;
+  }
+
+  .contribution-strip {
+    max-width: min(11.5rem, 52vw);
+  }
+
+  .contribution-strip[open] .contribution-strip-body {
+    max-height: 5.5rem;
+    overflow-y: auto;
   }
 
   .contribution-strip:not([open]) {
