@@ -16,7 +16,7 @@
 |----------|-------------|
 | `DATABASE_URL` | Neon connection string (`postgresql+psycopg2://...?sslmode=require`) |
 | `PUBLIC_BASE_URL` | Public API URL (no trailing slash) |
-| `CORS_ORIGINS` | Pages URL(s), e.g. `https://bih.pages.dev` |
+| `CORS_ORIGINS` | 前端網址（逗號分隔），例如 `https://beacon.cila.workers.dev` |
 | `R2_ACCOUNT_ID` | Cloudflare account ID |
 | `R2_ACCESS_KEY_ID` | R2 API token access key |
 | `R2_SECRET_ACCESS_KEY` | R2 secret |
@@ -132,6 +132,84 @@ Cloudflare「Connect to a repository」若出現 **Deploy command（Required）*
 - **Build command:** `npm ci && npm run build`
 - **Output directory:** `dist`
 - **Environment variable:** `VITE_API_BASE=https://your-api.example.com`
+
+## 後端 API（Fly.io，建議下一步）
+
+前端已上線（例如 `https://beacon.cila.workers.dev`）時，畫面報 `Unexpected token '<'` 代表瀏覽器打到 **Worker 的 HTML**，不是 JSON API——需部署 FastAPI 並設定 `VITE_API_BASE`。
+
+### 步驟 1：Neon 資料庫（若尚未建立）
+
+1. [Neon](https://neon.tech) 建立專案。
+2. SQL Editor 執行：`CREATE EXTENSION IF NOT EXISTS postgis;`
+3. 新庫執行完整 `backend/db/init.sql`（示範危機 + 建物）。
+4. 複製 **Pooled** 連線字串，前綴改為 `postgresql+psycopg2://...?sslmode=require`。
+
+詳見 `docs/NEON_CONNECTIVITY.md`。
+
+### 步驟 2：部署 API 到 Fly.io
+
+本 repo 已含 `backend/Dockerfile`、`backend/fly.toml`。
+
+```powershell
+# 安裝 Fly CLI：https://fly.io/docs/hands-on/install-flyctl/
+cd d:\Cursor-Projects\BeaconIntelligenceHub\backend
+fly auth login
+fly apps create bih-api   # 名稱若被占用可改 fly.toml 的 app =
+fly deploy
+```
+
+### 步驟 3：設定 Fly secrets（環境變數）
+
+將下列值換成你的實際內容（**不要**提交到 Git）：
+
+```powershell
+fly secrets set `
+  DATABASE_URL="postgresql+psycopg2://USER:PASS@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require" `
+  PUBLIC_BASE_URL="https://bih-api.fly.dev" `
+  CORS_ORIGINS="https://beacon.cila.workers.dev" `
+  REPORTER_SALT="隨機長字串" `
+  ADMIN_TOKEN="管理用密鑰"
+```
+
+- `PUBLIC_BASE_URL` = Fly 部署後的 HTTPS 網址（`fly deploy` 結尾會顯示，或 `fly apps open`）。
+- 若暫無 R2，可先不設 `R2_*`（上傳會走 API 本機 storage 路徑，生產建議盡快接 R2）。
+
+**有 R2 時再加：**
+
+```powershell
+fly secrets set `
+  R2_ACCOUNT_ID="..." `
+  R2_ACCESS_KEY_ID="..." `
+  R2_SECRET_ACCESS_KEY="..." `
+  R2_BUCKET="bih" `
+  UPLOAD_VIA_API="true"
+```
+
+R2 bucket CORS 需允許 `https://beacon.cila.workers.dev`（PUT/GET）。
+
+### 步驟 4：驗證 API
+
+```text
+https://bih-api.fly.dev/health
+https://bih-api.fly.dev/v1/public/active-window
+```
+
+應回 JSON，不是 HTML。
+
+### 步驟 5：接回 Cloudflare 前端
+
+1. Worker **Build variables**：`VITE_API_BASE` = `https://bih-api.fly.dev`（你的 API URL，無尾 `/`）。
+2. **Retry deployment**（Vite 會把 API 網址 bake 進 bundle）。
+3. 重新開 `https://beacon.cila.workers.dev`，地圖應能載入 markers。
+
+### 替代平台
+
+| 平台 | 作法 |
+|------|------|
+| **Railway** | New Project → Deploy from GitHub → Root `backend` → Start：`uvicorn app.main:app --host 0.0.0.0 --port $PORT` → 同上 env |
+| **Render** | Web Service + `backend/Dockerfile` 或 Python，設定相同 env |
+
+---
 
 ## Neon migrations
 
