@@ -21,6 +21,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import { centroidOfFeature } from '../../utils/buildingAtPoint';
 import { resolveGroupDisplay } from '../../utils/mapMarkers';
 import { ClusteredReportMarkers } from './ClusteredReportMarkers';
+import { OfflineMapViewLock } from './OfflineMapViewLock';
 
 export type MapMarker = {
   id: string;
@@ -60,6 +61,10 @@ type Props = {
   reportPin?: { lat: number; lng: number } | null;
   onMapPlace?: (lat: number, lng: number) => void;
   onReportPinMove?: (lat: number, lng: number) => void;
+  /** 離線時鎖定視野／縮放，避免平移載入未快取 OSM 瓦片 */
+  lockOfflineView?: boolean;
+  /** 變更時在 moveend 後重新上鎖（例如 ◎ 定位飛行） */
+  offlineLockResetKey?: string;
 };
 
 const reportPinIcon = new L.Icon({
@@ -232,6 +237,8 @@ export function ContributorMap({
   reportPin = null,
   onMapPlace,
   onReportPinMove,
+  lockOfflineView = false,
+  offlineLockResetKey,
 }: Props) {
   const [buildingPopup, setBuildingPopup] = useState<{
     buildingId: string;
@@ -291,6 +298,7 @@ export function ContributorMap({
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <BboxWatcher onBboxChange={onBboxChange} />
+      <OfflineMapViewLock enabled={lockOfflineView} resetKey={offlineLockResetKey} />
       <FlyTo target={flyTo} />
       <MapPlaceClick enabled={mapMode === 'new'} onPlace={onMapPlace} />
       {crisisBounds && fitBoundsTick > 0 && (

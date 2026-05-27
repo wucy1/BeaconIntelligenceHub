@@ -163,6 +163,7 @@
   "map.showReferenceArea": "Show admin reference area (if any)",
   "map.unspecified.hint": "Unspecified event — report anywhere. Official area and dates will apply to display after admin setup.",
   "map.offline.reportMode": "Offline reporting — new reports will sync when you are back online.",
+  "map.offline.viewLocked": "Map view is locked here (avoid zoom/pan or tiles may go blank). While online, move to your site and let tiles load first.",
   "map.offline.needFirstVisit": "Connect once to load the crisis before offline reporting.",
   "map.offline.needFirstVisitHint": "Open this app with network at least once. Your crisis settings will be saved on this device for offline use.",
   "map.err.noWindow": "No active reporting window",

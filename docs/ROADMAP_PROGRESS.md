@@ -218,14 +218,15 @@ flowchart LR
 | 同步狀態機細分（uploading_image 等） | 待做 |
 | 佇列列表／失敗重試 UI | 待做 |
 | PWA / SW | 待做（C2） |
-| 離線地圖瓦片 | **不做**（C1 範圍外） |
+| 離線地圖瓦片預下載 | **不做**（C4 選做） |
+| 離線視野鎖定（防灰屏） | **已做**（`OfflineMapViewLock`；見 `docs/OFFLINE.md`） |
 
 ### C1 剩餘待辦
 
 1. 飛航模式 E2E 驗收（填報含圖 → 上線 → Neon 有資料）。
 2. 佇列明細 UI（待同步筆數已有 banner）。
 3. 對齊 `MODULE_SPEC` 同步狀態枚舉（可選）。
-4. `docs/OFFLINE.md` 離線限制說明。
+4. ~~`docs/OFFLINE.md` 離線限制說明。~~ **已寫** |
 
 ### C2 之後（摘要）
 

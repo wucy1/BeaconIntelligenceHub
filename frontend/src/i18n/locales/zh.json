@@ -146,6 +146,7 @@
   "map.showReferenceArea": "顯示管理参考区（若有）",
   "map.unspecified.hint": "未指定事件：可先于任意地点回报；管理员划定范围与时间窗后，显示方式将再调整。",
   "map.offline.reportMode": "离线回报模式：新回报将在恢复连线后自动同步。",
+  "map.offline.viewLocked": "地图已固定在目前视野（请勿缩放／大幅平移，以免灰屏）。有网络时可先移到现场并载入瓦片。",
   "map.offline.needFirstVisit": "请先连线载入危机设定，之后才能离线填报。",
   "map.offline.needFirstVisitHint": "至少需以网络开启本 App 一次，装置会储存危机设定供离线使用。",
   "map.err.noWindow": "目前沒有开放中的回报视窗",

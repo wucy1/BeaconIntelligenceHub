@@ -1149,6 +1149,11 @@ button.danger {
   top: 4.75rem;
 }
 
+.map-offline-report-banner-sub {
+  font-size: 0.85em;
+  opacity: 0.92;
+}
+
 .map-offline-report-banner {
   position: absolute;
   top: 2.5rem;

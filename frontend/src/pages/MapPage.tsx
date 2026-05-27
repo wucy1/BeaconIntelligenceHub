@@ -470,6 +470,10 @@ export function MapPage() {
         reportPin={mapMode === 'new' ? placement.pin : null}
         onMapPlace={onMapPlace}
         onReportPinMove={onReportPinMove}
+        lockOfflineView={offlineReportMode}
+        offlineLockResetKey={
+          flyTarget ? `${flyTarget.lat.toFixed(5)},${flyTarget.lng.toFixed(5)}` : 'initial'
+        }
       />
 
       {unspecifiedPhase && (
@@ -481,6 +485,8 @@ export function MapPage() {
       {offlineReportMode && (
         <p className="map-offline-report-banner" role="status">
           {t('map.offline.reportMode')}
+          <br />
+          <span className="map-offline-report-banner-sub">{t('map.offline.viewLocked')}</span>
         </p>
       )}
 
