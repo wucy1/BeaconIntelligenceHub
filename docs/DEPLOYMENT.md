@@ -202,8 +202,10 @@ flyctl deploy
 
 將下列值換成你的實際內容（**不要**提交到 Git）：
 
+Render：在 Dashboard → **Environment** 填寫下列變數。Fly：
+
 ```powershell
-fly secrets set `
+flyctl secrets set `
   DATABASE_URL="postgresql+psycopg2://USER:PASS@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require" `
   PUBLIC_BASE_URL="https://bih-api.fly.dev" `
   CORS_ORIGINS="https://beacon.cila.workers.dev" `
