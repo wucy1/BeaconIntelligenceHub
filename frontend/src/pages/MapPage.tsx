@@ -445,6 +445,7 @@ export function MapPage() {
   }
 
   const offlineReportMode = !online || crisisFromCache;
+  const unspecifiedPhase = activeWindow.reporting_phase !== 'defined';
 
   return (
     <div className="map-page">
@@ -470,6 +471,12 @@ export function MapPage() {
         onMapPlace={onMapPlace}
         onReportPinMove={onReportPinMove}
       />
+
+      {unspecifiedPhase && (
+        <p className="map-unspecified-banner" role="status">
+          {t('map.unspecified.hint')}
+        </p>
+      )}
 
       {offlineReportMode && (
         <p className="map-offline-report-banner" role="status">

@@ -1126,6 +1126,29 @@ button.danger {
   margin: 0;
 }
 
+.map-unspecified-banner {
+  position: absolute;
+  top: 2.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 585;
+  margin: 0;
+  padding: 0.35rem 0.65rem;
+  max-width: min(24rem, calc(100% - 1rem));
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  color: #475569;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  pointer-events: none;
+}
+
+.map-page:has(.map-unspecified-banner) .map-offline-report-banner {
+  top: 4.75rem;
+}
+
 .map-offline-report-banner {
   position: absolute;
   top: 2.5rem;

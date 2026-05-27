@@ -72,12 +72,12 @@ ORDER BY
   r.captured_at_client DESC,
   r.received_at_server DESC;
 
--- Seed: demo crisis + 3 footprints (Taipei Demo AOI)
--- bounds 可為 NULL：災害發生時管理員未必能即時劃定影響範圍，Contributor 可在任意地點回報
+-- Seed: unspecified crisis + demo footprints (reference buildings only)
+-- bounds NULL = unspecified phase; admin may define bounds/window later for display only
 INSERT INTO crises (id, slug, name, bounds) VALUES (
   'a0000000-0000-0000-0000-000000000001',
-  'demo-taipei',
-  '{"en": "Demo Earthquake (open reporting)", "zh": "示范地震（开放回报）"}'::jsonb,
+  'unspecified',
+  '{"en": "Unspecified event (open reporting)", "zh": "未指定事件（开放回报）", "zh-Hant": "未指定事件（開放回報）"}'::jsonb,
   NULL
 );
 

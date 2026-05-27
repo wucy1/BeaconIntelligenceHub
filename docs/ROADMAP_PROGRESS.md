@@ -198,6 +198,7 @@ flowchart LR
 
 - **離線重點**：僅 **新增回報** 入佇列並同步；**不做** 離線瀏覽 markers／footprint。
 - **優先順序**：**C1 填報閉環** → C2 PWA 殼 → C4 地圖瓦片（選做）。
+- **事件模型**：回報先一律進 **`unspecified`**（`bounds = NULL`）；管理員事後劃範圍／時間窗，再調整**顯示**（不阻擋提交）。見 `docs/CRISIS_LIFECYCLE.md`。
 
 ### C1 目標
 

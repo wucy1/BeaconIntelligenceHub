@@ -17,7 +17,7 @@ cd d:\Cursor-Projects\BeaconIntelligenceHub
 docker compose up -d
 ```
 
-首次啟動會執行 `backend/db/init.sql`（結構 + 示範危機 `demo-taipei` + 三個建物 footprint）。
+首次啟動會執行 `backend/db/init.sql`（結構 + 預設 **`unspecified`** 開放回報事件 + 三個示範建物 footprint）。
 
 ## 2. 後端 API
 

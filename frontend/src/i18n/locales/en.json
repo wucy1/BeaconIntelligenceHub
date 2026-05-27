@@ -161,6 +161,7 @@
   "map.startNewReport": "Start new report",
   "map.reportPin": "GPS coordinates",
   "map.showReferenceArea": "Show admin reference area (if any)",
+  "map.unspecified.hint": "Unspecified event — report anywhere. Official area and dates will apply to display after admin setup.",
   "map.offline.reportMode": "Offline reporting — new reports will sync when you are back online.",
   "map.offline.needFirstVisit": "Connect once to load the crisis before offline reporting.",
   "map.offline.needFirstVisitHint": "Open this app with network at least once. Your crisis settings will be saved on this device for offline use.",

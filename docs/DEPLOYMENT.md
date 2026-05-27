@@ -263,7 +263,7 @@ New Project → GitHub repo → Root `backend` → Start command：
 
 1. In Neon Console → **SQL Editor**, run: `CREATE EXTENSION IF NOT EXISTS postgis;`
 2. Run full `backend/db/init.sql` on an **empty** database (creates demo crisis + buildings).
-3. If the DB already has tables, run only `backend/db/migrations/002_admin_and_latest.sql`.
+3. If the DB already has tables, run migrations `002`–`005` as needed (`005` renames `demo-taipei` → `unspecified`).
 
 ## Contributor reporting (no pre-drawn boundary)
 

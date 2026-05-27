@@ -41,6 +41,7 @@ def active_window(db: Session = Depends(get_db)) -> dict:
         {"id": c.id},
     ).scalar_one()
     now = datetime.now(timezone.utc)
+    has_bounds = bounds is not None
     return {
         "window_id": str(c.id),
         "crisis_id": str(c.id),
@@ -48,8 +49,10 @@ def active_window(db: Session = Depends(get_db)) -> dict:
         "name": c.name,
         # bounds 僅供管理員事後劃定參考；不限制 Contributor 回報位置
         "bounds": bounds,
-        "bounds_role": "optional_reference" if bounds else None,
+        "bounds_role": "optional_reference" if has_bounds else None,
         "reporting_unbounded": True,
+        # unspecified：管理員尚未劃定範圍；defined：已有參考 AOI（顯示可調整，提交仍不限 bounds）
+        "reporting_phase": "defined" if has_bounds else "unspecified",
         "starts_at": None,
         "ends_at": None,
         "is_open": True,

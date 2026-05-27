@@ -12,6 +12,8 @@ export type ActiveWindow = {
   bounds: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   bounds_role?: 'optional_reference' | null;
   reporting_unbounded?: boolean;
+  /** unspecified = 管理員尚未劃定範圍；defined = 已有參考 AOI */
+  reporting_phase?: 'unspecified' | 'defined';
   is_open: boolean;
 };
 
