@@ -1,9 +1,7 @@
 import { apiGet, apiPost, apiPutRaw, sha256Hex } from '../api';
+import { openOfflineDb } from './openDb';
 
-const DB_NAME = 'bih-offline';
 const STORE = 'pending_reports';
-const CRISIS_STORE = 'crisis_snapshot';
-const DB_VERSION = 2;
 
 export type PendingReport = {
   id: string;
@@ -16,29 +14,12 @@ export type PendingReport = {
   lastError?: string;
 };
 
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => resolve(req.result);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE, { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains(CRISIS_STORE)) {
-        db.createObjectStore(CRISIS_STORE);
-      }
-    };
-  });
-}
-
 export async function enqueueReport(
   crisisId: string,
   payload: Record<string, unknown>,
   file: File,
 ): Promise<string> {
-  const db = await openDb();
+  const db = await openOfflineDb();
   const id = (payload.client_generated_uuid as string) || crypto.randomUUID();
   const item: PendingReport = {
     id,
@@ -63,7 +44,7 @@ export async function countPending(): Promise<number> {
 }
 
 async function listPending(): Promise<PendingReport[]> {
-  const db = await openDb();
+  const db = await openOfflineDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly');
     const req = tx.objectStore(STORE).getAll();
@@ -73,7 +54,7 @@ async function listPending(): Promise<PendingReport[]> {
 }
 
 async function removeReport(id: string): Promise<void> {
-  const db = await openDb();
+  const db = await openOfflineDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite');
     tx.objectStore(STORE).delete(id);
@@ -83,7 +64,7 @@ async function removeReport(id: string): Promise<void> {
 }
 
 async function updateStatus(id: string, status: PendingReport['status'], lastError?: string) {
-  const db = await openDb();
+  const db = await openOfflineDb();
   const all = await listPending();
   const item = all.find((r) => r.id === id);
   if (!item) return;

@@ -1,3 +1,4 @@
+import L from 'leaflet';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiGet } from '../api';
@@ -17,8 +18,10 @@ import { ReportSheet } from '../components/map/ReportSheet';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { useActiveWindow } from '../hooks/useActiveWindow';
 import { useGeolocation } from '../hooks/useGeolocation';
+import { useOfflineMapTiles } from '../hooks/useOfflineMapTiles';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { useI18n } from '../i18n/I18nContext';
+import { DEFAULT_RADIUS_KM, bboxForDisk } from '../offline/tileMath';
 import {
   buildingFeatureById,
   centroidOfFeature,
@@ -103,6 +106,19 @@ export function MapPage() {
     if (geo.position) return [geo.position.lat, geo.position.lng];
     return DEFAULT_CENTER;
   }, [geo.position]);
+  const tileCenter = geo.position
+    ? { lat: geo.position.lat, lng: geo.position.lng }
+    : null;
+  const offlineTiles = useOfflineMapTiles(tileCenter);
+
+  const offlineBounds = useMemo(() => {
+    if (!offlineTiles.ready || !tileCenter) return null;
+    const box = bboxForDisk(tileCenter, DEFAULT_RADIUS_KM);
+    return L.latLngBounds(
+      L.latLng(box.south, box.west),
+      L.latLng(box.north, box.east),
+    );
+  }, [offlineTiles.ready, tileCenter]);
 
   const setPinWithDetect = useCallback(
     (lat: number, lng: number, buildingsFc: GeoJSON.FeatureCollection) => {
@@ -342,6 +358,14 @@ export function MapPage() {
     geo.request();
   }, [geo]);
 
+  const onDownloadOfflineArea = useCallback(() => {
+    if (!tileCenter) {
+      geo.request();
+      return;
+    }
+    void offlineTiles.download(tileCenter);
+  }, [tileCenter, geo, offlineTiles]);
+
   useEffect(() => {
     if (!locatePending || !geo.position) return;
     setFlyTarget({ lat: geo.position.lat, lng: geo.position.lng });
@@ -470,10 +494,7 @@ export function MapPage() {
         reportPin={mapMode === 'new' ? placement.pin : null}
         onMapPlace={onMapPlace}
         onReportPinMove={onReportPinMove}
-        lockOfflineView={offlineReportMode}
-        offlineLockResetKey={
-          flyTarget ? `${flyTarget.lat.toFixed(5)},${flyTarget.lng.toFixed(5)}` : 'initial'
-        }
+        offlineBounds={!online ? offlineBounds : null}
       />
 
       {unspecifiedPhase && (
@@ -485,9 +506,58 @@ export function MapPage() {
       {offlineReportMode && (
         <p className="map-offline-report-banner" role="status">
           {t('map.offline.reportMode')}
-          <br />
-          <span className="map-offline-report-banner-sub">{t('map.offline.viewLocked')}</span>
+          {!online && !offlineTiles.ready && (
+            <>
+              <br />
+              <span className="map-offline-report-banner-sub">
+                {t('map.offline.downloadHint')}
+              </span>
+            </>
+          )}
         </p>
+      )}
+
+      {online && (
+        <div className="map-offline-download-panel">
+          <p className="map-offline-download-title">
+            {t('map.offline.downloadTitle', { km: DEFAULT_RADIUS_KM })}
+          </p>
+          <p className="map-offline-download-meta">
+            {offlineTiles.coverage
+              ? t('map.offline.downloadCoverage', {
+                  pct: Math.round(offlineTiles.coverage.ratio * 100),
+                  cached: offlineTiles.coverage.cached,
+                  total: offlineTiles.coverage.total,
+                })
+              : t('map.offline.downloadCoverageUnknown')}
+          </p>
+          <div className="map-offline-download-actions">
+            <button
+              type="button"
+              className="small primary"
+              onClick={onDownloadOfflineArea}
+              disabled={offlineTiles.downloading || offlineTiles.checking}
+            >
+              {offlineTiles.downloading
+                ? t('map.offline.downloading')
+                : t('map.offline.downloadAction')}
+            </button>
+            {offlineTiles.downloading && (
+              <button type="button" className="small" onClick={offlineTiles.cancel}>
+                {t('common.cancel')}
+              </button>
+            )}
+          </div>
+          {offlineTiles.downloading && offlineTiles.progress && (
+            <p className="map-offline-download-meta">
+              {t('map.offline.downloadProgress', {
+                done: offlineTiles.progress.done,
+                total: offlineTiles.progress.total,
+                failed: offlineTiles.progress.failed,
+              })}
+            </p>
+          )}
+        </div>
       )}
 
       <div className="map-overlay-top">

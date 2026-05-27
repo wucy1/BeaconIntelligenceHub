@@ -1174,6 +1174,47 @@ button.danger {
   pointer-events: none;
 }
 
+.map-offline-download-panel {
+  position: absolute;
+  top: 4.9rem;
+  left: 0.5rem;
+  z-index: 610;
+  width: min(19.5rem, calc(100% - 1rem));
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  padding: 0.5rem 0.6rem;
+}
+
+.map-page:has(.map-unspecified-banner) .map-offline-download-panel {
+  top: 7.2rem;
+}
+
+.map-offline-download-title {
+  margin: 0 0 0.2rem;
+  color: #1e3a8a;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.map-offline-download-meta {
+  margin: 0.15rem 0;
+  color: #334155;
+  font-size: 0.72rem;
+}
+
+.map-offline-download-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+
+.map-offline-download-actions .small {
+  font-size: 0.72rem;
+  padding: 0.22rem 0.45rem;
+}
+
 .contribution-strip {
   width: 100%;
   max-width: 100%;
