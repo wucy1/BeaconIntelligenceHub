@@ -224,6 +224,7 @@
   "map.offline.goToRegion": "前往 {{lat}}, {{lng}}（{{km}} km）",
   "map.offline.useSavedTitle": "離線地圖模式",
   "map.offline.useSavedBody": "請點選下方區域或地圖上的圓框，載入該處已下載地圖後再回報。",
+  "map.offline.zoomRangeHint": "可放大至 z17 精準標點；縮小下限為 z14（與下載範圍一致）。",
   "map.offline.useSavedHint": "已偵測離線：請選擇已下載區域（地圖圓框）開始作業。",
   "map.offline.onlineRestored": "連線已恢復穩定，建議切回連線地圖模式以取得最新資料。",
   "map.offline.onlineRestoredDismiss": "知道了"

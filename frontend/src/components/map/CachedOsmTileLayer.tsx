@@ -7,6 +7,14 @@ import { osmTileUrl } from '../../offline/tileMath';
 
 const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>';
 
+const DEFAULT_MIN_ZOOM = 1;
+const DEFAULT_MAX_ZOOM = 22;
+
+export type OfflineZoomLimits = {
+  minZoom: number;
+  maxZoom: number;
+};
+
 async function loadTileInto(
   img: HTMLImageElement,
   z: number,
@@ -59,11 +67,13 @@ const CachedLayer = L.TileLayer.extend({
 });
 
 type Props = {
-  /** 離線時限制平移於已下載 AOI（外接 bbox） */
-  offlineBounds?: L.LatLngBounds | null;
+  /**
+   * 離線已選區域：只限制縮放級距（與下載的 z 範圍一致），不用 maxBounds 以免無法放大。
+   */
+  offlineZoomLimits?: OfflineZoomLimits | null;
 };
 
-export function CachedOsmTileLayer({ offlineBounds }: Props) {
+export function CachedOsmTileLayer({ offlineZoomLimits }: Props) {
   const map = useMap();
 
   useEffect(() => {
@@ -80,15 +90,21 @@ export function CachedOsmTileLayer({ offlineBounds }: Props) {
   }, [map]);
 
   useEffect(() => {
-    if (offlineBounds) {
-      map.setMaxBounds(offlineBounds.pad(0.02));
+    if (offlineZoomLimits) {
+      map.setMinZoom(offlineZoomLimits.minZoom);
+      map.setMaxZoom(offlineZoomLimits.maxZoom);
     } else {
-      map.setMaxBounds(undefined);
+      map.setMinZoom(DEFAULT_MIN_ZOOM);
+      map.setMaxZoom(DEFAULT_MAX_ZOOM);
     }
+    map.setMaxBounds(undefined);
+
     return () => {
+      map.setMinZoom(DEFAULT_MIN_ZOOM);
+      map.setMaxZoom(DEFAULT_MAX_ZOOM);
       map.setMaxBounds(undefined);
     };
-  }, [map, offlineBounds]);
+  }, [map, offlineZoomLimits]);
 
   return null;
 }

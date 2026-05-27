@@ -22,7 +22,12 @@ import { useOfflineMapTiles } from '../hooks/useOfflineMapTiles';
 import { useStableOnlineRestore } from '../hooks/useStableOnlineRestore';
 import type { MapRegionMeta } from '../offline/tileCache';
 import { useI18n } from '../i18n/I18nContext';
-import { DEFAULT_RADIUS_KM, bboxForDisk } from '../offline/tileMath';
+import {
+  DEFAULT_RADIUS_KM,
+  PREFETCH_ZOOM_MAX,
+  PREFETCH_ZOOM_MIN,
+  bboxForDisk,
+} from '../offline/tileMath';
 import {
   buildingFeatureById,
   centroidOfFeature,
@@ -140,18 +145,10 @@ export function MapPage() {
     );
   }, []);
 
-  const offlineBounds = useMemo(() => {
-    if (online) return null;
-    if (activeRegion) return regionToBounds(activeRegion);
-    if (offlineTiles.ready && tileCenter) {
-      const box = bboxForDisk(tileCenter, DEFAULT_RADIUS_KM);
-      return L.latLngBounds(
-        L.latLng(box.south, box.west),
-        L.latLng(box.north, box.east),
-      );
-    }
-    return null;
-  }, [online, activeRegion, offlineTiles.ready, tileCenter, regionToBounds]);
+  const offlineZoomLimits = useMemo(() => {
+    if (online || offlineTiles.regions.length === 0) return null;
+    return { minZoom: PREFETCH_ZOOM_MIN, maxZoom: PREFETCH_ZOOM_MAX };
+  }, [online, offlineTiles.regions.length]);
 
   const goToRegion = useCallback((r: MapRegionMeta) => {
     setActiveRegionId(r.id);
@@ -549,7 +546,7 @@ export function MapPage() {
         reportPin={mapMode === 'new' ? placement.pin : null}
         onMapPlace={onMapPlace}
         onReportPinMove={onReportPinMove}
-        offlineBounds={offlineBounds}
+        offlineZoomLimits={offlineZoomLimits}
         savedRegions={offlineTiles.regions}
         activeSavedRegionId={activeRegionId}
         onSavedRegionSelect={(id) => {
@@ -601,6 +598,7 @@ export function MapPage() {
         <div className="map-offline-download-panel map-offline-use-panel">
           <p className="map-offline-download-title">{t('map.offline.useSavedTitle')}</p>
           <p className="map-offline-download-meta">{t('map.offline.useSavedBody')}</p>
+          <p className="map-offline-download-meta">{t('map.offline.zoomRangeHint')}</p>
           <p className="map-offline-download-meta map-offline-legend-hint">
             {t('map.offline.regionBoxHint')}
           </p>

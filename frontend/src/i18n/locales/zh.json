@@ -206,6 +206,7 @@
   "map.offline.goToRegion": "前往 {{lat}}, {{lng}}（{{km}} km）",
   "map.offline.useSavedTitle": "离线地图模式",
   "map.offline.useSavedBody": "请点选下方区域或地图上的圆框，载入该处已下载地图后再回报。",
+  "map.offline.zoomRangeHint": "可放大至 z17 精准标点；缩小下限为 z14（与下载范围一致）。",
   "map.offline.useSavedHint": "已检测离线：请选择已下载区域（地图圆框）开始作业。",
   "map.offline.onlineRestored": "连线已恢复稳定，建议切回连线地图模式以取得最新资料。",
   "map.offline.onlineRestoredDismiss": "知道了"

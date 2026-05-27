@@ -19,7 +19,7 @@ import 'leaflet/dist/leaflet.css';
 import { useI18n } from '../../i18n/I18nContext';
 import { centroidOfFeature } from '../../utils/buildingAtPoint';
 import { resolveGroupDisplay } from '../../utils/mapMarkers';
-import { CachedOsmTileLayer } from './CachedOsmTileLayer';
+import { CachedOsmTileLayer, type OfflineZoomLimits } from './CachedOsmTileLayer';
 import { ClusteredReportMarkers } from './ClusteredReportMarkers';
 import { OfflineRegionLayers } from './OfflineRegionLayers';
 import type { MapRegionMeta } from '../../offline/tileCache';
@@ -62,7 +62,7 @@ type Props = {
   reportPin?: { lat: number; lng: number } | null;
   onMapPlace?: (lat: number, lng: number) => void;
   onReportPinMove?: (lat: number, lng: number) => void;
-  offlineBounds?: L.LatLngBounds | null;
+  offlineZoomLimits?: OfflineZoomLimits | null;
   savedRegions?: MapRegionMeta[];
   activeSavedRegionId?: string | null;
   onSavedRegionSelect?: (regionId: string) => void;
@@ -156,15 +156,17 @@ function FitBoundsOnce({
 function FitLatLngBoundsOnce({
   bounds,
   tick,
+  maxZoom = 16,
 }: {
   bounds: L.LatLngBounds | null | undefined;
   tick: number;
+  maxZoom?: number;
 }) {
   const map = useMap();
   useEffect(() => {
     if (!bounds || tick < 1 || !bounds.isValid()) return;
-    map.fitBounds(bounds, { padding: [32, 32], maxZoom: 17 });
-  }, [bounds, tick, map]);
+    map.fitBounds(bounds, { padding: [32, 32], maxZoom });
+  }, [bounds, tick, maxZoom, map]);
   return null;
 }
 
@@ -255,7 +257,7 @@ export function ContributorMap({
   reportPin = null,
   onMapPlace,
   onReportPinMove,
-  offlineBounds,
+  offlineZoomLimits,
   savedRegions = [],
   activeSavedRegionId = null,
   onSavedRegionSelect,
@@ -315,7 +317,7 @@ export function ContributorMap({
       zoomControl={false}
     >
       <ZoomControl position="bottomright" />
-      <CachedOsmTileLayer offlineBounds={offlineBounds} />
+      <CachedOsmTileLayer offlineZoomLimits={offlineZoomLimits} />
       {savedRegions.length > 0 && (
         <OfflineRegionLayers
           regions={savedRegions}
@@ -330,7 +332,7 @@ export function ContributorMap({
         <FitBoundsOnce bounds={crisisBounds} tick={fitBoundsTick} />
       )}
       {regionFitBounds && regionFitTick > 0 && (
-        <FitLatLngBoundsOnce bounds={regionFitBounds} tick={regionFitTick} />
+        <FitLatLngBoundsOnce bounds={regionFitBounds} tick={regionFitTick} maxZoom={16} />
       )}
 
       {buildings.features.length > 0 && (
