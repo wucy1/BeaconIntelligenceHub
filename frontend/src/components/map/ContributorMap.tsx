@@ -54,7 +54,7 @@ type Props = {
     siteDemolished: string;
   };
   onBboxChange: (bbox: string) => void;
-  flyTo?: { lat: number; lng: number } | null;
+  flyTo?: MapFlyTarget | null;
   initialCenter: [number, number];
   initialZoom: number;
   crisisBounds?: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
@@ -81,12 +81,15 @@ const reportPinIcon = new L.Icon({
   iconAnchor: [12, 41],
 });
 
-function FlyTo({ target }: { target: { lat: number; lng: number } | null | undefined }) {
+export type MapFlyTarget = { lat: number; lng: number; zoom?: number };
+
+function FlyTo({ target }: { target: MapFlyTarget | null | undefined }) {
   const map = useMap();
   useEffect(() => {
     if (!target) return;
-    map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 16), { duration: 0.6 });
-  }, [target, map]);
+    const z = target.zoom ?? Math.max(map.getZoom(), 16);
+    map.flyTo([target.lat, target.lng], z, { duration: 0.6 });
+  }, [target?.lat, target?.lng, target?.zoom, target, map]);
   return null;
 }
 

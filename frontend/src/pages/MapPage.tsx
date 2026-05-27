@@ -1,4 +1,3 @@
-import L from 'leaflet';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiGet } from '../api';
@@ -19,15 +18,10 @@ import { OfflineBanner } from '../components/OfflineBanner';
 import { useActiveWindow } from '../hooks/useActiveWindow';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useOfflineMapTiles } from '../hooks/useOfflineMapTiles';
-import { useStableOnlineRestore } from '../hooks/useStableOnlineRestore';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import type { MapRegionMeta } from '../offline/tileCache';
 import { useI18n } from '../i18n/I18nContext';
-import {
-  DEFAULT_RADIUS_KM,
-  PREFETCH_ZOOM_MAX,
-  PREFETCH_ZOOM_MIN,
-  bboxForDisk,
-} from '../offline/tileMath';
+import { DEFAULT_RADIUS_KM, PREFETCH_ZOOM_MAX } from '../offline/tileMath';
 import {
   buildingFeatureById,
   centroidOfFeature,
@@ -71,7 +65,8 @@ export function MapPage() {
     fromCache: _crisisFromCache,
     needsFirstOnline,
   } = useActiveWindow();
-  const { online, showRestoredBanner, dismissRestoredBanner } = useStableOnlineRestore();
+  const online = useOnlineStatus();
+  const wasOfflineRef = useRef(false);
   const geo = useGeolocation();
   const bboxRef = useRef<string | null>(null);
 
@@ -98,9 +93,12 @@ export function MapPage() {
       return true;
     }
   });
-  const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number } | null>(null);
+  const [flyTarget, setFlyTarget] = useState<{
+    lat: number;
+    lng: number;
+    zoom?: number;
+  } | null>(null);
   const [fitBoundsTick, setFitBoundsTick] = useState(0);
-  const [regionFitTick, setRegionFitTick] = useState(0);
   const [locatePending, setLocatePending] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   /** 每次開啟「新增」表單遞增，強制 ReportSheet 重掛載以免殘留編輯資料 */
@@ -132,50 +130,33 @@ export function MapPage() {
   }, [geo.position, bbox]);
   const offlineTiles = useOfflineMapTiles(tileCenter);
 
-  const activeRegion = useMemo(
-    () => offlineTiles.regions.find((r) => r.id === activeRegionId) ?? null,
-    [offlineTiles.regions, activeRegionId],
-  );
-
-  const regionToBounds = useCallback((r: MapRegionMeta) => {
-    const box = bboxForDisk(r.center, r.radiusKm);
-    return L.latLngBounds(
-      L.latLng(box.south, box.west),
-      L.latLng(box.north, box.east),
-    );
-  }, []);
-
-  /** 僅在真正離線且已選區域時限制 z14–17；連線時不鎖縮放 */
-  const offlineZoomLimits = useMemo(() => {
-    if (online || !activeRegionId) return null;
-    return { minZoom: PREFETCH_ZOOM_MIN, maxZoom: PREFETCH_ZOOM_MAX };
-  }, [online, activeRegionId]);
-
   const downloadPreview = useMemo(() => {
     if (!online || !tileCenter) return null;
     return { center: tileCenter, radiusKm: DEFAULT_RADIUS_KM };
   }, [online, tileCenter]);
 
-  const switchToOnlineMode = useCallback(() => {
-    setActiveRegionId(null);
-    setRegionFitTick(0);
-    dismissRestoredBanner();
-    reloadWindow();
-    setRefreshKey((k) => k + 1);
-  }, [dismissRestoredBanner, reloadWindow]);
-
-  const goToRegion = useCallback(
-    (r: MapRegionMeta) => {
-      setActiveRegionId(r.id);
-      setFlyTarget({ lat: r.center.lat, lng: r.center.lng });
-      if (!online) setRegionFitTick((n) => n + 1);
-    },
-    [online],
-  );
-
-  useEffect(() => {
-    if (online) setActiveRegionId(null);
+  const goToRegion = useCallback((r: MapRegionMeta) => {
+    setActiveRegionId(r.id);
+    setFlyTarget({
+      lat: r.center.lat,
+      lng: r.center.lng,
+      zoom: !online ? PREFETCH_ZOOM_MAX : undefined,
+    });
   }, [online]);
+
+  /** 恢復連線時自動切回連線地圖（不重複顯示橫幅） */
+  useEffect(() => {
+    if (!online) {
+      wasOfflineRef.current = true;
+      return;
+    }
+    setActiveRegionId(null);
+    if (wasOfflineRef.current) {
+      wasOfflineRef.current = false;
+      reloadWindow();
+      setRefreshKey((k) => k + 1);
+    }
+  }, [online, reloadWindow]);
 
   useEffect(() => {
     if (online || offlineTiles.regions.length === 0 || activeRegionId) return;
@@ -567,15 +548,13 @@ export function MapPage() {
         reportPin={mapMode === 'new' ? placement.pin : null}
         onMapPlace={onMapPlace}
         onReportPinMove={onReportPinMove}
-        offlineZoomLimits={offlineZoomLimits}
+        offlineZoomLimits={null}
         savedRegions={offlineTiles.regions}
         activeSavedRegionId={activeRegionId}
         onSavedRegionSelect={(id) => {
           const r = offlineTiles.regions.find((x) => x.id === id);
           if (r) goToRegion(r);
         }}
-        regionFitBounds={!online && activeRegion ? regionToBounds(activeRegion) : null}
-        regionFitTick={regionFitTick}
         downloadPreview={downloadPreview}
       />
 
@@ -583,18 +562,6 @@ export function MapPage() {
         <p className="map-unspecified-banner" role="status">
           {t('map.unspecified.hint')}
         </p>
-      )}
-
-      {showRestoredBanner && (
-        <div className="map-online-restored-banner" role="status">
-          <p>{t('map.offline.onlineRestored')}</p>
-          <button type="button" className="small primary" onClick={switchToOnlineMode}>
-            {t('map.offline.switchToOnline')}
-          </button>
-          <button type="button" className="small" onClick={dismissRestoredBanner}>
-            {t('map.offline.onlineRestoredDismiss')}
-          </button>
-        </div>
       )}
 
       {offlineReportMode && (
@@ -654,7 +621,10 @@ export function MapPage() {
       {online && (
         <div className="map-offline-download-panel">
           <p className="map-offline-download-title">
-            {t('map.offline.downloadTitle', { km: DEFAULT_RADIUS_KM })}
+            {t('map.offline.downloadTitle', {
+              km: DEFAULT_RADIUS_KM,
+              side: DEFAULT_RADIUS_KM * 2,
+            })}
           </p>
           {tileCenter && (
             <p className="map-offline-download-meta">

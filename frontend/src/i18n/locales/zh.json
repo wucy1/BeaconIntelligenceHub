@@ -147,7 +147,7 @@
   "map.unspecified.hint": "未指定事件：可先于任意地点回报；管理员划定范围与时间窗后，显示方式将再调整。",
   "map.offline.reportMode": "离线回报模式：新回报将在恢复连线后自动同步。",
   "map.offline.downloadHint": "当前区域尚未完整下载，离线平移仍可能灰屏。建议先连线下载周边地图。",
-  "map.offline.downloadTitle": "离线地图（周边 {{km}} 公里）",
+  "map.offline.downloadTitle": "离线地图（半径 {{km}} km，方框约 {{side}}×{{side}} km）",
   "map.offline.downloadCoverage": "覆盖率 {{pct}}%（{{cached}} / {{total}} 瓦片）",
   "map.offline.downloadCoverageUnknown": "尚未检查覆盖率（请先定位）",
   "map.offline.downloadAction": "下载周边地图",
@@ -208,7 +208,7 @@
   "map.offline.goToRegion": "前往 {{lat}}, {{lng}}（{{km}} km）",
   "map.offline.useSavedTitle": "离线地图模式",
   "map.offline.useSavedBody": "请点选下方区域或地图上的圆框，载入该处已下载地图后再回报。",
-  "map.offline.zoomRangeHint": "可放大至 z17 精准标点；缩小下限为 z14（与下载范围一致）。",
+  "map.offline.zoomRangeHint": "选定区域后会以 z17 显示；可自由缩放，超出已下载瓦片可能局部灰屏。",
   "map.offline.useSavedHint": "已检测离线：请选择已下载区域（地图圆框）开始作业。",
   "map.offline.onlineRestored": "连线已恢复稳定，建议切回连线地图模式以取得最新资料。",
   "map.offline.onlineRestoredDismiss": "知道了"
