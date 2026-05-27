@@ -46,6 +46,20 @@ In R2 bucket **Settings → CORS**, allow your Pages origin:
 
 ## Cloudflare（前端）
 
+### Workers 與 Pages 怎麼分？（介面容易混）
+
+Cloudflare 現在把兩者都放在 **Workers & Pages** 底下，但流程不同：
+
+| | **Workers Builds**（你目前在用的） | **Pages（傳統靜態站）** |
+|---|-----------------------------------|-------------------------|
+| 怎麼建立 | Worker → **Builds** → Connect Git；或 Connect 時出現 **Deploy command（必填）** | **Create application → Pages** → Connect to Git |
+| 建置後 | `npx wrangler deploy` 依 `wrangler.toml` 上傳 `dist` | 自動發佈 **Build output directory**（`dist`），**沒有** Deploy command |
+| 設定檔 | `frontend/wrangler.toml`（`name = "beacon"`） | 通常不需 wrangler |
+| 網址樣式 | `beacon.<帳號>.workers.dev` 或自訂網域 | `*.pages.dev` |
+| BIH 建議 | **已採用**（repo 已含 wrangler） | 亦可，但不必兩套同時建 |
+
+路徑記法：**同一個 repo、Root = `frontend/`**；差別只在 Cloudflare 用 Worker 還是 Pages 專案去接 Git。
+
 ### 方式 A：Workers Builds（你目前畫面：必填 Deploy command）
 
 Cloudflare「Connect to a repository」若出現 **Deploy command（Required）**，代表走的是 **Workers Builds**，不是傳統 Pages。本 repo 已在 `frontend/wrangler.toml` 設定靜態資產目錄為 `dist`（含 SPA 路由）。
@@ -61,7 +75,7 @@ Cloudflare「Connect to a repository」若出現 **Deploy command（Required）*
 
 | 變數 | 說明 |
 |------|------|
-| `NODE_VERSION` | `20` |
+| `NODE_VERSION` | **`22`**（Wrangler 4 需 Node ≥22；見 `frontend/.nvmrc`） |
 | `VITE_API_BASE` | API 上線後再填；未部署前可留空 |
 
 首次 Connect 前請確認 GitHub `main` 已包含 `frontend/wrangler.toml`（否則 deploy 找不到設定）。
@@ -94,7 +108,7 @@ Cloudflare「Connect to a repository」若出現 **Deploy command（Required）*
 | Root directory | `frontend` |
 | Build command | `npm ci && npm run build` |
 | Build output directory | `dist` |
-| Node version | `20`（Pages 環境變數 `NODE_VERSION=20`，或 repo 根／`frontend` 的 `.nvmrc`） |
+| Node version | **`22`**（Build variable `NODE_VERSION=22`，或 `frontend/.nvmrc`） |
 
 4. **Pages 環境變數（Production）**
 

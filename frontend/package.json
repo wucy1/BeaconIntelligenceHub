@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "author": "BIH Team <info@crointel.com>",
   "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
