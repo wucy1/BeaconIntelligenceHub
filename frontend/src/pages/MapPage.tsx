@@ -614,19 +614,13 @@ export function MapPage() {
   const connectionLampClass = online
     ? 'map-connection-lamp online'
     : 'map-connection-lamp offline';
-  const queueStatusLabel = useCallback(
-    (status: PendingReportSummary['status']) =>
-      t(`map.offline.queueStatus.${status}` as const),
-    [t],
-  );
+  const queueStatusLabel = (status: PendingReportSummary['status']) =>
+    t(`map.offline.queueStatus.${status}` as const);
 
-  const toggleTopPanel = useCallback(
-    (panel: Exclude<TopPanelKey, null>) => {
-      if (panel === 'contribution' && !contributionVisible) return;
-      setActiveTopPanel((prev) => (prev === panel ? null : panel));
-    },
-    [contributionVisible],
-  );
+  const toggleTopPanel = (panel: Exclude<TopPanelKey, null>) => {
+    if (panel === 'contribution' && !contributionVisible) return;
+    setActiveTopPanel((prev) => (prev === panel ? null : panel));
+  };
 
   return (
     <div className="map-page">
