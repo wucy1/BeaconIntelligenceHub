@@ -151,11 +151,6 @@ export function MapPage() {
   }, [geo.position, bbox]);
   const offlineTiles = useOfflineMapTiles(tileCenter);
 
-  const downloadPreview = useMemo(() => {
-    if (!online || !tileCenter) return null;
-    return { center: tileCenter, radiusKm: DEFAULT_RADIUS_KM };
-  }, [online, tileCenter]);
-
   const goToRegion = useCallback((r: MapRegionMeta) => {
     setActiveRegionId(r.id);
     setFlyTarget({
@@ -652,11 +647,19 @@ export function MapPage() {
           const r = offlineTiles.regions.find((x) => x.id === id);
           if (r) goToRegion(r);
         }}
-        downloadPreview={downloadPreview}
+        downloadPreview={null}
       />
 
       {activeTopPanel && (
         <section className="map-overlay-panel-host">
+          <button
+            type="button"
+            className="map-overlay-panel-close"
+            onClick={() => setActiveTopPanel(null)}
+            aria-label={t('common.cancel')}
+          >
+            ×
+          </button>
           {activeTopPanel === 'contribution' && (
             <ContributionStrip
               crisisId={crisisId}
@@ -844,18 +847,23 @@ export function MapPage() {
       )}
 
       <div className="map-overlay-top">
-        <span className="map-window-title">
-          {windowTitle}
-          {unspecifiedPhase && (
-            <small className="map-window-subtitle">{t('map.unspecified.hint')}</small>
-          )}
-        </span>
-        <span className={connectionLampClass} aria-label={online ? t('status.online') : t('status.offline')}>
-          <span className="map-connection-lamp-dot" />
-          <span className="map-connection-lamp-text">
-            {online ? t('status.online') : t('status.offline')}
+        <div className="map-title-wrap">
+          <span className="map-window-title">
+            {windowTitle}
+            {unspecifiedPhase && (
+              <small className="map-window-subtitle">{t('map.unspecified.hint')}</small>
+            )}
           </span>
-        </span>
+          <span
+            className={connectionLampClass}
+            aria-label={online ? t('status.online') : t('status.offline')}
+          >
+            <span className="map-connection-lamp-dot" />
+            <span className="map-connection-lamp-text">
+              {online ? t('status.online') : t('status.offline')}
+            </span>
+          </span>
+        </div>
         <div className="map-overlay-right">
           <LanguageSwitcher />
           <div className="map-overlay-controls">
@@ -900,7 +908,7 @@ export function MapPage() {
 
       <MapModeToggle mode={mapMode} onChange={onModeChange} />
 
-      {activeTopPanel === 'offline' && <div className="map-fixed-center-box" aria-hidden="true" />}
+      <div className="map-fixed-center-box" aria-hidden="true" />
 
       {mapMode === 'new' && <NewReportBanner onCancel={cancelNewReport} />}
 

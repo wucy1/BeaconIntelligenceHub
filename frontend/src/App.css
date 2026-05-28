@@ -188,7 +188,7 @@ select {
   right: 0.5rem;
   z-index: 500;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: 0.5rem;
   pointer-events: none;
@@ -203,9 +203,16 @@ select {
   flex-direction: column;
   align-items: flex-end;
   gap: 0.35rem;
-  max-width: min(18rem, 48vw);
+  max-width: min(12rem, 36vw);
   flex-shrink: 0;
-  width: min(18rem, 48vw);
+  width: min(12rem, 36vw);
+}
+
+.map-title-wrap {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  min-width: 0;
 }
 
 .map-overlay-right .lang-switcher {
@@ -236,9 +243,9 @@ select {
 }
 
 .map-connection-lamp {
-  align-self: stretch;
+  align-self: flex-start;
   pointer-events: auto;
-  min-height: 2.15rem;
+  min-height: 1.9rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -247,7 +254,7 @@ select {
   border-radius: 8px;
   border: 1px solid #e2e8f0;
   padding: 0.3rem 0.55rem;
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
 }
 
@@ -269,10 +276,11 @@ select {
 }
 
 .map-overlay-controls {
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.35rem;
+  width: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
 }
 
 .map-overlay-tab {
@@ -280,10 +288,11 @@ select {
   background: rgba(255, 255, 255, 0.95);
   color: #334155;
   border-radius: 8px;
-  padding: 0.3rem 0.4rem;
-  font-size: 0.72rem;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.64rem;
   font-weight: 600;
   line-height: 1.2;
+  min-width: 5.6rem;
 }
 
 .map-overlay-tab.active {
@@ -298,7 +307,7 @@ select {
 
 .map-overlay-panel-host {
   position: absolute;
-  top: 3.2rem;
+  top: 3.35rem;
   left: 0.5rem;
   z-index: 610;
   width: min(20rem, calc(100% - 1rem));
@@ -307,6 +316,22 @@ select {
 
 .map-overlay-panel-host > * {
   pointer-events: auto;
+}
+
+.map-overlay-panel-close {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  z-index: 2;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #64748b;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0;
 }
 
 .new-report-banner {
@@ -1554,15 +1579,16 @@ button.danger {
   .map-overlay-right {
     grid-column: 2;
     grid-row: 1;
-    width: min(12.5rem, 56vw);
-    max-width: min(12.5rem, 56vw);
-    min-width: min(12.5rem, 56vw);
+    width: min(7rem, 40vw);
+    max-width: min(7rem, 40vw);
+    min-width: min(7rem, 40vw);
     gap: 0.25rem;
     align-items: stretch;
   }
 
-  .map-connection-lamp {
-    display: none;
+  .map-title-wrap {
+    align-items: center;
+    gap: 0.25rem;
   }
 
   .map-overlay-right .lang-switcher {
@@ -1590,7 +1616,14 @@ button.danger {
   }
 
   .map-overlay-controls {
-    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .map-overlay-tab {
+    min-width: 0;
+    width: 100%;
+    font-size: 0.6rem;
+    padding: 0.18rem 0.3rem;
   }
 
   .map-overlay-panel-host {
@@ -1618,7 +1651,7 @@ button.danger {
   }
 
   .map-fixed-center-box {
-    width: min(56vw, 160px);
+    width: min(50vw, 150px);
   }
 }
 
@@ -1628,6 +1661,13 @@ button.danger {
 
 .map-legend-embedded {
   position: static;
+}
+
+.map-legend.map-legend-embedded .map-legend-body {
+  display: block;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 
 @media (min-width: 641px) {
@@ -1661,4 +1701,11 @@ button.danger {
     padding-top: 0;
     border-top: none;
   }
+}
+
+.contribution-strip.contribution-strip-embedded .contribution-strip-body {
+  display: block;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
