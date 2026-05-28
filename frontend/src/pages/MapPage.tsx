@@ -155,13 +155,13 @@ export function MapPage() {
   const offlineTiles = useOfflineMapTiles(tileCenter);
 
   const downloadTargetPreview = useMemo(() => {
-    if (activeTopPanel !== 'offline' || !tileCenter) return null;
+    if (!tileCenter) return null;
     return {
       center: tileCenter,
       sideKm: DEFAULT_BOX_SIDE_KM,
       variant: 'target' as const,
     };
-  }, [activeTopPanel, tileCenter]);
+  }, [tileCenter]);
 
   const goToRegion = useCallback((r: MapRegionMeta) => {
     setActiveRegionId(r.id);

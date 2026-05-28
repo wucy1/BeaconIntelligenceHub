@@ -310,7 +310,7 @@ select {
   top: 3.35rem;
   left: 0.5rem;
   z-index: 610;
-  width: min(20rem, calc(100% - 1rem));
+  width: min(18rem, calc(100% - 1rem));
   pointer-events: none;
 }
 
@@ -1615,7 +1615,8 @@ button.danger {
 
   .map-overlay-panel-host {
     top: 2.9rem;
-    width: min(18.5rem, calc(100% - 1rem));
+    width: min(17rem, calc(100% - 8rem));
+    max-width: calc(100% - 8rem);
   }
 
   .map-overlay-panel-host .map-legend,
