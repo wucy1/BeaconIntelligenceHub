@@ -18,9 +18,10 @@ type Props = {
   buildingCount: number;
   markerCount: number;
   mode: string;
+  embedded?: boolean;
 };
 
-export function MapLegend({ buildingCount, markerCount, mode }: Props) {
+export function MapLegend({ buildingCount, markerCount, mode, embedded = false }: Props) {
   const { t } = useI18n();
   const preferCollapsed = usePreferCollapsedChrome();
   const detailsRef = useRef<HTMLDetailsElement>(null);
@@ -30,6 +31,43 @@ export function MapLegend({ buildingCount, markerCount, mode }: Props) {
       detailsRef.current.open = !preferCollapsed;
     }
   }, [preferCollapsed]);
+
+  if (embedded) {
+    return (
+      <div className="map-legend map-legend-embedded">
+        <div className="map-legend-body">
+          <div className="map-legend-row map-legend-title-row">
+            <strong>{t('map.legend.title')}</strong>
+          </div>
+          <div className="map-legend-row">
+            <span className="map-legend-swatch building" />
+            <span>{t('map.legend.buildings', { count: buildingCount })}</span>
+          </div>
+          {buildingCount > 0 && (
+            <p className="map-legend-footnote muted">{t('map.legend.footprintNote')}</p>
+          )}
+          {mode !== 'new' && (
+            <div className="map-legend-row">
+              <span>{t('map.legend.reports', { count: markerCount })}</span>
+            </div>
+          )}
+          {DAMAGE_ITEMS.map((item) => (
+            <div key={item.key} className="map-legend-row">
+              <span className="map-legend-swatch" style={{ background: item.color }} />
+              <span>{t(item.key)}</span>
+            </div>
+          ))}
+          {STATUS_ITEMS.map((item) => (
+            <div key={item.key} className="map-legend-row">
+              <span className="map-legend-swatch" style={{ background: item.color }} />
+              <span>{t(item.key)}</span>
+            </div>
+          ))}
+          <p className="map-legend-footnote muted">{t('map.legend.clusterNote')}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <details ref={detailsRef} className="map-legend map-chrome-collapsible">

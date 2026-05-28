@@ -27,11 +27,9 @@ export function OfflineRegionLayers({ regions, activeRegionId, onSelect }: Props
             key={r.id}
             bounds={boundsForRegion(r)}
             pathOptions={{
-              color: active ? '#2563eb' : '#64748b',
-              weight: active ? 3 : 2,
-              dashArray: active ? undefined : '6 4',
-              fillColor: active ? '#3b82f6' : '#94a3b8',
-              fillOpacity: active ? 0.2 : 0.1,
+              stroke: false,
+              fillColor: active ? '#2563eb' : '#3b82f6',
+              fillOpacity: active ? 0.28 : 0.18,
             }}
             eventHandlers={{
               click: () => onSelect?.(r.id),

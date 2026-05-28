@@ -2,7 +2,8 @@ export type LatLng = { lat: number; lng: number };
 
 export type TileCoord = { z: number; x: number; y: number };
 
-export const DEFAULT_RADIUS_KM = 2;
+export const DEFAULT_BOX_SIDE_KM = 3;
+export const DEFAULT_RADIUS_KM = DEFAULT_BOX_SIDE_KM / 2;
 export const PREFETCH_ZOOM_MIN = 14;
 export const PREFETCH_ZOOM_MAX = 17;
 export const TILE_CACHE_SCHEMA = 'v1';

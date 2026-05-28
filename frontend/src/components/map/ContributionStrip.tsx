@@ -15,9 +15,15 @@ type Props = {
   crisisId: string;
   visible: boolean;
   refreshKey?: number;
+  embedded?: boolean;
 };
 
-export function ContributionStrip({ crisisId, visible, refreshKey = 0 }: Props) {
+export function ContributionStrip({
+  crisisId,
+  visible,
+  refreshKey = 0,
+  embedded = false,
+}: Props) {
   const { t } = useI18n();
   const preferCollapsed = usePreferCollapsedChrome();
   const [stats, setStats] = useState<Contribution | null>(null);
@@ -48,6 +54,27 @@ export function ContributionStrip({ crisisId, visible, refreshKey = 0 }: Props) 
           places: stats.distinct_locations,
         })
       : t('contribution.summaryCollapsed');
+
+  if (embedded) {
+    return (
+      <div className="contribution-strip contribution-strip-embedded" aria-live="polite">
+        <div className="contribution-strip-body">
+          <p className="contribution-strip-mission">{t('contribution.mission')}</p>
+          {stats && stats.report_count > 0 ? (
+            <p className="contribution-strip-stats">
+              {t('contribution.stats', {
+                count: stats.report_count,
+                places: stats.distinct_locations,
+              })}
+            </p>
+          ) : (
+            <p className="contribution-strip-stats muted">{t('contribution.empty')}</p>
+          )}
+          <p className="contribution-strip-note muted">{t('contribution.noLeaderboard')}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <details ref={detailsRef} className="contribution-strip map-chrome-collapsible" aria-live="polite">

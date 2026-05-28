@@ -21,7 +21,7 @@ import { useOfflineMapTiles } from '../hooks/useOfflineMapTiles';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import type { MapRegionMeta } from '../offline/tileCache';
 import { useI18n } from '../i18n/I18nContext';
-import { DEFAULT_RADIUS_KM, PREFETCH_ZOOM_MAX } from '../offline/tileMath';
+import { DEFAULT_BOX_SIDE_KM, DEFAULT_RADIUS_KM, PREFETCH_ZOOM_MAX } from '../offline/tileMath';
 import {
   buildingFeatureById,
   centroidOfFeature,
@@ -38,6 +38,8 @@ type Placement = {
   buildingName: string | null;
   pin: { lat: number; lng: number } | null;
 };
+
+type TopPanelKey = 'contribution' | 'offline' | 'legend' | null;
 
 function emptyPlacement(): Placement {
   return { buildingId: null, buildingName: null, pin: null };
@@ -107,6 +109,7 @@ export function MapPage() {
   /** 首次取得 GPS 後自動飛一次（同意定位或 ◎），避免一直停在台北示範預設中心 */
   const autoFlewToUserRef = useRef(false);
   const [activeRegionId, setActiveRegionId] = useState<string | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<TopPanelKey>(null);
 
   bboxRef.current = bbox;
 
@@ -522,8 +525,19 @@ export function MapPage() {
     );
   }
 
-  const offlineReportMode = !online;
   const unspecifiedPhase = activeWindow.reporting_phase !== 'defined';
+  const contributionVisible = online && mapMode !== 'new' && Boolean(crisisId);
+  const connectionLampClass = online
+    ? 'map-connection-lamp online'
+    : 'map-connection-lamp offline';
+
+  const toggleTopPanel = useCallback(
+    (panel: Exclude<TopPanelKey, null>) => {
+      if (panel === 'contribution' && !contributionVisible) return;
+      setActiveTopPanel((prev) => (prev === panel ? null : panel));
+    },
+    [contributionVisible],
+  );
 
   return (
     <div className="map-page">
@@ -558,164 +572,160 @@ export function MapPage() {
         downloadPreview={downloadPreview}
       />
 
-      {unspecifiedPhase && (
-        <p className="map-unspecified-banner" role="status">
-          {t('map.unspecified.hint')}
-        </p>
-      )}
-
-      {offlineReportMode && (
-        <p className="map-offline-report-banner" role="status">
-          {t('map.offline.reportMode')}
-          {!online && offlineTiles.regions.length === 0 && (
-            <>
-              <br />
-              <span className="map-offline-report-banner-sub">
-                {t('map.offline.downloadHint')}
-              </span>
-            </>
+      {activeTopPanel && (
+        <section className="map-overlay-panel-host">
+          {activeTopPanel === 'contribution' && (
+            <ContributionStrip
+              crisisId={crisisId}
+              visible={contributionVisible}
+              refreshKey={refreshKey}
+              embedded
+            />
           )}
-          {!online && offlineTiles.regions.length > 0 && (
-            <>
-              <br />
-              <span className="map-offline-report-banner-sub">
-                {t('map.offline.useSavedHint')}
-              </span>
-            </>
-          )}
-        </p>
-      )}
-
-      {!online && offlineTiles.regions.length > 0 && (
-        <div className="map-offline-download-panel map-offline-use-panel">
-          <p className="map-offline-download-title">{t('map.offline.useSavedTitle')}</p>
-          <p className="map-offline-download-meta">{t('map.offline.useSavedBody')}</p>
-          <p className="map-offline-download-meta">{t('map.offline.zoomRangeHint')}</p>
-          <p className="map-offline-download-meta map-offline-legend-hint">
-            {t('map.offline.regionBoxHint')}
-          </p>
-          <ul className="map-offline-region-list">
-            {offlineTiles.regions.map((r) => (
-              <li key={r.id}>
-                <button
-                  type="button"
-                  className={
-                    r.id === activeRegionId
-                      ? 'map-offline-region-btn active'
-                      : 'map-offline-region-btn'
-                  }
-                  onClick={() => goToRegion(r)}
-                >
-                  {t('map.offline.goToRegion', {
-                    lat: fmtCoord(r.center.lat),
-                    lng: fmtCoord(r.center.lng),
-                    km: r.radiusKm,
-                  })}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {online && (
-        <div className="map-offline-download-panel">
-          <p className="map-offline-download-title">
-            {t('map.offline.downloadTitle', {
-              km: DEFAULT_RADIUS_KM,
-              side: DEFAULT_RADIUS_KM * 2,
-            })}
-          </p>
-          {tileCenter && (
-            <p className="map-offline-download-meta">
-              {t('map.offline.downloadCenter', {
-                lat: fmtCoord(tileCenter.lat),
-                lng: fmtCoord(tileCenter.lng),
-              })}
-            </p>
-          )}
-          <p className="map-offline-download-meta map-offline-legend-hint">
-            {t('map.offline.previewBoxHint')}
-          </p>
-          <p className="map-offline-download-meta">
-            {offlineTiles.coverage
-              ? t('map.offline.downloadCoverage', {
-                  pct: Math.round(offlineTiles.coverage.ratio * 100),
-                  cached: offlineTiles.coverage.cached,
-                  total: offlineTiles.coverage.total,
-                })
-              : t('map.offline.downloadCoverageUnknown')}
-          </p>
-          <div className="map-offline-download-actions">
-            <button
-              type="button"
-              className="small primary"
-              onClick={onDownloadOfflineArea}
-              disabled={offlineTiles.downloading || offlineTiles.checking}
-            >
-              {offlineTiles.downloading
-                ? t('map.offline.downloading')
-                : t('map.offline.downloadAction')}
-            </button>
-            {offlineTiles.downloading && (
-              <button type="button" className="small" onClick={offlineTiles.cancel}>
-                {t('common.cancel')}
-              </button>
-            )}
-          </div>
-          {offlineTiles.downloading && offlineTiles.progress && (
-            <p className="map-offline-download-meta">
-              {t('map.offline.downloadProgress', {
-                done: offlineTiles.progress.done,
-                total: offlineTiles.progress.total,
-                failed: offlineTiles.progress.failed,
-              })}
-            </p>
-          )}
-          <p className="map-offline-download-meta">
-            {t('map.offline.storageSummary', { count: offlineTiles.cachedTileCount })}
-          </p>
-          {offlineTiles.regions.length > 0 && (
-            <details className="map-offline-download-regions" open>
-              <summary>{t('map.offline.savedRegions', { count: offlineTiles.regions.length })}</summary>
-              <p className="map-offline-download-meta map-offline-legend-hint">
-                {t('map.offline.regionBoxHint')}
+          {activeTopPanel === 'offline' && (
+            <div className="map-offline-download-panel">
+              <p className="map-offline-download-title">
+                {t('map.offline.downloadTitle', {
+                  km: DEFAULT_RADIUS_KM,
+                  side: DEFAULT_BOX_SIDE_KM,
+                })}
               </p>
-              <ul className="map-offline-region-list">
-                {offlineTiles.regions.map((r) => (
-                  <li key={r.id}>
-                    <button
-                      type="button"
-                      className={
-                        r.id === activeRegionId
-                          ? 'map-offline-region-btn active'
-                          : 'map-offline-region-btn'
-                      }
-                      onClick={() => goToRegion(r)}
-                    >
-                      {t('map.offline.goToRegion', {
-                        lat: fmtCoord(r.center.lat),
-                        lng: fmtCoord(r.center.lng),
-                        km: r.radiusKm,
-                      })}
+              {!online && (
+                <p className="map-offline-download-meta">
+                  {t('map.offline.reportMode')}
+                </p>
+              )}
+              {tileCenter && (
+                <p className="map-offline-download-meta">
+                  {t('map.offline.downloadCenter', {
+                    lat: fmtCoord(tileCenter.lat),
+                    lng: fmtCoord(tileCenter.lng),
+                  })}
+                </p>
+              )}
+              <p className="map-offline-download-meta map-offline-legend-hint">
+                {t('map.offline.previewBoxHint')}
+              </p>
+              <p className="map-offline-download-meta">
+                {offlineTiles.coverage
+                  ? t('map.offline.downloadCoverage', {
+                      pct: Math.round(offlineTiles.coverage.ratio * 100),
+                      cached: offlineTiles.coverage.cached,
+                      total: offlineTiles.coverage.total,
+                    })
+                  : t('map.offline.downloadCoverageUnknown')}
+              </p>
+              {online && (
+                <div className="map-offline-download-actions">
+                  <button
+                    type="button"
+                    className="small primary"
+                    onClick={onDownloadOfflineArea}
+                    disabled={offlineTiles.downloading || offlineTiles.checking}
+                  >
+                    {offlineTiles.downloading
+                      ? t('map.offline.downloading')
+                      : t('map.offline.downloadAction')}
+                  </button>
+                  {offlineTiles.downloading && (
+                    <button type="button" className="small" onClick={offlineTiles.cancel}>
+                      {t('common.cancel')}
                     </button>
-                  </li>
-                ))}
-              </ul>
-            </details>
+                  )}
+                </div>
+              )}
+              {offlineTiles.downloading && offlineTiles.progress && (
+                <p className="map-offline-download-meta">
+                  {t('map.offline.downloadProgress', {
+                    done: offlineTiles.progress.done,
+                    total: offlineTiles.progress.total,
+                    failed: offlineTiles.progress.failed,
+                  })}
+                </p>
+              )}
+              <p className="map-offline-download-meta">
+                {t('map.offline.storageSummary', { count: offlineTiles.cachedTileCount })}
+              </p>
+              {offlineTiles.regions.length > 0 && (
+                <>
+                  <p className="map-offline-download-meta">
+                    {t('map.offline.savedRegions', { count: offlineTiles.regions.length })}
+                  </p>
+                  <ul className="map-offline-region-list">
+                    {offlineTiles.regions.map((r) => (
+                      <li key={r.id}>
+                        <button
+                          type="button"
+                          className={
+                            r.id === activeRegionId
+                              ? 'map-offline-region-btn active'
+                              : 'map-offline-region-btn'
+                          }
+                          onClick={() => goToRegion(r)}
+                        >
+                          {t('map.offline.goToRegion', {
+                            lat: fmtCoord(r.center.lat),
+                            lng: fmtCoord(r.center.lng),
+                            side: Number((r.radiusKm * 2).toFixed(1)),
+                          })}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
           )}
-        </div>
+          {activeTopPanel === 'legend' && (
+            <MapLegend
+              buildingCount={buildings.features.length}
+              markerCount={markers.length}
+              mode={mapMode}
+              embedded
+            />
+          )}
+        </section>
       )}
 
       <div className="map-overlay-top">
-        <span className="map-window-title">{windowTitle}</span>
+        <span className="map-window-title">
+          {windowTitle}
+          {unspecifiedPhase && (
+            <small className="map-window-subtitle">{t('map.unspecified.hint')}</small>
+          )}
+        </span>
+        <span className={connectionLampClass} aria-label={online ? t('status.online') : t('status.offline')}>
+          <span className="map-connection-lamp-dot" />
+          <span className="map-connection-lamp-text">
+            {online ? t('status.online') : t('status.offline')}
+          </span>
+        </span>
         <div className="map-overlay-right">
           <LanguageSwitcher />
-          <ContributionStrip
-            crisisId={crisisId}
-            visible={online && mapMode !== 'new' && Boolean(crisisId)}
-            refreshKey={refreshKey}
-          />
+          <div className="map-overlay-controls">
+            <button
+              type="button"
+              className={activeTopPanel === 'contribution' ? 'map-overlay-tab active' : 'map-overlay-tab'}
+              onClick={() => toggleTopPanel('contribution')}
+              disabled={!contributionVisible}
+            >
+              {t('contribution.summaryCollapsed')}
+            </button>
+            <button
+              type="button"
+              className={activeTopPanel === 'offline' ? 'map-overlay-tab active' : 'map-overlay-tab'}
+              onClick={() => toggleTopPanel('offline')}
+            >
+              {t('map.overlay.offlinePanel')}
+            </button>
+            <button
+              type="button"
+              className={activeTopPanel === 'legend' ? 'map-overlay-tab active' : 'map-overlay-tab'}
+              onClick={() => toggleTopPanel('legend')}
+            >
+              {t('map.legend.title')}
+            </button>
+          </div>
           <nav className="map-dev-links">
             <a href="/dev">{t('nav.home')}</a>
             <a href="/dashboard">{t('nav.dashboard')}</a>
@@ -732,13 +742,9 @@ export function MapPage() {
         </div>
       )}
 
-      <MapLegend
-        buildingCount={buildings.features.length}
-        markerCount={markers.length}
-        mode={mapMode}
-      />
-
       <MapModeToggle mode={mapMode} onChange={onModeChange} />
+
+      {activeTopPanel === 'offline' && <div className="map-fixed-center-box" aria-hidden="true" />}
 
       {mapMode === 'new' && <NewReportBanner onCancel={cancelNewReport} />}
 
