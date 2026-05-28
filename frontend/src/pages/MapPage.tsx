@@ -11,7 +11,6 @@ import { LocationPrompt } from '../components/map/LocationPrompt';
 import { MapLegend } from '../components/map/MapLegend';
 import { MapModeToggle, type MapMode } from '../components/map/MapModeToggle';
 import { ContributionStrip } from '../components/map/ContributionStrip';
-import { NewReportBanner } from '../components/map/NewReportBanner';
 import { PlacementBar } from '../components/map/PlacementBar';
 import { ReportSheet } from '../components/map/ReportSheet';
 import { OfflineBanner } from '../components/OfflineBanner';
@@ -82,6 +81,7 @@ export function MapPage() {
 
   const [mapMode, setMapMode] = useState<MapMode>('all');
   const [bbox, setBbox] = useState<string | null>(null);
+  const [viewCenter, setViewCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [buildings, setBuildings] = useState<GeoJSON.FeatureCollection>({
     type: 'FeatureCollection',
     features: [],
@@ -146,12 +146,12 @@ export function MapPage() {
     return DEFAULT_CENTER;
   }, [geo.position]);
   const tileCenter = useMemo(() => {
-    // 下載方框以「目前地圖視野中心」為主，才能在桌機/手機都一致反映平移與縮放操作。
+    if (viewCenter) return viewCenter;
     const fromView = centerFromBbox(bbox);
     if (fromView) return fromView;
     if (geo.position) return { lat: geo.position.lat, lng: geo.position.lng };
     return { lat: mapCenter[0], lng: mapCenter[1] };
-  }, [bbox, geo.position, mapCenter]);
+  }, [viewCenter, bbox, geo.position, mapCenter]);
   const offlineTiles = useOfflineMapTiles(tileCenter);
 
   const downloadTargetPreview = useMemo(() => {
@@ -654,6 +654,7 @@ export function MapPage() {
         onMarkerViewDetails={onMarkerViewDetails}
         markerPopupLabels={markerPopupLabels}
         onBboxChange={setBbox}
+        onViewCenterChange={setViewCenter}
         flyTo={flyTarget}
         initialCenter={mapCenter}
         initialZoom={DEFAULT_ZOOM}
@@ -932,7 +933,11 @@ export function MapPage() {
 
       <MapModeToggle mode={mapMode} onChange={onModeChange} />
 
-      {mapMode === 'new' && <NewReportBanner onCancel={cancelNewReport} />}
+      {mapMode === 'new' && (
+        <button type="button" className="map-new-cancel-btn" onClick={cancelNewReport}>
+          {t('map.newFlow.cancel')}
+        </button>
+      )}
 
       {mapMode === 'new' && !hasPlacement && !sheetOpen && (
         <p className="map-hint map-hint-new-flow">{t('map.hint.newPlaceFirst')}</p>

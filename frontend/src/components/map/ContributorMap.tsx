@@ -54,6 +54,7 @@ type Props = {
     siteDemolished: string;
   };
   onBboxChange: (bbox: string) => void;
+  onViewCenterChange?: (center: { lat: number; lng: number }) => void;
   flyTo?: MapFlyTarget | null;
   initialCenter: [number, number];
   initialZoom: number;
@@ -123,6 +124,31 @@ function BboxWatcher({ onBboxChange }: { onBboxChange: (bbox: string) => void })
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
+  }, [map]);
+
+  return null;
+}
+
+function CenterWatcher({
+  onViewCenterChange,
+}: {
+  onViewCenterChange?: (center: { lat: number; lng: number }) => void;
+}) {
+  const map = useMap();
+
+  const emit = () => {
+    if (!onViewCenterChange) return;
+    const c = map.getCenter();
+    onViewCenterChange({ lat: c.lat, lng: c.lng });
+  };
+
+  useMapEvents({
+    move: emit,
+    zoom: emit,
+  });
+
+  useEffect(() => {
+    emit();
   }, [map]);
 
   return null;
@@ -258,6 +284,7 @@ export function ContributorMap({
   onMarkerViewDetails,
   markerPopupLabels,
   onBboxChange,
+  onViewCenterChange,
   flyTo,
   initialCenter,
   initialZoom,
@@ -344,6 +371,7 @@ export function ContributorMap({
         />
       )}
       <BboxWatcher onBboxChange={onBboxChange} />
+      <CenterWatcher onViewCenterChange={onViewCenterChange} />
       <FlyTo target={flyTo} />
       <MapPlaceClick enabled={mapMode === 'new'} onPlace={onMapPlace} />
       {crisisBounds && fitBoundsTick > 0 && (

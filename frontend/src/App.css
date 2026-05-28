@@ -1615,8 +1615,8 @@ button.danger {
 
   .map-overlay-panel-host {
     top: 2.9rem;
-    width: min(17rem, calc(100% - 8rem));
-    max-width: calc(100% - 8rem);
+    width: min(15.5rem, calc(100% - 9.25rem));
+    max-width: calc(100% - 9.25rem);
   }
 
   .map-overlay-panel-host .map-legend,
@@ -1638,6 +1638,21 @@ button.danger {
     max-width: calc(100% - 1rem);
   }
 
+}
+
+.map-new-cancel-btn {
+  position: absolute;
+  left: 0.75rem;
+  bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  z-index: 520;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
 }
 
 .map-legend-title-row {
