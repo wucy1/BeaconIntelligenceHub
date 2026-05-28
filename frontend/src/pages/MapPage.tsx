@@ -146,9 +146,12 @@ export function MapPage() {
     return DEFAULT_CENTER;
   }, [geo.position]);
   const tileCenter = useMemo(() => {
+    // 下載方框以「目前地圖視野中心」為主，才能在桌機/手機都一致反映平移與縮放操作。
+    const fromView = centerFromBbox(bbox);
+    if (fromView) return fromView;
     if (geo.position) return { lat: geo.position.lat, lng: geo.position.lng };
-    return centerFromBbox(bbox);
-  }, [geo.position, bbox]);
+    return { lat: mapCenter[0], lng: mapCenter[1] };
+  }, [bbox, geo.position, mapCenter]);
   const offlineTiles = useOfflineMapTiles(tileCenter);
 
   const downloadTargetPreview = useMemo(() => {
