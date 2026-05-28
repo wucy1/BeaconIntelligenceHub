@@ -437,8 +437,13 @@ export function MapPage() {
     setSheetOpen(false);
     setInspectOpen(false);
     setLocatePending(true);
+    if (geo.position) {
+      setFlyTarget({ lat: geo.position.lat, lng: geo.position.lng });
+      setPinWithDetect(geo.position.lat, geo.position.lng, buildings);
+      setLocatePending(false);
+    }
     geo.request();
-  }, [geo]);
+  }, [geo, buildings, setPinWithDetect]);
 
   const onDownloadOfflineArea = useCallback(() => {
     if (!tileCenter) {
@@ -454,6 +459,11 @@ export function MapPage() {
     setPinWithDetect(geo.position.lat, geo.position.lng, buildings);
     setLocatePending(false);
   }, [locatePending, geo.position, buildings, setPinWithDetect]);
+
+  useEffect(() => {
+    if (!locatePending || geo.pending) return;
+    if (geo.denied) setLocatePending(false);
+  }, [locatePending, geo.denied, geo.pending]);
 
   useEffect(() => {
     if (!geo.position || autoFlewToUserRef.current) return;
@@ -926,6 +936,9 @@ export function MapPage() {
 
       {mapMode === 'new' && !hasPlacement && !sheetOpen && (
         <p className="map-hint map-hint-new-flow">{t('map.hint.newPlaceFirst')}</p>
+      )}
+      {mapMode === 'new' && geo.denied && !geo.pending && !hasPlacement && (
+        <p className="map-hint map-hint-warn">{t('map.hint.gpsDenied')}</p>
       )}
 
       {buildingsError && (

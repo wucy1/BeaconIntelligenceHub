@@ -159,6 +159,7 @@
   "map.hint.new": "Tap a building footprint to set location",
   "map.hint.newOpen": "Report anywhere — no admin boundary required",
   "map.hint.newPlaceFirst": "Tap the map or + to place a pin, then open the form. Use Cancel above to exit.",
+  "map.hint.gpsDenied": "Unable to get GPS. Allow location permission in your browser, or place a pin manually on the map.",
   "map.newFlow.active": "New report",
   "map.newFlow.cancel": "Cancel",
   "map.reportHere": "Report at my location",
