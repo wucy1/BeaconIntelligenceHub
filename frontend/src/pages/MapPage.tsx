@@ -37,8 +37,9 @@ import {
 } from '../utils/buildingAtPoint';
 import { filterMarkersInBbox } from '../utils/mapBbox';
 
-const DEFAULT_CENTER: [number, number] = [25.0305, 121.5608];
+const DEFAULT_CENTER: [number, number] = [20, 0];
 const DEFAULT_ZOOM = 14;
+const MAP_CENTER_STORAGE_KEY_PREFIX = 'bih-map-center';
 
 type Placement = {
   buildingId: string | null;
@@ -58,6 +59,30 @@ function centerFromBbox(bbox: string | null): { lat: number; lng: number } | nul
   if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return null;
   const [west, south, east, north] = parts;
   return { lat: (south + north) / 2, lng: (west + east) / 2 };
+}
+
+function centerFromGeoBounds(
+  bounds: GeoJSON.Polygon | GeoJSON.MultiPolygon | null | undefined,
+): { lat: number; lng: number } | null {
+  if (!bounds) return null;
+  const coords =
+    bounds.type === 'Polygon'
+      ? bounds.coordinates.flat()
+      : bounds.coordinates.flat(2);
+  if (!coords.length) return null;
+  let minLng = Infinity;
+  let minLat = Infinity;
+  let maxLng = -Infinity;
+  let maxLat = -Infinity;
+  for (const [lng, lat] of coords) {
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+    minLng = Math.min(minLng, lng);
+    minLat = Math.min(minLat, lat);
+    maxLng = Math.max(maxLng, lng);
+    maxLat = Math.max(maxLat, lat);
+  }
+  if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) return null;
+  return { lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2 };
 }
 
 function fmtCoord(v: number): string {
@@ -132,6 +157,9 @@ export function MapPage() {
   bboxRef.current = bbox;
 
   const crisisId = activeWindow?.crisis_id ?? '';
+  const mapCenterStorageKey = crisisId
+    ? `${MAP_CENTER_STORAGE_KEY_PREFIX}:${crisisId}`
+    : `${MAP_CENTER_STORAGE_KEY_PREFIX}:default`;
 
   const crisisBounds = activeWindow?.bounds as
     | GeoJSON.Polygon
@@ -141,10 +169,24 @@ export function MapPage() {
 
   const hasReferenceBounds = Boolean(crisisBounds);
 
+  const savedCenter = useMemo((): { lat: number; lng: number } | null => {
+    try {
+      const raw = localStorage.getItem(mapCenterStorageKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { lat?: number; lng?: number };
+      if (typeof parsed.lat !== 'number' || typeof parsed.lng !== 'number') return null;
+      return { lat: parsed.lat, lng: parsed.lng };
+    } catch {
+      return null;
+    }
+  }, [mapCenterStorageKey]);
   const mapCenter = useMemo((): [number, number] => {
     if (geo.position) return [geo.position.lat, geo.position.lng];
+    if (savedCenter) return [savedCenter.lat, savedCenter.lng];
+    const fromBounds = centerFromGeoBounds(crisisBounds);
+    if (fromBounds) return [fromBounds.lat, fromBounds.lng];
     return DEFAULT_CENTER;
-  }, [geo.position]);
+  }, [geo.position, savedCenter, crisisBounds]);
   const tileCenter = useMemo(() => {
     if (viewCenter) return viewCenter;
     const fromView = centerFromBbox(bbox);
@@ -474,6 +516,15 @@ export function MapPage() {
     autoFlewToUserRef.current = true;
     setFlyTarget({ lat: geo.position.lat, lng: geo.position.lng });
   }, [geo.position, mapMode]);
+
+  useEffect(() => {
+    if (!viewCenter) return;
+    try {
+      localStorage.setItem(mapCenterStorageKey, JSON.stringify(viewCenter));
+    } catch {
+      // ignore storage failures
+    }
+  }, [viewCenter, mapCenterStorageKey]);
 
   const refreshPendingReports = useCallback(() => {
     void listPendingSummaries()
