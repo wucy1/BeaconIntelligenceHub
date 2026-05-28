@@ -19,7 +19,26 @@ export function osmTileUrl(z: number, x: number, y: number): string {
   return `https://${s}.tile.openstreetmap.org/${z}/${x}/${y}.png`;
 }
 
-/** 圓形 AOI 對應的外接 bbox（度） */
+/** 以中心為準的方形 AOI（邊長 sideKm，例如 3×3 km） */
+export function bboxForBox(center: LatLng, sideKm: number): {
+  south: number;
+  west: number;
+  north: number;
+  east: number;
+} {
+  const half = sideKm / 2;
+  const latRad = (center.lat * Math.PI) / 180;
+  const dLat = half / 111.32;
+  const dLng = half / (111.32 * Math.cos(latRad));
+  return {
+    south: center.lat - dLat,
+    west: center.lng - dLng,
+    north: center.lat + dLat,
+    east: center.lng + dLng,
+  };
+}
+
+/** 圓形 AOI 對應的外接 bbox（度）；半徑 r 時外接方框邊長約 2r */
 export function bboxForDisk(center: LatLng, radiusKm: number): {
   south: number;
   west: number;
@@ -54,7 +73,7 @@ export function tilesForDisk(
   zMin: number,
   zMax: number,
 ): TileCoord[] {
-  const box = bboxForDisk(center, radiusKm);
+  const box = bboxForBox(center, radiusKm * 2);
   const seen = new Set<string>();
   const out: TileCoord[] = [];
 

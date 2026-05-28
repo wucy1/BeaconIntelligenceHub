@@ -151,6 +151,15 @@ export function MapPage() {
   }, [geo.position, bbox]);
   const offlineTiles = useOfflineMapTiles(tileCenter);
 
+  const downloadTargetPreview = useMemo(() => {
+    if (activeTopPanel !== 'offline' || !tileCenter) return null;
+    return {
+      center: tileCenter,
+      sideKm: DEFAULT_BOX_SIDE_KM,
+      variant: 'target' as const,
+    };
+  }, [activeTopPanel, tileCenter]);
+
   const goToRegion = useCallback((r: MapRegionMeta) => {
     setActiveRegionId(r.id);
     setFlyTarget({
@@ -605,7 +614,8 @@ export function MapPage() {
   }
 
   const unspecifiedPhase = activeWindow.reporting_phase !== 'defined';
-  const contributionVisible = online && mapMode !== 'new' && Boolean(crisisId);
+  const contributionPanelOpen = activeTopPanel === 'contribution' && Boolean(crisisId);
+  const contributionFetchable = online && mapMode !== 'new' && Boolean(crisisId);
   const connectionLampClass = online
     ? 'map-connection-lamp online'
     : 'map-connection-lamp offline';
@@ -613,7 +623,7 @@ export function MapPage() {
     t(`map.offline.queueStatus.${status}` as const);
 
   const toggleTopPanel = (panel: Exclude<TopPanelKey, null>) => {
-    if (panel === 'contribution' && !contributionVisible) return;
+    if (panel === 'contribution' && !crisisId) return;
     setActiveTopPanel((prev) => (prev === panel ? null : panel));
   };
 
@@ -647,7 +657,7 @@ export function MapPage() {
           const r = offlineTiles.regions.find((x) => x.id === id);
           if (r) goToRegion(r);
         }}
-        downloadPreview={null}
+        downloadPreview={downloadTargetPreview}
       />
 
       {activeTopPanel && (
@@ -663,7 +673,8 @@ export function MapPage() {
           {activeTopPanel === 'contribution' && (
             <ContributionStrip
               crisisId={crisisId}
-              visible={contributionVisible}
+              visible={contributionPanelOpen}
+              fetchable={contributionFetchable}
               refreshKey={refreshKey}
               embedded
             />
@@ -871,7 +882,7 @@ export function MapPage() {
               type="button"
               className={activeTopPanel === 'contribution' ? 'map-overlay-tab active' : 'map-overlay-tab'}
               onClick={() => toggleTopPanel('contribution')}
-              disabled={!contributionVisible}
+              disabled={!crisisId}
             >
               {t('contribution.summaryCollapsed')}
             </button>
@@ -907,8 +918,6 @@ export function MapPage() {
       )}
 
       <MapModeToggle mode={mapMode} onChange={onModeChange} />
-
-      <div className="map-fixed-center-box" aria-hidden="true" />
 
       {mapMode === 'new' && <NewReportBanner onCancel={cancelNewReport} />}
 

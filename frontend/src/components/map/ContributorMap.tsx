@@ -70,7 +70,11 @@ type Props = {
   regionFitBounds?: L.LatLngBounds | null;
   regionFitTick?: number;
   /** 連線時、下載前：橘色虛線方框預覽將下載的範圍 */
-  downloadPreview?: { center: { lat: number; lng: number }; radiusKm: number } | null;
+  downloadPreview?: {
+    center: { lat: number; lng: number };
+    sideKm: number;
+    variant?: 'target' | 'preview';
+  } | null;
 };
 
 const reportPinIcon = new L.Icon({
@@ -328,7 +332,8 @@ export function ContributorMap({
       {downloadPreview && (
         <DownloadPreviewLayer
           center={downloadPreview.center}
-          radiusKm={downloadPreview.radiusKm}
+          sideKm={downloadPreview.sideKm}
+          variant={downloadPreview.variant}
         />
       )}
       {savedRegions.length > 0 && (

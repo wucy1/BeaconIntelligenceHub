@@ -1,7 +1,7 @@
 import { Rectangle } from 'react-leaflet';
 
 import type { MapRegionMeta } from '../../offline/tileCache';
-import { bboxForDisk } from '../../offline/tileMath';
+import { bboxForBox } from '../../offline/tileMath';
 
 type Props = {
   regions: MapRegionMeta[];
@@ -10,7 +10,7 @@ type Props = {
 };
 
 function boundsForRegion(r: MapRegionMeta): [[number, number], [number, number]] {
-  const box = bboxForDisk(r.center, r.radiusKm);
+  const box = bboxForBox(r.center, r.radiusKm * 2);
   return [
     [box.south, box.west],
     [box.north, box.east],

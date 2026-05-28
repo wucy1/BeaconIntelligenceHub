@@ -584,19 +584,6 @@ select {
   cursor: pointer;
 }
 
-.map-fixed-center-box {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: min(42vw, 180px);
-  aspect-ratio: 1 / 1;
-  border: 2px dashed #dc2626;
-  border-radius: 6px;
-  background: rgba(220, 38, 38, 0.04);
-  z-index: 450;
-  pointer-events: none;
-}
 
 .map-dev-links {
   display: flex;
@@ -1514,7 +1501,7 @@ button.danger {
   border-top: 1px solid #e2e8f0;
 }
 
-.contribution-strip:not([open]) .contribution-strip-body {
+.contribution-strip.map-chrome-collapsible:not([open]) .contribution-strip-body {
   display: none;
 }
 
@@ -1650,9 +1637,6 @@ button.danger {
     max-width: calc(100% - 1rem);
   }
 
-  .map-fixed-center-box {
-    width: min(50vw, 150px);
-  }
 }
 
 .map-legend-title-row {
@@ -1704,7 +1688,7 @@ button.danger {
 }
 
 .contribution-strip.contribution-strip-embedded .contribution-strip-body {
-  display: block;
+  display: block !important;
   margin-top: 0;
   padding-top: 0;
   border-top: none;

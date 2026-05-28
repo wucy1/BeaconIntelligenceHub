@@ -69,6 +69,8 @@
   "contribution.summaryCollapsed": "My contribution",
   "contribution.empty": "Your first report helps others find and track damage.",
   "contribution.noLeaderboard": "No rankings or rewards — quality over quantity.",
+  "contribution.offlineHint": "You are offline. Stats will refresh when back online.",
+  "contribution.scopeHint": "Counts are all your reports in this crisis, not only the current map view.",
   "contribution.duplicateWarn": "You recently reported this building. Consider updating your earlier report instead of adding another pin.",
   "report.otherSpecify": "Other — please specify",
   "report.debris": "Debris clearing required on or near site",

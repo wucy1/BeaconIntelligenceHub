@@ -69,6 +69,8 @@
   "contribution.summaryCollapsed": "我的貢獻",
   "contribution.empty": "第一筆回報就能幫助他人掌握災損。",
   "contribution.noLeaderboard": "無排行榜或獎勵 — 重質不重量。",
+  "contribution.offlineHint": "目前離線，連線後會更新您的貢獻統計。",
+  "contribution.scopeHint": "統計為本危機事件內您裝置的全部回報，非目前地圖視野。",
   "contribution.duplicateWarn": "您不久前已回報此建物。建議改編較早的回報，而非再新增一個點。",
   "report.otherSpecify": "其他 — 請說明",
   "report.debris": "現場或附近需清除瓦礫",
