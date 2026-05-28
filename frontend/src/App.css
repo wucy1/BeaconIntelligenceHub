@@ -1311,6 +1311,13 @@ button.danger {
   border-top: 1px solid #dbeafe;
 }
 
+.map-offline-queue-card.flash {
+  background: #eff6ff;
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px #93c5fd inset;
+  transition: background 0.25s ease, box-shadow 0.25s ease;
+}
+
 .map-offline-queue-list {
   list-style: none;
   margin: 0.35rem 0 0;
@@ -1369,6 +1376,32 @@ button.danger {
   font-size: 0.66rem;
   color: #991b1b;
   line-height: 1.3;
+}
+
+.map-offline-queue-remove {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #475569;
+  border-radius: 6px;
+  padding: 0.18rem 0.4rem;
+  font-size: 0.64rem;
+  font-weight: 600;
+}
+
+.map-offline-queue-actions {
+  margin-top: 0.22rem;
+  display: flex;
+  gap: 0.25rem;
+}
+
+.map-offline-queue-retry {
+  border: 1px solid #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 6px;
+  padding: 0.18rem 0.4rem;
+  font-size: 0.64rem;
+  font-weight: 600;
 }
 
 .map-offline-region-btn {

@@ -19,7 +19,14 @@ import { useActiveWindow } from '../hooks/useActiveWindow';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useOfflineMapTiles } from '../hooks/useOfflineMapTiles';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
-import { listPendingSummaries, syncQueue, type PendingReportSummary } from '../offline/queue';
+import {
+  clearFailedReports,
+  listPendingSummaries,
+  removePendingReport,
+  retryPendingReport,
+  syncQueue,
+  type PendingReportSummary,
+} from '../offline/queue';
 import type { MapRegionMeta } from '../offline/tileCache';
 import { useI18n } from '../i18n/I18nContext';
 import { DEFAULT_BOX_SIDE_KM, DEFAULT_RADIUS_KM, PREFETCH_ZOOM_MAX } from '../offline/tileMath';
@@ -113,6 +120,14 @@ export function MapPage() {
   const [activeTopPanel, setActiveTopPanel] = useState<TopPanelKey>(null);
   const [pendingReports, setPendingReports] = useState<PendingReportSummary[]>([]);
   const [queueSyncing, setQueueSyncing] = useState(false);
+  const [queueCleaning, setQueueCleaning] = useState(false);
+  const [queueLastSync, setQueueLastSync] = useState<{
+    synced: number;
+    failed: number;
+    at: string;
+  } | null>(null);
+  const [queueFlash, setQueueFlash] = useState(false);
+  const queueCardRef = useRef<HTMLDivElement | null>(null);
 
   bboxRef.current = bbox;
 
@@ -457,11 +472,53 @@ export function MapPage() {
   const onSyncQueueNow = useCallback(() => {
     setQueueSyncing(true);
     void syncQueue()
+      .then((r) => {
+        setQueueLastSync({ ...r, at: new Date().toISOString() });
+        setQueueFlash(true);
+        queueCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      })
       .finally(() => {
         setQueueSyncing(false);
         refreshPendingReports();
       });
   }, [refreshPendingReports]);
+
+  const onClearFailedQueue = useCallback(() => {
+    setQueueCleaning(true);
+    void clearFailedReports()
+      .finally(() => {
+        setQueueCleaning(false);
+        refreshPendingReports();
+      });
+  }, [refreshPendingReports]);
+
+  const onRemoveQueuedItem = useCallback(
+    (id: string) => {
+      void removePendingReport(id).then(refreshPendingReports);
+    },
+    [refreshPendingReports],
+  );
+
+  const onRetryQueuedItem = useCallback(
+    (id: string) => {
+      void retryPendingReport(id)
+        .then((ok) => {
+          if (ok) {
+            setQueueLastSync({ synced: 1, failed: 0, at: new Date().toISOString() });
+            setQueueFlash(true);
+            queueCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        })
+        .finally(refreshPendingReports);
+    },
+    [refreshPendingReports],
+  );
+
+  useEffect(() => {
+    if (!queueFlash) return;
+    const id = window.setTimeout(() => setQueueFlash(false), 2200);
+    return () => window.clearTimeout(id);
+  }, [queueFlash]);
 
   const reportGeom = useMemo((): GeoJSON.Point | null => {
     if (!placement.pin) return null;
@@ -678,20 +735,44 @@ export function MapPage() {
               <p className="map-offline-download-meta">
                 {t('map.offline.storageSummary', { count: offlineTiles.cachedTileCount })}
               </p>
-              <div className="map-offline-queue-card">
+              <div
+                ref={queueCardRef}
+                className={queueFlash ? 'map-offline-queue-card flash' : 'map-offline-queue-card'}
+              >
                 <p className="map-offline-download-title">{t('map.offline.queueTitle')}</p>
                 <p className="map-offline-download-meta">
                   {t('map.offline.queuePending', { count: pendingReports.length })}
                 </p>
+                {queueLastSync && (
+                  <p className="map-offline-download-meta">
+                    {t('map.offline.queueLastSync', {
+                      synced: queueLastSync.synced,
+                      failed: queueLastSync.failed,
+                      at: new Date(queueLastSync.at).toLocaleTimeString(locale),
+                    })}
+                  </p>
+                )}
                 {online && pendingReports.length > 0 && (
-                  <button
-                    type="button"
-                    className="small"
-                    onClick={onSyncQueueNow}
-                    disabled={queueSyncing}
-                  >
-                    {queueSyncing ? t('offline.syncing') : t('offline.sync')}
-                  </button>
+                  <div className="map-offline-download-actions">
+                    <button
+                      type="button"
+                      className="small"
+                      onClick={onSyncQueueNow}
+                      disabled={queueSyncing}
+                    >
+                      {queueSyncing ? t('offline.syncing') : t('offline.sync')}
+                    </button>
+                    <button
+                      type="button"
+                      className="small ghost"
+                      onClick={onClearFailedQueue}
+                      disabled={queueCleaning}
+                    >
+                      {queueCleaning
+                        ? t('map.offline.queueClearing')
+                        : t('map.offline.queueClearFailed')}
+                    </button>
+                  </div>
                 )}
                 {pendingReports.length > 0 && (
                   <ul className="map-offline-queue-list">
@@ -704,6 +785,24 @@ export function MapPage() {
                           </time>
                         </div>
                         {r.lastError && <p className="map-offline-queue-error">{r.lastError}</p>}
+                        <div className="map-offline-queue-actions">
+                          {online && r.status === 'failed' && (
+                            <button
+                              type="button"
+                              className="map-offline-queue-retry"
+                              onClick={() => onRetryQueuedItem(r.id)}
+                            >
+                              {t('map.offline.queueRetry')}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="map-offline-queue-remove"
+                            onClick={() => onRemoveQueuedItem(r.id)}
+                          >
+                            {t('map.offline.queueRemove')}
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>

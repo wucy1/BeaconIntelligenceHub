@@ -82,6 +82,40 @@ async function removeReport(id: string): Promise<void> {
   });
 }
 
+export async function removePendingReport(id: string): Promise<void> {
+  await removeReport(id);
+}
+
+export async function clearFailedReports(): Promise<number> {
+  const rows = await listPending();
+  const failed = rows.filter((r) => r.status === 'failed');
+  for (const item of failed) {
+    await removeReport(item.id);
+  }
+  return failed.length;
+}
+
+async function syncOne(item: PendingReport): Promise<void> {
+  await updateStatus(item.id, 'syncing');
+  const file = new File([item.fileBlob], 'photo.jpg', { type: item.mimeType });
+  await submitReportOnline(item.crisisId, item.payload, file);
+  await removeReport(item.id);
+}
+
+export async function retryPendingReport(id: string): Promise<boolean> {
+  if (!navigator.onLine) return false;
+  const items = await listPending();
+  const item = items.find((r) => r.id === id);
+  if (!item) return false;
+  try {
+    await syncOne(item);
+    return true;
+  } catch (e) {
+    await updateStatus(item.id, 'failed', e instanceof Error ? e.message : String(e));
+    return false;
+  }
+}
+
 async function updateStatus(id: string, status: PendingReport['status'], lastError?: string) {
   const db = await openOfflineDb();
   const all = await listPending();
@@ -148,10 +182,7 @@ export async function syncQueue(): Promise<{ synced: number; failed: number }> {
   let failed = 0;
   for (const item of items.filter((r) => r.status === 'pending' || r.status === 'failed')) {
     try {
-      await updateStatus(item.id, 'syncing');
-      const file = new File([item.fileBlob], 'photo.jpg', { type: item.mimeType });
-      await submitReportOnline(item.crisisId, item.payload, file);
-      await removeReport(item.id);
+      await syncOne(item);
       synced += 1;
     } catch (e) {
       failed += 1;
