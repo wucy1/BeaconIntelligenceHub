@@ -158,7 +158,7 @@
   "map.locateMe": "在此放置回報圖釘（GPS）",
   "map.hint.new": "點選藍色建物輪廓以設定位置",
   "map.hint.newOpen": "可在任意地點回報，無需管理員預先劃定範圍",
-  "map.hint.newPlaceFirst": "點地圖或按 + 放置圖釘，再開啟表單。可按左下「取消回報」結束。",
+  "map.hint.newPlaceFirst": "點地圖或按 + 放置圖釘，再開啟表單。可按左側「取消回報」結束。",
   "map.hint.gpsDenied": "無法取得 GPS。請確認瀏覽器定位權限已允許，或先手動在地圖上放置圖釘。",
   "map.newFlow.active": "新增回報中",
   "map.newFlow.cancel": "取消回報",

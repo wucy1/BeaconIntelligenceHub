@@ -936,13 +936,14 @@ export function MapPage() {
       <MapModeToggle mode={mapMode} onChange={onModeChange} />
 
       {mapMode === 'new' && (
-        <button type="button" className="map-new-cancel-btn" onClick={cancelNewReport}>
-          {t('map.newFlow.cancel')}
-        </button>
-      )}
-
-      {mapMode === 'new' && !hasPlacement && !sheetOpen && (
-        <p className="map-hint map-hint-new-flow">{t('map.hint.newPlaceFirst')}</p>
+        <div className="map-new-flow-bar">
+          <button type="button" className="map-new-cancel-btn" onClick={cancelNewReport}>
+            {t('map.newFlow.cancel')}
+          </button>
+          {!hasPlacement && !sheetOpen && (
+            <p className="map-new-flow-text">{t('map.hint.newPlaceFirst')}</p>
+          )}
+        </div>
       )}
       {mapMode === 'new' && geo.denied && !geo.pending && !hasPlacement && (
         <p className="map-hint map-hint-warn">{t('map.hint.gpsDenied')}</p>

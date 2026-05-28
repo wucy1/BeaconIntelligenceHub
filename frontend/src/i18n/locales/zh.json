@@ -142,7 +142,7 @@
   "map.locateMe": "定位到我",
   "map.hint.new": "点选藍色建物轮廓以设定位置",
   "map.hint.newOpen": "可在任意地点回报，无需管理员预先劃定围圍",
-  "map.hint.newPlaceFirst": "新增回报：点地图或按 + 放置图钉，再开启表单。可按左下「取消回报」结束。",
+  "map.hint.newPlaceFirst": "新增回报：点地图或按 + 放置图钉，再开启表单。可按左侧「取消回报」结束。",
   "map.hint.gpsDenied": "无法取得 GPS。请确认浏览器定位权限已允许，或先手动在地图上放置图钉。",
   "map.reportHere": "在我目前位置回报",
   "map.reportPin": "GPS 座标",

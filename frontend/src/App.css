@@ -374,10 +374,6 @@ select {
   background: #e2e8f0;
 }
 
-.map-hint-new-flow {
-  bottom: 5.5rem;
-}
-
 .map-mode-toggle {
   position: absolute;
   bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
@@ -1642,11 +1638,20 @@ button.danger {
 
 }
 
-.map-new-cancel-btn {
+.map-new-flow-bar {
   position: absolute;
-  left: 0.75rem;
+  left: 0.5rem;
+  right: 0.5rem;
   bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
   z-index: 520;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.map-new-cancel-btn {
+  pointer-events: auto;
   border: 1px solid #cbd5e1;
   background: #fff;
   color: #334155;
@@ -1655,6 +1660,19 @@ button.danger {
   font-size: 0.8rem;
   font-weight: 600;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
+}
+
+.map-new-flow-text {
+  pointer-events: none;
+  margin: 0;
+  background: rgba(15, 23, 42, 0.75);
+  color: #fff;
+  font-size: 0.77rem;
+  line-height: 1.3;
+  padding: 0.32rem 0.62rem;
+  border-radius: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .map-legend-title-row {
