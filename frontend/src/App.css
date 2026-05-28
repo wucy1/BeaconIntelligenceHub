@@ -1305,6 +1305,72 @@ button.danger {
   list-style: none;
 }
 
+.map-offline-queue-card {
+  margin-top: 0.45rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid #dbeafe;
+}
+
+.map-offline-queue-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.map-offline-queue-list li {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 0.3rem 0.4rem;
+}
+
+.map-offline-queue-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  color: #475569;
+}
+
+.queue-state {
+  font-weight: 700;
+  font-size: 0.66rem;
+  padding: 0.08rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.queue-state.pending {
+  border-color: #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.queue-state.syncing {
+  border-color: #0284c7;
+  background: #ecfeff;
+  color: #0369a1;
+}
+
+.queue-state.failed {
+  border-color: #dc2626;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.map-offline-queue-error {
+  margin: 0.2rem 0 0;
+  font-size: 0.66rem;
+  color: #991b1b;
+  line-height: 1.3;
+}
+
 .map-offline-region-btn {
   width: 100%;
   margin-top: 0.25rem;

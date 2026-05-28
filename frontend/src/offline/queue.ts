@@ -14,6 +14,13 @@ export type PendingReport = {
   lastError?: string;
 };
 
+export type PendingReportSummary = {
+  id: string;
+  createdAt: string;
+  status: PendingReport['status'];
+  lastError?: string;
+};
+
 export async function enqueueReport(
   crisisId: string,
   payload: Record<string, unknown>,
@@ -51,6 +58,18 @@ async function listPending(): Promise<PendingReport[]> {
     req.onsuccess = () => resolve(req.result as PendingReport[]);
     req.onerror = () => reject(req.error);
   });
+}
+
+export async function listPendingSummaries(): Promise<PendingReportSummary[]> {
+  const rows = await listPending();
+  return rows
+    .map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt,
+      status: r.status,
+      lastError: r.lastError,
+    }))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 async function removeReport(id: string): Promise<void> {

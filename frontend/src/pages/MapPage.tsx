@@ -19,6 +19,7 @@ import { useActiveWindow } from '../hooks/useActiveWindow';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useOfflineMapTiles } from '../hooks/useOfflineMapTiles';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
+import { listPendingSummaries, syncQueue, type PendingReportSummary } from '../offline/queue';
 import type { MapRegionMeta } from '../offline/tileCache';
 import { useI18n } from '../i18n/I18nContext';
 import { DEFAULT_BOX_SIDE_KM, DEFAULT_RADIUS_KM, PREFETCH_ZOOM_MAX } from '../offline/tileMath';
@@ -110,6 +111,8 @@ export function MapPage() {
   const autoFlewToUserRef = useRef(false);
   const [activeRegionId, setActiveRegionId] = useState<string | null>(null);
   const [activeTopPanel, setActiveTopPanel] = useState<TopPanelKey>(null);
+  const [pendingReports, setPendingReports] = useState<PendingReportSummary[]>([]);
+  const [queueSyncing, setQueueSyncing] = useState(false);
 
   bboxRef.current = bbox;
 
@@ -436,6 +439,30 @@ export function MapPage() {
     setFlyTarget({ lat: geo.position.lat, lng: geo.position.lng });
   }, [geo.position]);
 
+  const refreshPendingReports = useCallback(() => {
+    void listPendingSummaries()
+      .then(setPendingReports)
+      .catch(() => setPendingReports([]));
+  }, []);
+
+  useEffect(() => {
+    refreshPendingReports();
+  }, [refreshPendingReports]);
+
+  useEffect(() => {
+    const id = window.setInterval(refreshPendingReports, 6000);
+    return () => window.clearInterval(id);
+  }, [refreshPendingReports]);
+
+  const onSyncQueueNow = useCallback(() => {
+    setQueueSyncing(true);
+    void syncQueue()
+      .finally(() => {
+        setQueueSyncing(false);
+        refreshPendingReports();
+      });
+  }, [refreshPendingReports]);
+
   const reportGeom = useMemo((): GeoJSON.Point | null => {
     if (!placement.pin) return null;
     return {
@@ -530,6 +557,11 @@ export function MapPage() {
   const connectionLampClass = online
     ? 'map-connection-lamp online'
     : 'map-connection-lamp offline';
+  const queueStatusLabel = useCallback(
+    (status: PendingReportSummary['status']) =>
+      t(`map.offline.queueStatus.${status}` as const),
+    [t],
+  );
 
   const toggleTopPanel = useCallback(
     (panel: Exclude<TopPanelKey, null>) => {
@@ -646,6 +678,37 @@ export function MapPage() {
               <p className="map-offline-download-meta">
                 {t('map.offline.storageSummary', { count: offlineTiles.cachedTileCount })}
               </p>
+              <div className="map-offline-queue-card">
+                <p className="map-offline-download-title">{t('map.offline.queueTitle')}</p>
+                <p className="map-offline-download-meta">
+                  {t('map.offline.queuePending', { count: pendingReports.length })}
+                </p>
+                {online && pendingReports.length > 0 && (
+                  <button
+                    type="button"
+                    className="small"
+                    onClick={onSyncQueueNow}
+                    disabled={queueSyncing}
+                  >
+                    {queueSyncing ? t('offline.syncing') : t('offline.sync')}
+                  </button>
+                )}
+                {pendingReports.length > 0 && (
+                  <ul className="map-offline-queue-list">
+                    {pendingReports.slice(0, 5).map((r) => (
+                      <li key={r.id}>
+                        <div className="map-offline-queue-row">
+                          <span className={`queue-state ${r.status}`}>{queueStatusLabel(r.status)}</span>
+                          <time dateTime={r.createdAt}>
+                            {new Date(r.createdAt).toLocaleString(locale)}
+                          </time>
+                        </div>
+                        {r.lastError && <p className="map-offline-queue-error">{r.lastError}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
               {offlineTiles.regions.length > 0 && (
                 <>
                   <p className="map-offline-download-meta">
