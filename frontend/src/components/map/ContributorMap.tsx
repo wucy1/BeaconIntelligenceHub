@@ -92,7 +92,8 @@ function FlyTo({ target }: { target: MapFlyTarget | null | undefined }) {
   const map = useMap();
   useEffect(() => {
     if (!target) return;
-    const z = target.zoom ?? Math.max(map.getZoom(), 16);
+    // 只在呼叫端明確指定 zoom 時才縮放，避免自動放大造成圖釘視覺漂移。
+    const z = target.zoom ?? map.getZoom();
     map.flyTo([target.lat, target.lng], z, { duration: 0.6 });
   }, [target?.lat, target?.lng, target?.zoom, target, map]);
   return null;
