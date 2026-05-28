@@ -355,6 +355,8 @@ export function MapPage() {
   const onMapPlace = useCallback(
     (lat: number, lng: number) => {
       if (mapMode !== 'new') return;
+      // 使用者已手動放置圖釘，避免晚到的 GPS 首次自動飛行把視圖拉走。
+      autoFlewToUserRef.current = true;
       setSheetOpen(false);
       setPinWithDetect(lat, lng, buildings);
     },
@@ -467,9 +469,11 @@ export function MapPage() {
 
   useEffect(() => {
     if (!geo.position || autoFlewToUserRef.current) return;
+    // 新增回報流程中，禁止自動置中/放大，避免圖釘看起來「漂移」。
+    if (mapMode === 'new') return;
     autoFlewToUserRef.current = true;
     setFlyTarget({ lat: geo.position.lat, lng: geo.position.lng });
-  }, [geo.position]);
+  }, [geo.position, mapMode]);
 
   const refreshPendingReports = useCallback(() => {
     void listPendingSummaries()
