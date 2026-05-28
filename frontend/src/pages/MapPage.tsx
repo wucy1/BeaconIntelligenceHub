@@ -685,78 +685,14 @@ export function MapPage() {
             ×
           </button>
           {activeTopPanel === 'contribution' && (
-            <ContributionStrip
-              crisisId={crisisId}
-              visible={contributionPanelOpen}
-              fetchable={contributionFetchable}
-              refreshKey={refreshKey}
-              embedded
-            />
-          )}
-          {activeTopPanel === 'offline' && (
-            <div className="map-offline-download-panel">
-              <p className="map-offline-download-title">
-                {t('map.offline.downloadTitle', {
-                  km: DEFAULT_RADIUS_KM,
-                  side: DEFAULT_BOX_SIDE_KM,
-                })}
-              </p>
-              {!online && (
-                <p className="map-offline-download-meta">
-                  {t('map.offline.reportMode')}
-                </p>
-              )}
-              {tileCenter && (
-                <p className="map-offline-download-meta">
-                  {t('map.offline.downloadCenter', {
-                    lat: fmtCoord(tileCenter.lat),
-                    lng: fmtCoord(tileCenter.lng),
-                  })}
-                </p>
-              )}
-              <p className="map-offline-download-meta map-offline-legend-hint">
-                {t('map.offline.previewBoxHint')}
-              </p>
-              <p className="map-offline-download-meta">
-                {offlineTiles.coverage
-                  ? t('map.offline.downloadCoverage', {
-                      pct: Math.round(offlineTiles.coverage.ratio * 100),
-                      cached: offlineTiles.coverage.cached,
-                      total: offlineTiles.coverage.total,
-                    })
-                  : t('map.offline.downloadCoverageUnknown')}
-              </p>
-              {online && (
-                <div className="map-offline-download-actions">
-                  <button
-                    type="button"
-                    className="small primary"
-                    onClick={onDownloadOfflineArea}
-                    disabled={offlineTiles.downloading || offlineTiles.checking}
-                  >
-                    {offlineTiles.downloading
-                      ? t('map.offline.downloading')
-                      : t('map.offline.downloadAction')}
-                  </button>
-                  {offlineTiles.downloading && (
-                    <button type="button" className="small" onClick={offlineTiles.cancel}>
-                      {t('common.cancel')}
-                    </button>
-                  )}
-                </div>
-              )}
-              {offlineTiles.downloading && offlineTiles.progress && (
-                <p className="map-offline-download-meta">
-                  {t('map.offline.downloadProgress', {
-                    done: offlineTiles.progress.done,
-                    total: offlineTiles.progress.total,
-                    failed: offlineTiles.progress.failed,
-                  })}
-                </p>
-              )}
-              <p className="map-offline-download-meta">
-                {t('map.offline.storageSummary', { count: offlineTiles.cachedTileCount })}
-              </p>
+            <>
+              <ContributionStrip
+                crisisId={crisisId}
+                visible={contributionPanelOpen}
+                fetchable={contributionFetchable}
+                refreshKey={refreshKey}
+                embedded
+              />
               <div
                 ref={queueCardRef}
                 className={queueFlash ? 'map-offline-queue-card flash' : 'map-offline-queue-card'}
@@ -830,6 +766,72 @@ export function MapPage() {
                   </ul>
                 )}
               </div>
+            </>
+          )}
+          {activeTopPanel === 'offline' && (
+            <div className="map-offline-download-panel">
+              <p className="map-offline-download-title">
+                {t('map.offline.downloadTitle', {
+                  km: DEFAULT_RADIUS_KM,
+                  side: DEFAULT_BOX_SIDE_KM,
+                })}
+              </p>
+              {!online && (
+                <p className="map-offline-download-meta">
+                  {t('map.offline.reportMode')}
+                </p>
+              )}
+              {tileCenter && (
+                <p className="map-offline-download-meta">
+                  {t('map.offline.downloadCenter', {
+                    lat: fmtCoord(tileCenter.lat),
+                    lng: fmtCoord(tileCenter.lng),
+                  })}
+                </p>
+              )}
+              <p className="map-offline-download-meta map-offline-legend-hint">
+                {t('map.offline.previewBoxHint')}
+              </p>
+              <p className="map-offline-download-meta">
+                {offlineTiles.coverage
+                  ? t('map.offline.downloadCoverage', {
+                      pct: Math.round(offlineTiles.coverage.ratio * 100),
+                      cached: offlineTiles.coverage.cached,
+                      total: offlineTiles.coverage.total,
+                    })
+                  : t('map.offline.downloadCoverageUnknown')}
+              </p>
+              {online && (
+                <div className="map-offline-download-actions">
+                  <button
+                    type="button"
+                    className="small primary"
+                    onClick={onDownloadOfflineArea}
+                    disabled={offlineTiles.downloading || offlineTiles.checking}
+                  >
+                    {offlineTiles.downloading
+                      ? t('map.offline.downloading')
+                      : t('map.offline.downloadAction')}
+                  </button>
+                  {offlineTiles.downloading && (
+                    <button type="button" className="small" onClick={offlineTiles.cancel}>
+                      {t('common.cancel')}
+                    </button>
+                  )}
+                </div>
+              )}
+              {offlineTiles.downloading && offlineTiles.progress && (
+                <p className="map-offline-download-meta">
+                  {t('map.offline.downloadProgress', {
+                    done: offlineTiles.progress.done,
+                    total: offlineTiles.progress.total,
+                    failed: offlineTiles.progress.failed,
+                  })}
+                </p>
+              )}
+              <p className="map-offline-download-meta">
+                {t('map.offline.storageSummary', { count: offlineTiles.cachedTileCount })}
+              </p>
               {offlineTiles.regions.length > 0 && (
                 <>
                   <p className="map-offline-download-meta">

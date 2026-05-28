@@ -1319,8 +1319,10 @@ button.danger {
 
 .map-offline-queue-card {
   margin-top: 0.45rem;
-  padding-top: 0.4rem;
-  border-top: 1px solid #dbeafe;
+  padding: 0.45rem 0.55rem;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
 }
 
 .map-offline-queue-card.flash {
