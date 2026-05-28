@@ -1624,6 +1624,33 @@ button.danger {
     overflow-y: auto;
   }
 
+  .placement-bar {
+    left: 0.5rem;
+    right: 4.9rem;
+    transform: none;
+    width: auto;
+    max-width: none;
+    padding: 0.42rem 0.55rem;
+    gap: 0.45rem;
+  }
+
+  .placement-bar-summary {
+    font-size: 0.83rem;
+  }
+
+  .placement-bar-coords {
+    font-size: 0.76rem;
+  }
+
+  .placement-bar-actions button.small {
+    font-size: 0.74rem;
+    padding: 0.34rem 0.5rem;
+  }
+
+  .map-fab-locate {
+    bottom: calc(6.05rem + env(safe-area-inset-bottom, 0px));
+  }
+
   .map-duplicate-banner {
     top: auto;
     bottom: calc(7.5rem + env(safe-area-inset-bottom, 0px));
