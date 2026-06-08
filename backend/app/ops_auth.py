@@ -4,26 +4,27 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import UUID
 
+import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, Header
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
 from app.models import OpsUser, UserZoneAssignment
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 OPS_ROLES = frozenset({"coordinator", "crisis_lead", "system_admin"})
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return pwd_context.verify(password, password_hash)
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    except ValueError:
+        return False
 
 
 def create_access_token(user_id: UUID, role: str, email: str) -> str:
