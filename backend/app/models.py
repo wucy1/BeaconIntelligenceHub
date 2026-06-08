@@ -25,6 +25,9 @@ class Crisis(Base):
     slug = Column(String, unique=True, nullable=False)
     name = Column(JSONB, nullable=False)
     bounds = Column(Geometry("POLYGON", srid=4326), nullable=True)
+    archive_status = Column(String, nullable=False, default="draft")
+    archive_window_start = Column(DateTime(timezone=True), nullable=True)
+    archive_window_end = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -81,3 +84,35 @@ class ReportImage(Base):
     checksum_sha256 = Column(Text, nullable=False)
 
     report = relationship("Report", back_populates="images")
+
+
+class Zone(Base):
+    __tablename__ = "zones"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    parent_zone_id = Column(UUID(as_uuid=True), ForeignKey("zones.id", ondelete="SET NULL"), nullable=True)
+    geom = Column(Geometry("POLYGON", srid=4326), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class OpsUser(Base):
+    __tablename__ = "ops_users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String, unique=True, nullable=False)
+    password_hash = Column(Text, nullable=False)
+    display_name = Column(Text, nullable=True)
+    role = Column(String, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class UserZoneAssignment(Base):
+    __tablename__ = "user_zone_assignments"
+
+    user_id = Column(UUID(as_uuid=True), ForeignKey("ops_users.id", ondelete="CASCADE"), primary_key=True)
+    zone_id = Column(UUID(as_uuid=True), ForeignKey("zones.id", ondelete="CASCADE"), primary_key=True)
+    assigned_at = Column(DateTime(timezone=True), default=datetime.utcnow)

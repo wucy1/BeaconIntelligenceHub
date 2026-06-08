@@ -9,7 +9,7 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from app.config import settings
 from app.database import engine
 from app.db_url import is_placeholder_database_url
-from app.routers import admin, analytics, buildings, crises, export, files, health, public, reports, uploads
+from app.routers import admin, analytics, buildings, crises, export, files, health, ops, public, reports, uploads
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -101,3 +101,4 @@ app.include_router(buildings.router)
 app.include_router(export.router)
 app.include_router(analytics.router)
 app.include_router(admin.router)
+app.include_router(ops.router)

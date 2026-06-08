@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     admin_token: str = ""
     reporter_salt: str = "change-me-in-production"
     active_crisis_id: str = ""
+    ops_jwt_secret: str = ""
+    ops_jwt_ttl_hours: int = 24
+    ops_bootstrap_email: str = "admin@bih.local"
+    ops_bootstrap_password: str = ""
+    ops_bootstrap_display_name: str = "System Admin"
 
 
 settings = Settings()

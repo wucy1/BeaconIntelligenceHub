@@ -88,6 +88,11 @@ class ReportListResponse(BaseModel):
     nextCursor: str | None = None
 
 
+class OpsReportSummary(ReportSummary):
+    admin_reviewed: bool = False
+    admin_flagged: bool = False
+
+
 class ReportUpdate(BaseModel):
     damage_level: str | None = None
     description: str | None = None

@@ -5,6 +5,9 @@ CREATE TABLE crises (
   slug TEXT UNIQUE NOT NULL,
   name JSONB NOT NULL,
   bounds GEOMETRY(Polygon, 4326),
+  archive_status TEXT NOT NULL DEFAULT 'draft' CHECK (archive_status IN ('draft', 'active', 'archived')),
+  archive_window_start TIMESTAMPTZ,
+  archive_window_end TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -148,4 +151,39 @@ INSERT INTO reports (
   '{"electricity_condition":"severe","health_services":"disrupted","pressing_needs":["shelter","health"]}'::jsonb,
   now() - interval '1 hour',
   now() - interval '1 hour'
+);
+
+-- Phase 3a: operational zones and login users
+DO $$ BEGIN
+  CREATE TYPE ops_role AS ENUM ('coordinator', 'crisis_lead', 'system_admin');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS zones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT,
+  parent_zone_id UUID REFERENCES zones(id) ON DELETE SET NULL,
+  geom GEOMETRY(Polygon, 4326) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_zones_geom ON zones USING GIST (geom);
+
+CREATE TABLE IF NOT EXISTS ops_users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  display_name TEXT,
+  role ops_role NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS user_zone_assignments (
+  user_id UUID NOT NULL REFERENCES ops_users(id) ON DELETE CASCADE,
+  zone_id UUID NOT NULL REFERENCES zones(id) ON DELETE CASCADE,
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, zone_id)
 );
