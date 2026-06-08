@@ -15,7 +15,7 @@
 
 - Migration `006_ops_zones_users.sql`：`zones`、`ops_users`、`user_zone_assignments`、危機歸檔欄位
 - API：`/v1/ops/*`（登入、分區 CRUD、分區篩選回報）
-- 前端：`/ops/login`、`/ops/zones`、儀表板分區篩選（已登入時）
+- 前端：`/ops/login`、`/ops/zones`（地圖上**任意點擊畫多邊形**，不限大小）、儀表板分區篩選（已登入時）
 
 ### 角色與可見範圍
 
