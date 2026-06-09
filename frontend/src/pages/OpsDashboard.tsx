@@ -13,7 +13,6 @@ import {
 import {
   getOpsUser,
   opsCanAssignCoordinator,
-  opsCanManageUsers,
   opsIsCrisisLead,
   opsIsSystemAdmin,
 } from '../ops/opsAuth';
@@ -50,6 +49,7 @@ export function OpsDashboard() {
 
   const [err, setErr] = useState<string | null>(null);
   const [crisisFormMsg, setCrisisFormMsg] = useState<string | null>(null);
+  const [teamFormMsg, setTeamFormMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const selectedCrisis = crises.find((c) => c.id === selectedCrisisId) ?? null;
@@ -57,14 +57,14 @@ export function OpsDashboard() {
   const canAssignCoord = selectedCrisisId ? opsCanAssignCoordinator(user, selectedCrisisId) : false;
   const isLeadForSelected = selectedCrisisId ? opsIsCrisisLead(user, selectedCrisisId) : false;
 
-  const loadCrises = useCallback(async () => {
+  const loadCrises = useCallback(async (reportError = true) => {
     try {
       const d = await opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises');
       setCrises(d.items);
       setSelectedCrisisId((prev) => prev || (d.items[0]?.id ?? ''));
     } catch (e) {
       setCrises([]);
-      setErr(e instanceof Error ? e.message : String(e));
+      if (reportError) setErr(e instanceof Error ? e.message : String(e));
     }
   }, []);
 
@@ -74,12 +74,15 @@ export function OpsDashboard() {
       .catch(() => setZones([]));
   }, []);
 
-  const loadUsers = useCallback(() => {
-    if (!opsCanManageUsers(user)) return;
-    opsGet<{ items: OpsUserRecord[] }>('/v1/ops/users')
-      .then((d) => setOpsUsers(d.items))
-      .catch(() => setOpsUsers([]));
-  }, [user]);
+  const loadUsers = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const d = await opsGet<{ items: OpsUserRecord[] }>('/v1/ops/users');
+      setOpsUsers(d.items);
+    } catch {
+      setOpsUsers([]);
+    }
+  }, [isAdmin]);
 
   const loadAssignableUsers = useCallback(() => {
     if (!isAdmin && !isLeadForSelected) return;
@@ -96,11 +99,13 @@ export function OpsDashboard() {
   }, [isAdmin]);
 
   useEffect(() => {
-    loadCrises();
+    void loadCrises();
     loadZones();
-    loadUsers();
+    void loadUsers();
     loadAudit();
-  }, [loadCrises, loadZones, loadUsers, loadAudit]);
+    // 僅 mount 時載入一次；勿把會隨輸入變動的 user 物件放進 callback 依賴
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     loadAssignableUsers();
@@ -131,7 +136,7 @@ export function OpsDashboard() {
       setNewCrisisSlug('');
       setNewCrisisName('');
       setCrisisFormMsg(`已建立「${crisisLabel(c)}」`);
-      await loadCrises();
+      await loadCrises(false);
       loadAudit();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -143,14 +148,14 @@ export function OpsDashboard() {
 
   const createUser = async () => {
     if (!newUserEmail.trim() || newUserPassword.length < 8) {
-      setErr('請填 email 與至少 8 字元密碼');
+      setTeamFormMsg('請填 email 與至少 8 字元密碼');
       return;
     }
     setBusy(true);
-    setErr(null);
+    setTeamFormMsg(null);
     try {
-      await opsPost('/v1/ops/users', {
-        email: newUserEmail.trim(),
+      const created = await opsPost<OpsUserRecord>('/v1/ops/users', {
+        email: newUserEmail.trim().toLowerCase(),
         password: newUserPassword,
         display_name: newUserName.trim() || null,
         role: 'coordinator',
@@ -158,10 +163,12 @@ export function OpsDashboard() {
       setNewUserEmail('');
       setNewUserPassword('');
       setNewUserName('');
-      loadUsers();
+      setOpsUsers((prev) => (prev.some((u) => u.id === created.id) ? prev : [...prev, created]));
+      setTeamFormMsg(`已建立帳號 ${created.email}`);
+      await loadUsers();
       loadAudit();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setTeamFormMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -370,8 +377,11 @@ export function OpsDashboard() {
                 onChange={(e) => setNewUserName(e.target.value)}
               />
               <button type="button" onClick={createUser} disabled={busy}>
-                建立帳號
+                {busy ? '建立中…' : '建立帳號'}
               </button>
+              {teamFormMsg && (
+                <p className={teamFormMsg.startsWith('已建立') ? 'ops-form-ok' : 'error'}>{teamFormMsg}</p>
+              )}
             </div>
           )}
           {isAdmin && (

@@ -693,16 +693,20 @@ def ops_create_user(
         role=body.role,
     )
     db.add(user)
-    db.flush()
-    log_ops_action(
-        db,
-        actor_user_id=principal.user_id,
-        action="user.create",
-        entity_type="ops_user",
-        entity_id=user.id,
-        detail={"email": email, "role": body.role},
-    )
-    db.commit()
+    try:
+        db.flush()
+        log_ops_action(
+            db,
+            actor_user_id=principal.user_id,
+            action="user.create",
+            entity_type="ops_user",
+            entity_id=user.id,
+            detail={"email": email, "role": body.role},
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Email already exists") from exc
     db.refresh(user)
     return _user_out(db, user)
 
