@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import UUID
@@ -13,7 +14,14 @@ from app.config import settings
 from app.database import get_db
 from app.models import OpsUser, UserZoneAssignment
 
-OPS_ROLES = frozenset({"coordinator", "crisis_lead", "system_admin"})
+ACCOUNT_ROLES = frozenset({"coordinator", "crisis_lead", "system_admin"})
+ZONE_ASSIGNMENT_ROLES = frozenset({"lead", "coordinator"})
+
+
+@dataclass(frozen=True)
+class ZoneAssignment:
+    zone_id: UUID
+    assignment_role: str
 
 
 def hash_password(password: str) -> str:
@@ -51,9 +59,9 @@ def decode_access_token(token: str) -> dict:
 
 
 class OpsPrincipal:
-    def __init__(self, user: OpsUser, zone_ids: list[UUID]):
+    def __init__(self, user: OpsUser, assignments: list[ZoneAssignment]):
         self.user = user
-        self.zone_ids = zone_ids
+        self.assignments = assignments
 
     @property
     def role(self) -> str:
@@ -63,14 +71,43 @@ class OpsPrincipal:
     def user_id(self) -> UUID:
         return self.user.id
 
-    def can_manage_zones(self) -> bool:
-        return self.role in ("crisis_lead", "system_admin")
+    @property
+    def zone_ids(self) -> list[UUID]:
+        return [a.zone_id for a in self.assignments]
 
-    def can_manage_users(self) -> bool:
+    def lead_zone_ids(self) -> list[UUID]:
+        return [a.zone_id for a in self.assignments if a.assignment_role == "lead"]
+
+    def is_system_admin(self) -> bool:
         return self.role == "system_admin"
 
     def sees_all_zones(self) -> bool:
-        return self.role in ("crisis_lead", "system_admin")
+        return self.is_system_admin()
+
+    def can_manage_users(self) -> bool:
+        return self.is_system_admin()
+
+    def can_create_zones(self) -> bool:
+        return self.is_system_admin()
+
+    def can_delete_zone(self, _zone_id: UUID) -> bool:
+        return self.is_system_admin()
+
+    def can_edit_zone(self, zone_id: UUID) -> bool:
+        return self.is_system_admin() or zone_id in self.lead_zone_ids()
+
+    def can_run_archive(self) -> bool:
+        return self.is_system_admin() or bool(self.lead_zone_ids())
+
+    def can_manage_crisis_meta(self) -> bool:
+        return self.is_system_admin() or bool(self.lead_zone_ids())
+
+
+def _load_assignments(db: Session, user_id: UUID) -> list[ZoneAssignment]:
+    return [
+        ZoneAssignment(zone_id=row.zone_id, assignment_role=row.assignment_role or "coordinator")
+        for row in db.query(UserZoneAssignment).filter(UserZoneAssignment.user_id == user_id).all()
+    ]
 
 
 def get_ops_principal(
@@ -85,13 +122,25 @@ def get_ops_principal(
     user = db.query(OpsUser).filter(OpsUser.id == user_id, OpsUser.is_active.is_(True)).first()
     if not user:
         raise HTTPException(status_code=401, detail="User not found or inactive")
-    zone_ids = [
-        row.zone_id
-        for row in db.query(UserZoneAssignment)
-        .filter(UserZoneAssignment.user_id == user.id)
-        .all()
-    ]
-    return OpsPrincipal(user=user, zone_ids=zone_ids)
+    return OpsPrincipal(user=user, assignments=_load_assignments(db, user.id))
+
+
+def require_system_admin():
+    def _dep(principal: OpsPrincipal = Depends(get_ops_principal)) -> OpsPrincipal:
+        if not principal.is_system_admin():
+            raise HTTPException(status_code=403, detail="System admin required")
+        return principal
+
+    return _dep
+
+
+def require_archive_permission():
+    def _dep(principal: OpsPrincipal = Depends(get_ops_principal)) -> OpsPrincipal:
+        if not principal.can_run_archive():
+            raise HTTPException(status_code=403, detail="Archive permission required")
+        return principal
+
+    return _dep
 
 
 def require_ops_roles(*roles: str):

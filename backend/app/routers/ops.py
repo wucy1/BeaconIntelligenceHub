@@ -20,7 +20,8 @@ from app.ops_auth import (
     create_access_token,
     get_ops_principal,
     hash_password,
-    require_ops_roles,
+    require_archive_permission,
+    require_system_admin,
     verify_password,
 )
 from app.schemas import OpsReportSummary
@@ -75,6 +76,24 @@ class ArchiveRunBody(BaseModel):
     limit: int = Field(500, ge=1, le=2000)
 
 
+class UserCreateBody(BaseModel):
+    email: str
+    password: str = Field(..., min_length=8)
+    display_name: str | None = None
+    role: str = "coordinator"
+
+
+class UserPatchBody(BaseModel):
+    display_name: str | None = None
+    role: str | None = None
+    is_active: bool | None = None
+    password: str | None = Field(None, min_length=8)
+
+
+class ZoneAssignBody(BaseModel):
+    assignment_role: str = "coordinator"
+
+
 def _polygon_from_geojson(geojson: dict[str, Any]):
     g = shape(geojson)
     if g.geom_type != "Polygon":
@@ -110,6 +129,35 @@ def _zone_out(db: Session, zone: Zone) -> dict:
     }
 
 
+def _zone_assignments_payload(db: Session, user_id: UUID) -> list[dict]:
+    rows = (
+        db.query(UserZoneAssignment, Zone.name)
+        .join(Zone, Zone.id == UserZoneAssignment.zone_id)
+        .filter(UserZoneAssignment.user_id == user_id)
+        .all()
+    )
+    return [
+        {
+            "zone_id": str(a.zone_id),
+            "zone_name": name,
+            "assignment_role": a.assignment_role or "coordinator",
+        }
+        for a, name in rows
+    ]
+
+
+def _user_out(db: Session, user: OpsUser) -> dict:
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "display_name": user.display_name,
+        "role": user.role,
+        "is_active": bool(user.is_active),
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "zone_assignments": _zone_assignments_payload(db, user.id),
+    }
+
+
 def _report_geom_json(db: Session, report_id: UUID, building_id: UUID | None):
     gj = db.execute(
         text("SELECT ST_AsGeoJSON(geom)::json FROM reports WHERE id = :id AND geom IS NOT NULL"),
@@ -131,10 +179,7 @@ def ops_login(body: LoginBody, db: Session = Depends(get_db)) -> dict:
     user = db.query(OpsUser).filter(OpsUser.email == email, OpsUser.is_active.is_(True)).first()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    zone_ids = [
-        str(row.zone_id)
-        for row in db.query(UserZoneAssignment).filter(UserZoneAssignment.user_id == user.id).all()
-    ]
+    assignments = _zone_assignments_payload(db, user.id)
     token = create_access_token(user.id, user.role, user.email)
     return {
         "access_token": token,
@@ -144,7 +189,8 @@ def ops_login(body: LoginBody, db: Session = Depends(get_db)) -> dict:
             "email": user.email,
             "display_name": user.display_name,
             "role": user.role,
-            "zone_ids": zone_ids,
+            "zone_ids": [a["zone_id"] for a in assignments],
+            "zone_assignments": assignments,
         },
     }
 
@@ -158,6 +204,10 @@ def ops_me(principal: OpsPrincipal = Depends(get_ops_principal)) -> dict:
         "display_name": u.display_name,
         "role": u.role,
         "zone_ids": [str(z) for z in principal.zone_ids],
+        "zone_assignments": [
+            {"zone_id": str(a.zone_id), "assignment_role": a.assignment_role}
+            for a in principal.assignments
+        ],
     }
 
 
@@ -178,7 +228,7 @@ def list_zones(
 @router.post("/zones")
 def create_zone(
     body: ZoneCreateBody,
-    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    principal: OpsPrincipal = Depends(require_system_admin()),
     db: Session = Depends(get_db),
 ) -> dict:
     if body.parent_zone_id:
@@ -209,12 +259,14 @@ def create_zone(
 def patch_zone(
     zone_id: UUID,
     body: ZonePatchBody,
-    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    principal: OpsPrincipal = Depends(get_ops_principal),
     db: Session = Depends(get_db),
 ) -> dict:
     zone = db.query(Zone).filter(Zone.id == zone_id).first()
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found")
+    if not principal.can_edit_zone(zone_id):
+        raise HTTPException(status_code=403, detail="Cannot edit this zone")
     if body.name is not None:
         zone.name = body.name.strip()
     if body.description is not None:
@@ -240,7 +292,7 @@ def patch_zone(
 @router.delete("/zones/{zone_id}")
 def delete_zone(
     zone_id: UUID,
-    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    principal: OpsPrincipal = Depends(require_system_admin()),
     db: Session = Depends(get_db),
 ) -> dict:
     zone = db.query(Zone).filter(Zone.id == zone_id).first()
@@ -271,7 +323,7 @@ def ops_list_crises(
 @router.post("/crises")
 def ops_create_crisis(
     body: CrisisCreateBody,
-    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    principal: OpsPrincipal = Depends(require_system_admin()),
     db: Session = Depends(get_db),
 ) -> dict:
     if body.archive_status not in ("draft", "active", "archived"):
@@ -302,7 +354,7 @@ def ops_create_crisis(
 def ops_patch_crisis(
     crisis_id: UUID,
     body: CrisisPatchBody,
-    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    principal: OpsPrincipal = Depends(require_archive_permission()),
     db: Session = Depends(get_db),
 ) -> dict:
     crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
@@ -337,7 +389,7 @@ def ops_patch_crisis(
 def ops_archive_preview(
     crisis_id: UUID,
     body: ArchiveRunBody,
-    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    principal: OpsPrincipal = Depends(require_archive_permission()),
     db: Session = Depends(get_db),
 ) -> dict:
     crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
@@ -371,7 +423,7 @@ def ops_archive_preview(
 def ops_archive_run(
     crisis_id: UUID,
     body: ArchiveRunBody,
-    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    principal: OpsPrincipal = Depends(require_archive_permission()),
     db: Session = Depends(get_db),
 ) -> dict:
     crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
@@ -417,7 +469,7 @@ def ops_archive_run(
 @router.get("/audit-log")
 def ops_audit_log(
     limit: int = Query(50, ge=1, le=200),
-    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    principal: OpsPrincipal = Depends(require_system_admin()),
     db: Session = Depends(get_db),
 ) -> dict:
     rows = (
@@ -519,16 +571,95 @@ def ops_patch_report(
     return {"ok": True, "id": str(report_id)}
 
 
-@router.post("/users/{user_id}/zones/{zone_id}")
-def assign_user_zone(
+@router.get("/users")
+def ops_list_users(
+    principal: OpsPrincipal = Depends(require_system_admin()),
+    db: Session = Depends(get_db),
+) -> dict:
+    users = db.query(OpsUser).order_by(OpsUser.email.asc()).all()
+    return {"items": [_user_out(db, u) for u in users]}
+
+
+@router.post("/users")
+def ops_create_user(
+    body: UserCreateBody,
+    principal: OpsPrincipal = Depends(require_system_admin()),
+    db: Session = Depends(get_db),
+) -> dict:
+    if body.role not in ("coordinator", "system_admin"):
+        raise HTTPException(status_code=422, detail="role must be coordinator or system_admin")
+    email = body.email.strip().lower()
+    if db.query(OpsUser).filter(OpsUser.email == email).first():
+        raise HTTPException(status_code=409, detail="Email already exists")
+    user = OpsUser(
+        email=email,
+        password_hash=hash_password(body.password),
+        display_name=body.display_name,
+        role=body.role,
+    )
+    db.add(user)
+    db.flush()
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="user.create",
+        entity_type="ops_user",
+        entity_id=user.id,
+        detail={"email": email, "role": body.role},
+    )
+    db.commit()
+    db.refresh(user)
+    return _user_out(db, user)
+
+
+@router.patch("/users/{user_id}")
+def ops_patch_user(
     user_id: UUID,
-    zone_id: UUID,
-    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    body: UserPatchBody,
+    principal: OpsPrincipal = Depends(require_system_admin()),
     db: Session = Depends(get_db),
 ) -> dict:
     user = db.query(OpsUser).filter(OpsUser.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if body.role is not None:
+        if body.role not in ("coordinator", "system_admin"):
+            raise HTTPException(status_code=422, detail="role must be coordinator or system_admin")
+        user.role = body.role
+    if body.display_name is not None:
+        user.display_name = body.display_name
+    if body.is_active is not None:
+        user.is_active = body.is_active
+    if body.password:
+        user.password_hash = hash_password(body.password)
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="user.update",
+        entity_type="ops_user",
+        entity_id=user.id,
+        detail={"email": user.email},
+    )
+    db.commit()
+    db.refresh(user)
+    return _user_out(db, user)
+
+
+@router.post("/users/{user_id}/zones/{zone_id}")
+def assign_user_zone(
+    user_id: UUID,
+    zone_id: UUID,
+    body: ZoneAssignBody,
+    principal: OpsPrincipal = Depends(require_system_admin()),
+    db: Session = Depends(get_db),
+) -> dict:
+    if body.assignment_role not in ("lead", "coordinator"):
+        raise HTTPException(status_code=422, detail="assignment_role must be lead or coordinator")
+    user = db.query(OpsUser).filter(OpsUser.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.role == "system_admin":
+        raise HTTPException(status_code=422, detail="System admin does not need zone assignments")
     zone = db.query(Zone).filter(Zone.id == zone_id).first()
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found")
@@ -537,9 +668,25 @@ def assign_user_zone(
         .filter(UserZoneAssignment.user_id == user_id, UserZoneAssignment.zone_id == zone_id)
         .first()
     )
-    if not existing:
-        db.add(UserZoneAssignment(user_id=user_id, zone_id=zone_id))
-        db.commit()
+    if existing:
+        existing.assignment_role = body.assignment_role
+    else:
+        db.add(
+            UserZoneAssignment(
+                user_id=user_id,
+                zone_id=zone_id,
+                assignment_role=body.assignment_role,
+            )
+        )
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="user.zone_assign",
+        entity_type="ops_user",
+        entity_id=user_id,
+        detail={"zone_id": str(zone_id), "assignment_role": body.assignment_role},
+    )
+    db.commit()
     return {"ok": True}
 
 
@@ -547,7 +694,7 @@ def assign_user_zone(
 def unassign_user_zone(
     user_id: UUID,
     zone_id: UUID,
-    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    principal: OpsPrincipal = Depends(require_system_admin()),
     db: Session = Depends(get_db),
 ) -> dict:
     row = (
@@ -556,6 +703,14 @@ def unassign_user_zone(
         .first()
     )
     if row:
+        log_ops_action(
+            db,
+            actor_user_id=principal.user_id,
+            action="user.zone_unassign",
+            entity_type="ops_user",
+            entity_id=user_id,
+            detail={"zone_id": str(zone_id)},
+        )
         db.delete(row)
         db.commit()
     return {"ok": True}

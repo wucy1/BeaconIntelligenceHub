@@ -26,9 +26,18 @@ import {
   type AuditEntry,
   type OpsCrisis,
   type OpsReport,
+  type OpsUserRecord,
   type OpsZone,
 } from '../ops/opsApi';
-import { clearOpsSession, getOpsUser, opsCanManageZones } from '../ops/opsAuth';
+import {
+  clearOpsSession,
+  getOpsUser,
+  opsCanCreateZones,
+  opsCanEditZone,
+  opsCanManageUsers,
+  opsCanRunArchive,
+  opsIsSystemAdmin,
+} from '../ops/opsAuth';
 import {
   formatArea,
   fromDatetimeLocalValue,
@@ -51,7 +60,7 @@ const DAMAGE_COLOR: Record<string, string> = {
 };
 
 type MapMode = 'browse' | 'draw' | 'edit';
-type PanelKey = 'zone' | 'crisis' | 'audit' | null;
+type PanelKey = 'zone' | 'crisis' | 'audit' | 'users' | null;
 
 function PolygonDrawHandler({
   active,
@@ -84,11 +93,21 @@ function crisisLabel(c: OpsCrisis): string {
   return c.name['zh-Hant'] ?? c.name.zh ?? c.name.en ?? c.slug;
 }
 
+function roleLabel(role: string): string {
+  if (role === 'system_admin') return '系統管理員';
+  if (role === 'crisis_lead') return '營運人員（舊）';
+  return '營運人員';
+}
+
 export function OpsMapPage() {
   const user = getOpsUser();
-  const canManage = user ? opsCanManageZones(user.role) : false;
+  const isAdmin = opsIsSystemAdmin(user);
+  const canCreateZones = opsCanCreateZones(user);
+  const canArchive = opsCanRunArchive(user);
+  const canManageUsers = opsCanManageUsers(user);
 
   const [zones, setZones] = useState<OpsZone[]>([]);
+  const [opsUsers, setOpsUsers] = useState<OpsUserRecord[]>([]);
   const [reports, setReports] = useState<OpsReport[]>([]);
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
@@ -115,7 +134,15 @@ export function OpsMapPage() {
   const [busy, setBusy] = useState(false);
   const [flyZone, setFlyZone] = useState<OpsZone | null>(null);
 
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserName, setNewUserName] = useState('');
+  const [assignUserId, setAssignUserId] = useState('');
+  const [assignZoneId, setAssignZoneId] = useState('');
+  const [assignRole, setAssignRole] = useState<'lead' | 'coordinator'>('coordinator');
+
   const selectedZone = zones.find((z) => z.id === selectedZoneId) ?? null;
+  const canEditSelectedZone = selectedZone ? opsCanEditZone(user, selectedZone.id) : false;
   const selectedReport = reports.find((r) => r.id === selectedReportId) ?? null;
   const activeCrisis = crises.find((c) => c.id === activeCrisisId) ?? null;
 
@@ -140,11 +167,18 @@ export function OpsMapPage() {
   }, [activeCrisisId]);
 
   const loadAudit = useCallback(() => {
-    if (!canManage) return;
+    if (!isAdmin) return;
     opsGet<{ items: AuditEntry[] }>('/v1/ops/audit-log?limit=30')
       .then((d) => setAudit(d.items))
       .catch(() => setAudit([]));
-  }, [canManage]);
+  }, [isAdmin]);
+
+  const loadUsers = useCallback(() => {
+    if (!canManageUsers) return;
+    opsGet<{ items: OpsUserRecord[] }>('/v1/ops/users')
+      .then((d) => setOpsUsers(d.items))
+      .catch(() => setOpsUsers([]));
+  }, [canManageUsers]);
 
   const loadReports = useCallback(() => {
     const q = new URLSearchParams({ limit: '300' });
@@ -185,6 +219,7 @@ export function OpsMapPage() {
   };
 
   const startDraw = () => {
+    if (!canCreateZones) return;
     resetDraft();
     setMapMode('draw');
     setPanel('zone');
@@ -320,9 +355,67 @@ export function OpsMapPage() {
     window.location.href = '/ops/login';
   };
 
+  const createUser = async () => {
+    if (!newUserEmail.trim() || newUserPassword.length < 8) {
+      setErr('請填 email 與至少 8 字元密碼');
+      return;
+    }
+    setBusy(true);
+    try {
+      await opsPost('/v1/ops/users', {
+        email: newUserEmail.trim(),
+        password: newUserPassword,
+        display_name: newUserName.trim() || null,
+        role: 'coordinator',
+      });
+      setNewUserEmail('');
+      setNewUserPassword('');
+      setNewUserName('');
+      loadUsers();
+      loadAudit();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const assignZoneToUser = async () => {
+    if (!assignUserId || !assignZoneId) {
+      setErr('請選擇人員與分區');
+      return;
+    }
+    setBusy(true);
+    try {
+      await opsPost(`/v1/ops/users/${assignUserId}/zones/${assignZoneId}`, {
+        assignment_role: assignRole,
+      });
+      loadUsers();
+      loadAudit();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const unassignZone = async (userId: string, zoneId: string) => {
+    setBusy(true);
+    try {
+      await opsDelete(`/v1/ops/users/${userId}/zones/${zoneId}`);
+      loadUsers();
+      loadAudit();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const togglePanel = (key: PanelKey) => {
     setPanel((p) => (p === key ? null : key));
     if (key === 'audit') loadAudit();
+    if (key === 'users') loadUsers();
   };
 
   return (
@@ -335,7 +428,7 @@ export function OpsMapPage() {
       >
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <FlyToZone zone={flyZone} />
-        {canManage && (mapMode === 'draw' || mapMode === 'edit') && (
+        {((mapMode === 'draw' && canCreateZones) || (mapMode === 'edit' && editingZoneId && opsCanEditZone(user, editingZoneId))) && (
           <PolygonDrawHandler
             active
             onAddVertex={(v) => {
@@ -419,7 +512,12 @@ export function OpsMapPage() {
       <div className="ops-map-overlay-top">
         <div className="ops-map-chip ops-map-title">
           <strong>營運地圖</strong>
-          <span className="ops-map-sub">{user.email} · {user.role}</span>
+          <span className="ops-map-sub">
+            {user.email} · {roleLabel(user.role)}
+            {!isAdmin && user.zone_assignments?.length
+              ? ` · ${user.zone_assignments.map((a) => `${a.assignment_role}@${a.zone_id.slice(0, 4)}`).join(', ')}`
+              : ''}
+          </span>
         </div>
         <div className="ops-map-toolbar">
           <Link to="/" className="ops-map-chip ops-map-link">
@@ -431,19 +529,28 @@ export function OpsMapPage() {
         </div>
       </div>
 
-      {canManage && (
-        <div className="ops-map-fab-col">
+      <div className="ops-map-fab-col">
+        {canCreateZones && (
           <button type="button" className={`ops-map-fab ${mapMode === 'draw' ? 'active' : ''}`} onClick={startDraw}>
             ＋ 畫分區
           </button>
+        )}
+        {canArchive && (
           <button type="button" className={`ops-map-fab ${panel === 'crisis' ? 'active' : ''}`} onClick={() => togglePanel('crisis')}>
             危機歸檔
           </button>
+        )}
+        {canManageUsers && (
+          <button type="button" className={`ops-map-fab ${panel === 'users' ? 'active' : ''}`} onClick={() => togglePanel('users')}>
+            人員
+          </button>
+        )}
+        {isAdmin && (
           <button type="button" className={`ops-map-fab ${panel === 'audit' ? 'active' : ''}`} onClick={() => togglePanel('audit')}>
             稽核
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="ops-map-filter-bar">
         <label className="ops-map-chip">
@@ -512,15 +619,15 @@ export function OpsMapPage() {
               <h3>{selectedZone.name}</h3>
               <p className="muted">{selectedZone.id.slice(0, 8)}…</p>
               <div className="ops-map-card-actions">
-                {canManage && (
-                  <>
-                    <button type="button" onClick={() => startEditZone(selectedZone)}>
-                      編輯邊界
-                    </button>
-                    <button type="button" className="danger" onClick={() => removeZone(selectedZone.id)} disabled={busy}>
-                      刪除
-                    </button>
-                  </>
+                {canEditSelectedZone && (
+                  <button type="button" onClick={() => startEditZone(selectedZone)}>
+                    編輯邊界
+                  </button>
+                )}
+                {isAdmin && (
+                  <button type="button" className="danger" onClick={() => removeZone(selectedZone.id)} disabled={busy}>
+                    刪除
+                  </button>
                 )}
                 <button type="button" className="secondary" onClick={() => setSelectedZoneId(null)}>
                   清除選取
@@ -531,7 +638,7 @@ export function OpsMapPage() {
         </div>
       )}
 
-      {panel === 'crisis' && canManage && (
+      {panel === 'crisis' && canArchive && (
         <div className="ops-map-card ops-map-card-wide">
           <button type="button" className="ops-map-card-close" onClick={() => setPanel(null)}>
             ×
@@ -589,7 +696,74 @@ export function OpsMapPage() {
         </div>
       )}
 
-      {panel === 'audit' && canManage && (
+      {panel === 'users' && canManageUsers && (
+        <div className="ops-map-card ops-map-card-wide">
+          <button type="button" className="ops-map-card-close" onClick={() => setPanel(null)}>
+            ×
+          </button>
+          <h3>人員管理</h3>
+          <p className="muted">帳號僅分系統管理員／營運人員；Lead 與 Coordinator 依分區指派。</p>
+          <div className="ops-user-create">
+            <h4>新增營運人員</h4>
+            <input className="ops-input" placeholder="email" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} />
+            <input className="ops-input" type="password" placeholder="密碼（≥8）" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} />
+            <input className="ops-input" placeholder="顯示名稱（選填）" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
+            <button type="button" onClick={createUser} disabled={busy}>
+              建立
+            </button>
+          </div>
+          <div className="ops-user-assign">
+            <h4>分區指派</h4>
+            <select className="ops-input" value={assignUserId} onChange={(e) => setAssignUserId(e.target.value)}>
+              <option value="">選擇人員</option>
+              {opsUsers.filter((u) => u.role !== 'system_admin').map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.email}
+                </option>
+              ))}
+            </select>
+            <select className="ops-input" value={assignZoneId} onChange={(e) => setAssignZoneId(e.target.value)}>
+              <option value="">選擇分區</option>
+              {zones.map((z) => (
+                <option key={z.id} value={z.id}>
+                  {z.name}
+                </option>
+              ))}
+            </select>
+            <select className="ops-input" value={assignRole} onChange={(e) => setAssignRole(e.target.value as 'lead' | 'coordinator')}>
+              <option value="coordinator">Coordinator（檢視／審核）</option>
+              <option value="lead">Lead（編輯分區／歸檔）</option>
+            </select>
+            <button type="button" onClick={assignZoneToUser} disabled={busy}>
+              指派
+            </button>
+          </div>
+          <ul className="ops-users-list">
+            {opsUsers.map((u) => (
+              <li key={u.id}>
+                <strong>{u.email}</strong>
+                <span className="muted"> {roleLabel(u.role)}</span>
+                {u.zone_assignments.length > 0 && (
+                  <ul>
+                    {u.zone_assignments.map((a) => (
+                      <li key={`${u.id}-${a.zone_id}`}>
+                        {a.zone_name ?? a.zone_id.slice(0, 8)} — {a.assignment_role}
+                        {u.role !== 'system_admin' && (
+                          <button type="button" className="linkish" onClick={() => unassignZone(u.id, a.zone_id)}>
+                            移除
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {panel === 'audit' && isAdmin && (
         <div className="ops-map-card ops-map-card-wide ops-map-card-audit">
           <button type="button" className="ops-map-card-close" onClick={() => setPanel(null)}>
             ×

@@ -2018,3 +2018,43 @@ button.danger {
   padding: 0 0.25rem;
   font-size: 1rem;
 }
+
+.ops-user-create,
+.ops-user-assign {
+  margin-bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ops-user-create h4,
+.ops-user-assign h4 {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.ops-users-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.ops-users-list > li {
+  padding: 0.45rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ops-users-list ul {
+  margin: 0.25rem 0 0 1rem;
+  padding: 0;
+  list-style: disc;
+}
+
+button.linkish {
+  background: none;
+  color: #1d4ed8;
+  padding: 0 0.25rem;
+  font-size: inherit;
+  text-decoration: underline;
+}

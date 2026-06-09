@@ -110,6 +110,20 @@ export type ArchivePreview = {
   zone_ids: string[] | null;
 };
 
+export type OpsUserRecord = {
+  id: string;
+  email: string;
+  display_name: string | null;
+  role: 'coordinator' | 'system_admin';
+  is_active: boolean;
+  created_at: string | null;
+  zone_assignments: Array<{
+    zone_id: string;
+    zone_name?: string;
+    assignment_role: 'lead' | 'coordinator';
+  }>;
+};
+
 export type AuditEntry = {
   id: string;
   actor_user_id: string | null;

@@ -115,6 +115,7 @@ class UserZoneAssignment(Base):
 
     user_id = Column(UUID(as_uuid=True), ForeignKey("ops_users.id", ondelete="CASCADE"), primary_key=True)
     zone_id = Column(UUID(as_uuid=True), ForeignKey("zones.id", ondelete="CASCADE"), primary_key=True)
+    assignment_role = Column(String, nullable=False, default="coordinator")
     assigned_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 

@@ -184,6 +184,7 @@ CREATE TABLE IF NOT EXISTS ops_users (
 CREATE TABLE IF NOT EXISTS user_zone_assignments (
   user_id UUID NOT NULL REFERENCES ops_users(id) ON DELETE CASCADE,
   zone_id UUID NOT NULL REFERENCES zones(id) ON DELETE CASCADE,
+  assignment_role TEXT NOT NULL DEFAULT 'coordinator' CHECK (assignment_role IN ('lead', 'coordinator')),
   assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, zone_id)
 );
