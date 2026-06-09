@@ -28,6 +28,8 @@ import {
 } from '../offline/queue';
 import type { MapRegionMeta } from '../offline/tileCache';
 import { useI18n } from '../i18n/I18nContext';
+import { getOpsToken } from '../ops/opsAuth';
+import { OPS_LABELS } from '../ops/opsLabels';
 import { DEFAULT_BOX_SIDE_KM, DEFAULT_RADIUS_KM, PREFETCH_ZOOM_MAX } from '../offline/tileMath';
 import {
   buildingFeatureById,
@@ -974,7 +976,8 @@ export function MapPage() {
           </div>
           <nav className="map-dev-links">
             <a href="/dev">{t('nav.home')}</a>
-            <a href="/dashboard">{t('nav.dashboard')}</a>
+            {getOpsToken() && <a href="/dashboard">{OPS_LABELS.dashboard}</a>}
+            {!getOpsToken() && <a href="/ops/login">{OPS_LABELS.login}</a>}
           </nav>
         </div>
       </div>

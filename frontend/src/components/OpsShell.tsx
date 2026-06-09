@@ -26,7 +26,7 @@ export function OpsShell({ children, narrow }: Props) {
         <nav className="ops-header-nav">
           <Link to="/ops">{OPS_LABELS.console}</Link>
           <Link to="/ops/map">{OPS_LABELS.map}</Link>
-          <Link to="/dashboard">{OPS_LABELS.dashboard}</Link>
+          {user && <Link to="/dashboard">{OPS_LABELS.dashboard}</Link>}
           <Link to="/">{OPS_LABELS.contributorMap}</Link>
           {user ? (
             <button type="button" className="ops-header-linkish" onClick={logout}>

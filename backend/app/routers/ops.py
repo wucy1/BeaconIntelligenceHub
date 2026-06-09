@@ -279,6 +279,9 @@ def create_zone(
 ) -> dict:
     if not principal.can_create_zones(body.crisis_id):
         raise HTTPException(status_code=403, detail="Cannot create zones for this crisis")
+    crisis = db.query(Crisis).filter(Crisis.id == body.crisis_id).first()
+    if not crisis:
+        raise HTTPException(status_code=404, detail="crisis_id not found")
     if body.parent_zone_id:
         parent = db.query(Zone).filter(Zone.id == body.parent_zone_id).first()
         if not parent:
@@ -291,15 +294,20 @@ def create_zone(
         geom=_polygon_from_geojson(body.geom),
     )
     db.add(zone)
-    log_ops_action(
-        db,
-        actor_user_id=principal.user_id,
-        action="zone.create",
-        entity_type="zone",
-        entity_id=zone.id,
-        detail={"name": zone.name},
-    )
-    db.commit()
+    try:
+        db.flush()
+        log_ops_action(
+            db,
+            actor_user_id=principal.user_id,
+            action="zone.create",
+            entity_type="zone",
+            entity_id=zone.id,
+            detail={"name": zone.name, "crisis_id": str(body.crisis_id)},
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Could not create zone") from exc
     db.refresh(zone)
     return _zone_out(db, zone)
 

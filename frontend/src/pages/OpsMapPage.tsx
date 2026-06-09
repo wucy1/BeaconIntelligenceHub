@@ -151,9 +151,14 @@ export function OpsMapPage() {
     [vertices],
   );
 
-  const loadZones = useCallback(() => {
+  const loadZones = useCallback(async () => {
     const q = activeCrisisId ? `?crisis_id=${activeCrisisId}` : '';
-    opsGet<{ items: OpsZone[] }>(`/v1/ops/zones${q}`).then((d) => setZones(d.items)).catch(() => setZones([]));
+    try {
+      const d = await opsGet<{ items: OpsZone[] }>(`/v1/ops/zones${q}`);
+      setZones(d.items);
+    } catch {
+      setZones([]);
+    }
   }, [activeCrisisId]);
 
   const loadCrises = useCallback(() => {
@@ -274,29 +279,42 @@ export function OpsMapPage() {
       return;
     }
     setClosed(true);
-    setMapMode('browse');
     setErr(null);
   };
 
   const saveZone = async () => {
-    if (!activeCrisisId || !zoneName.trim() || !draftPolygon || !closed) {
-      setErr('請選擇危機並完成名稱與多邊形');
+    if (!activeCrisisId) {
+      setErr('請先選擇危機');
+      return;
+    }
+    if (!zoneName.trim()) {
+      setErr('請輸入分區名稱');
+      return;
+    }
+    if (vertices.length < 3) {
+      setErr('至少需要 3 個頂點');
+      return;
+    }
+    const polygon = draftPolygon ?? verticesToPolygon(vertices);
+    if (!polygon) {
+      setErr('多邊形無效');
       return;
     }
     setBusy(true);
     setErr(null);
     try {
       if (editingZoneId) {
-        await opsPatch(`/v1/ops/zones/${editingZoneId}`, { name: zoneName.trim(), geom: draftPolygon });
+        await opsPatch(`/v1/ops/zones/${editingZoneId}`, { name: zoneName.trim(), geom: polygon });
       } else {
         await opsPost('/v1/ops/zones', {
           crisis_id: activeCrisisId,
           name: zoneName.trim(),
-          geom: draftPolygon,
+          geom: polygon,
         });
       }
       resetDraft();
-      loadZones();
+      setPanel(null);
+      await loadZones();
       loadAudit();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -410,7 +428,7 @@ export function OpsMapPage() {
         {((mapMode === 'draw' && canCreateZones) ||
           (mapMode === 'edit' && editingZoneId && opsCanEditZone(user, zones.find((z) => z.id === editingZoneId)?.crisis_id ?? undefined))) && (
           <PolygonDrawHandler
-            active
+            active={!closed}
             onAddVertex={(v) => {
               setVertices((prev) => [...prev, v]);
               setClosed(false);
@@ -571,7 +589,8 @@ export function OpsMapPage() {
         </div>
       )}
 
-      {panel === 'zone' && (mapMode !== 'browse' || selectedZone || editingZoneId) && (
+      {panel === 'zone' &&
+        (mapMode !== 'browse' || selectedZone || editingZoneId || (closed && vertices.length >= 3)) && (
         <div className="ops-map-card ops-map-card-zone">
           <button type="button" className="ops-map-card-close" onClick={() => { setPanel(null); resetDraft(); }}>
             ×
@@ -602,7 +621,12 @@ export function OpsMapPage() {
                   </>
                 )}
                 {closed && (
-                  <button type="button" onClick={saveZone} disabled={busy}>
+                  <button type="button" onClick={saveZone} disabled={busy || !zoneName.trim()}>
+                    儲存
+                  </button>
+                )}
+                {!closed && vertices.length >= 3 && (
+                  <button type="button" onClick={saveZone} disabled={busy || !zoneName.trim()}>
                     儲存
                   </button>
                 )}

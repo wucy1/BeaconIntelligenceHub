@@ -41,7 +41,7 @@ export function OpsLogin() {
     <section className="card ops-login-card">
       <h1>{OPS_LABELS.login}</h1>
       <p className="muted">
-        登入後進入{OPS_LABELS.console} · <Link to="/dashboard">{OPS_LABELS.dashboard}</Link>
+        登入後進入{OPS_LABELS.console}。民眾回報請至 <Link to="/">回報地圖</Link>。
       </p>
       <form onSubmit={onSubmit}>
         <label className="field">

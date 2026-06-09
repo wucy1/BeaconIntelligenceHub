@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 
-import { apiGet, apiBase } from '../api';
+import { apiBase } from '../api';
 import { useI18n } from '../i18n/I18nContext';
 import { opsGet, type OpsCrisis, type OpsZone } from '../ops/opsApi';
-import { getOpsToken, getOpsUser, opsIsSystemAdmin } from '../ops/opsAuth';
+import {
+  getOpsUser,
+  opsHasStaffAccess,
+  opsIsSystemAdmin,
+  opsRoleLabel,
+} from '../ops/opsAuth';
 import { OPS_LABELS } from '../ops/opsLabels';
-
-const DEMO_CRISIS = 'a0000000-0000-0000-0000-000000000001';
 
 type ReportSummary = {
   id: string;
@@ -24,79 +26,68 @@ type ReportSummary = {
 
 type ListResp = { items: ReportSummary[]; nextCursor?: string | null; zone_scope?: string[] | null };
 
-type Analytics = {
-  crisis_id: string;
-  total_reports: number;
-  latest_building_count: number;
-  damage_counts: Record<string, number>;
-};
-
 function crisisLabel(c: OpsCrisis): string {
   return c.name['zh-Hant'] ?? c.name.zh ?? c.name.en ?? c.slug;
 }
 
 export function Dashboard() {
   const { t } = useI18n();
-  const opsUser = getOpsUser();
-  const opsToken = getOpsToken();
+  const opsUser = getOpsUser()!;
   const isAdmin = opsIsSystemAdmin(opsUser);
+  const isLead = (opsUser.crisis_lead_assignments?.length ?? 0) > 0;
   const [data, setData] = useState<ListResp | null>(null);
-  const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [zones, setZones] = useState<OpsZone[]>([]);
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
-  const [crisisId, setCrisisId] = useState(DEMO_CRISIS);
+  const [crisisId, setCrisisId] = useState('');
   const [zoneId, setZoneId] = useState<string>('');
   const [err, setErr] = useState<string | null>(null);
-  const [latestOnly, setLatestOnly] = useState(true);
 
   useEffect(() => {
-    if (!opsToken) return;
     opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises')
       .then((d) => {
         setCrises(d.items);
-        if (d.items.length > 0) setCrisisId(d.items[0].id);
+        setCrisisId((prev) => (prev && d.items.some((c) => c.id === prev) ? prev : d.items[0]?.id ?? ''));
       })
       .catch(() => setCrises([]));
-  }, [opsToken]);
+  }, []);
 
   useEffect(() => {
-    if (!opsToken) return;
-    const q = crisisId ? `?crisis_id=${crisisId}` : '';
-    opsGet<{ items: OpsZone[] }>(`/v1/ops/zones${q}`)
+    if (!crisisId) {
+      setZones([]);
+      return;
+    }
+    opsGet<{ items: OpsZone[] }>(`/v1/ops/zones?crisis_id=${crisisId}`)
       .then((d) => setZones(d.items))
       .catch(() => setZones([]));
-  }, [opsToken, crisisId]);
+  }, [crisisId]);
 
   useEffect(() => {
+    if (!crisisId) {
+      setData({ items: [], zone_scope: [] });
+      return;
+    }
     const loadReports = async () => {
       try {
-        if (opsToken) {
-          const q = new URLSearchParams({ crisis_id: crisisId, limit: '100' });
-          if (zoneId) q.set('zone_id', zoneId);
-          const d = await opsGet<ListResp>(`/v1/ops/reports?${q}`);
-          setData({ items: d.items, nextCursor: null, zone_scope: d.zone_scope });
-          setErr(null);
-        } else {
-          const path = latestOnly
-            ? `/v1/reports/latest?crisis_id=${DEMO_CRISIS}&limit=100`
-            : `/v1/reports?crisis_id=${DEMO_CRISIS}&limit=100`;
-          const d = await apiGet<ListResp>(path);
-          setData(d);
-          setErr(null);
-        }
+        const q = new URLSearchParams({ crisis_id: crisisId, limit: '100' });
+        if (zoneId) q.set('zone_id', zoneId);
+        const d = await opsGet<ListResp>(`/v1/ops/reports?${q}`);
+        setData({ items: d.items, nextCursor: null, zone_scope: d.zone_scope });
+        setErr(null);
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
       }
     };
-    loadReports();
-    if (!opsToken) {
-      apiGet<Analytics>(`/v1/analytics/summary?crisis_id=${DEMO_CRISIS}`)
-        .then(setAnalytics)
-        .catch(() => setAnalytics(null));
-    } else {
-      setAnalytics(null);
-    }
-  }, [latestOnly, opsToken, zoneId, crisisId]);
+    void loadReports();
+  }, [zoneId, crisisId]);
+
+  if (!opsHasStaffAccess(opsUser)) {
+    return (
+      <section className="card">
+        <h1>{t('dashboard.title')}</h1>
+        <p className="muted">您的帳號尚未被指派危機或分區，請聯絡系統管理員。</p>
+      </section>
+    );
+  }
 
   if (err) {
     return (
@@ -109,53 +100,36 @@ export function Dashboard() {
 
   const api = apiBase();
   const activeCrisis = crises.find((c) => c.id === crisisId);
-  const exportCrisisId = opsToken ? crisisId : DEMO_CRISIS;
 
   return (
-    <section className="card">
+    <section className="card ops-dashboard">
       <h1>{t('dashboard.title')}</h1>
-      <p>
-        <Link to="/">{t('common.back')}</Link>
-        {opsUser ? (
-          <>
-            {' '}
-            · <Link to="/ops">{OPS_LABELS.console}</Link> · <Link to="/ops/map">{OPS_LABELS.map}</Link> · {opsUser.email} (
-            {opsUser.role})
-          </>
-        ) : (
-          <>
-            {' '}
-            · <Link to="/ops/login">{OPS_LABELS.login}</Link>
-          </>
-        )}
-        {!opsToken && (
-          <>
-            {' '}
-            ·{' '}
-            <label>
-              <input type="checkbox" checked={latestOnly} onChange={(e) => setLatestOnly(e.target.checked)} />{' '}
-              {t('dashboard.latestView')}
-            </label>
-          </>
-        )}
+      <p className="muted">
+        {opsUser.email} · {opsRoleLabel(opsUser.role)}
+        {isAdmin && ' · 可檢視全部危機'}
+        {!isAdmin && isLead && ' · 可檢視所負責危機與分區回報'}
+        {!isAdmin && !isLead && ' · 僅可檢視指派分區內回報'}
       </p>
 
-      {opsToken && (
-        <section className="ops-dash-banner">
-          <strong>營運人員</strong>
-          <p className="muted">
-            建立危機、指派 Lead／Coordinator 請至{' '}
-            <Link to="/ops">{OPS_LABELS.console}</Link>；畫分區與歸檔請至 <Link to="/ops/map">{OPS_LABELS.map}</Link>。
-            {isAdmin && ` 您是系統管理員，可從${OPS_LABELS.console}建立新危機。`}
-          </p>
-        </section>
-      )}
+      <section className="ops-dash-banner">
+        <strong>營運審核</strong>
+        <p className="muted">
+          建立危機、指派人員請至 {OPS_LABELS.console}；畫分區與歸檔請至 {OPS_LABELS.map}。
+          此頁供檢視與匯出您權限範圍內的回報。
+        </p>
+      </section>
 
-      {opsToken && crises.length > 0 && (
+      {crises.length > 0 && (
         <p>
           <label>
             危機{' '}
-            <select value={crisisId} onChange={(e) => { setCrisisId(e.target.value); setZoneId(''); }}>
+            <select
+              value={crisisId}
+              onChange={(e) => {
+                setCrisisId(e.target.value);
+                setZoneId('');
+              }}
+            >
               {crises.map((c) => (
                 <option key={c.id} value={c.id}>
                   {crisisLabel(c)}
@@ -167,7 +141,11 @@ export function Dashboard() {
         </p>
       )}
 
-      {opsToken && zones.length > 0 && (
+      {crises.length === 0 && (
+        <p className="muted">尚無可檢視的危機。{isAdmin ? `請至${OPS_LABELS.console}建立危機。` : '請聯絡管理員指派權限。'}</p>
+      )}
+
+      {zones.length > 0 && (
         <p>
           <label>
             分區篩選{' '}
@@ -188,36 +166,17 @@ export function Dashboard() {
         </p>
       )}
 
-      <p>
-        <a href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=csv`}>{t('dashboard.exportCsv')}</a> ·{' '}
-        <a href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=geojson`}>{t('dashboard.exportGeojson')}</a>
-        {' · '}
-        <a href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=csv&latest=1`}>{t('dashboard.exportLatestCsv')}</a>
-        {' · '}
-        <a href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=geojson&latest=1`}>
-          {t('dashboard.exportLatestGeojson')}
-        </a>
-      </p>
-      {!opsToken && (
-        <p className="muted">
-          {t('dashboard.crisisId')}: {DEMO_CRISIS}
+      {crisisId && (
+        <p>
+          <a href={`${api}/v1/export?crisis_id=${crisisId}&format=csv`}>{t('dashboard.exportCsv')}</a> ·{' '}
+          <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson`}>{t('dashboard.exportGeojson')}</a>
+          {' · '}
+          <a href={`${api}/v1/export?crisis_id=${crisisId}&format=csv&latest=1`}>{t('dashboard.exportLatestCsv')}</a>
+          {' · '}
+          <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson&latest=1`}>
+            {t('dashboard.exportLatestGeojson')}
+          </a>
         </p>
-      )}
-
-      {analytics && (
-        <section className="analytics-box">
-          <h2>{t('dashboard.analytics')}</h2>
-          <p>
-            {t('dashboard.totalReports')}: {analytics.total_reports} · {t('dashboard.latestBuildings')}:{' '}
-            {analytics.latest_building_count}
-          </p>
-          <p>
-            {t('dashboard.damageCounts')}:{' '}
-            {Object.entries(analytics.damage_counts)
-              .map(([k, v]) => `${k}: ${v}`)
-              .join(', ')}
-          </p>
-        </section>
       )}
 
       <table className="table">
@@ -227,7 +186,7 @@ export function Dashboard() {
             <th>{t('dashboard.col.damage')}</th>
             <th>{t('dashboard.col.building')}</th>
             <th>{t('dashboard.col.summary')}</th>
-            {opsToken && <th>審核</th>}
+            <th>審核</th>
             <th>{t('dashboard.col.image')}</th>
           </tr>
         </thead>
@@ -238,12 +197,10 @@ export function Dashboard() {
               <td>{r.damage_level}</td>
               <td>{r.building_id?.slice(0, 8) ?? '—'}</td>
               <td>{r.description_preview}</td>
-              {opsToken && (
-                <td>
-                  {r.admin_reviewed ? '✓' : '—'}
-                  {r.admin_flagged ? ' ⚑' : ''}
-                </td>
-              )}
+              <td>
+                {r.admin_reviewed ? '✓' : '—'}
+                {r.admin_flagged ? ' ⚑' : ''}
+              </td>
               <td>
                 <a href={`${api}/v1/reports/${r.id}?includeImageUrl=1`} target="_blank" rel="noreferrer">
                   JSON

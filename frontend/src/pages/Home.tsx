@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { apiGet } from '../api';
 import { useI18n } from '../i18n/I18nContext';
+import { OPS_LABELS } from '../ops/opsLabels';
 
 type Crisis = {
   id: string;
@@ -42,7 +43,7 @@ export function Home() {
         ))}
       </ul>
       <p>
-        <Link to="/dashboard">{t('home.openDashboard')}</Link>
+        <Link to="/ops/login">{OPS_LABELS.login}</Link>
       </p>
     </section>
   );

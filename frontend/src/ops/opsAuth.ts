@@ -90,3 +90,16 @@ export function opsCanOpenStaffPanel(user: OpsUserSession | null): boolean {
   if (opsIsSystemAdmin(user)) return true;
   return (user.crisis_lead_assignments?.length ?? 0) > 0;
 }
+
+export function opsHasStaffAccess(user: OpsUserSession | null): boolean {
+  if (!user) return false;
+  if (opsIsSystemAdmin(user)) return true;
+  if ((user.crisis_lead_assignments?.length ?? 0) > 0) return true;
+  return (user.zone_ids?.length ?? 0) > 0;
+}
+
+export function opsRoleLabel(role: OpsUserSession['role']): string {
+  if (role === 'system_admin') return '系統管理員';
+  if (role === 'crisis_lead') return '危機 Lead';
+  return 'Coordinator';
+}

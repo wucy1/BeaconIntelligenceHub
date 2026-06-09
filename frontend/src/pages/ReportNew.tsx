@@ -122,18 +122,18 @@ export function ReportNew() {
       if (!navigator.onLine) {
         await enqueueReport(crisisId, payload, file);
         setSuccess(t('report.offlineQueued'));
-        setTimeout(() => navigate('/dashboard'), 1500);
+        setTimeout(() => navigate('/'), 1500);
         return;
       }
       await submitReportOnline(crisisId, payload, file);
       setSuccess(t('report.success'));
-      setTimeout(() => navigate('/dashboard'), 800);
+      setTimeout(() => navigate('/'), 800);
     } catch (err) {
       if (!navigator.onLine) {
         try {
           await enqueueReport(crisisId, payload, file);
           setSuccess(t('report.offlineQueued'));
-          setTimeout(() => navigate('/dashboard'), 1500);
+          setTimeout(() => navigate('/'), 1500);
         } catch {
           setError(err instanceof Error ? err.message : String(err));
         }
