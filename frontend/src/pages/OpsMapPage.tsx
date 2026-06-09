@@ -37,6 +37,7 @@ import {
   opsCanRunArchive,
   opsIsSystemAdmin,
 } from '../ops/opsAuth';
+import { OPS_LABELS } from '../ops/opsLabels';
 import {
   formatArea,
   fromDatetimeLocalValue,
@@ -452,7 +453,7 @@ export function OpsMapPage() {
         <div className="ops-map-zoom-spacer" aria-hidden="true" />
         <div className="ops-map-header-center">
           <div className="ops-map-chip ops-map-title">
-            <strong>營運地圖</strong>
+            <strong>{OPS_LABELS.map}</strong>
             <span className="ops-map-sub">{user.email} · {roleLabel(user.role)}</span>
           </div>
           {crises.length > 0 && (
@@ -470,10 +471,10 @@ export function OpsMapPage() {
         </div>
         <div className="ops-map-toolbar">
           <Link to="/ops" className="ops-map-chip ops-map-link">
-            控制台
+            {OPS_LABELS.console}
           </Link>
           <Link to="/dashboard" className="ops-map-chip ops-map-link">
-            儀表板
+            {OPS_LABELS.dashboard}
           </Link>
           <button type="button" className="ops-map-chip ops-map-btn" onClick={logout}>
             登出

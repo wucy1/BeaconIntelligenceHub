@@ -9,6 +9,7 @@ from geoalchemy2.shape import from_shape
 from pydantic import BaseModel, Field
 from shapely.geometry import shape
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.archive_logic import report_ids_for_archive
@@ -397,16 +398,20 @@ def ops_create_crisis(
         archive_window_end=body.archive_window_end,
     )
     db.add(crisis)
-    db.flush()
-    log_ops_action(
-        db,
-        actor_user_id=principal.user_id,
-        action="crisis.create",
-        entity_type="crisis",
-        entity_id=crisis.id,
-        detail={"slug": crisis.slug},
-    )
-    db.commit()
+    try:
+        db.flush()
+        log_ops_action(
+            db,
+            actor_user_id=principal.user_id,
+            action="crisis.create",
+            entity_type="crisis",
+            entity_id=crisis.id,
+            detail={"slug": crisis.slug},
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Crisis slug already exists") from exc
     db.refresh(crisis)
     return _crisis_out(crisis)
 

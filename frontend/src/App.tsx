@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 
 import { LanguageSwitcher } from './components/LanguageSwitcher';
 import { OfflineBanner } from './components/OfflineBanner';
+import { OpsShell } from './components/OpsShell';
+import { OPS_LABELS } from './ops/opsLabels';
 import { I18nProvider, useI18n } from './i18n/I18nContext';
 import { Admin } from './pages/Admin';
 import { Dashboard } from './pages/Dashboard';
@@ -26,7 +28,7 @@ function DevLayout({ children }: { children: ReactNode }) {
           <a href="/dev">{t('nav.home')}</a>
           <a href="/dashboard">{t('nav.dashboard')}</a>
           <a href="/admin">{t('nav.admin')}</a>
-          <a href="/ops">營運控制台</a>
+          <a href="/ops">{OPS_LABELS.console}</a>
           <LanguageSwitcher />
         </nav>
       </header>
@@ -77,17 +79,17 @@ export default function App() {
           <Route
             path="/ops/login"
             element={
-              <DevLayout>
+              <OpsShell narrow>
                 <OpsLogin />
-              </DevLayout>
+              </OpsShell>
             }
           />
           <Route
             path="/ops"
             element={
-              <DevLayout>
+              <OpsShell>
                 <OpsDashboard />
-              </DevLayout>
+              </OpsShell>
             }
           />
           <Route path="/ops/map" element={<OpsMapPage />} />

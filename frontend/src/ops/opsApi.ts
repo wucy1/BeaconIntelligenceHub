@@ -1,4 +1,4 @@
-import { apiBase } from '../api';
+import { apiUrl } from '../api';
 import { getOpsToken } from './opsAuth';
 
 function opsHeaders(extra?: HeadersInit): HeadersInit {
@@ -12,25 +12,35 @@ function opsHeaders(extra?: HeadersInit): HeadersInit {
 }
 
 async function opsFetch(path: string, init?: RequestInit): Promise<Response> {
-  const base = apiBase();
-  const res = await fetch(`${base}${path}`, {
+  const res = await fetch(apiUrl(path), {
     ...init,
     headers: opsHeaders(init?.headers),
   });
   return res;
 }
 
+function formatOpsError(status: number, text: string): string {
+  try {
+    const j = JSON.parse(text) as { detail?: string | Array<{ msg?: string }>; hint?: string };
+    if (j.hint) return `${status} — ${j.hint}`;
+    if (typeof j.detail === 'string' && j.detail) return `${status} — ${j.detail}`;
+    if (Array.isArray(j.detail)) {
+      const msg = j.detail.map((d) => d.msg).filter(Boolean).join('；');
+      if (msg) return `${status} — ${msg}`;
+    }
+  } catch {
+    /* not JSON */
+  }
+  if (text === 'Internal Server Error' || !text.trim()) {
+    return `${status} — 後端錯誤（請確認資料庫 migration 已執行，含 007 ops_audit_log）`;
+  }
+  return `${status} ${text}`;
+}
+
 async function parseOpsJson<T>(res: Response): Promise<T> {
   const text = await res.text();
   if (!res.ok) {
-    let detail = text;
-    try {
-      const j = JSON.parse(text) as { detail?: string };
-      if (j.detail) detail = j.detail;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(`${res.status} — ${detail}`);
+    throw new Error(formatOpsError(res.status, text));
   }
   return JSON.parse(text) as T;
 }

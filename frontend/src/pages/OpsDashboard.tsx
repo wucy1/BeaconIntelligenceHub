@@ -11,13 +11,13 @@ import {
   type OpsZone,
 } from '../ops/opsApi';
 import {
-  clearOpsSession,
   getOpsUser,
   opsCanAssignCoordinator,
   opsCanManageUsers,
   opsIsCrisisLead,
   opsIsSystemAdmin,
 } from '../ops/opsAuth';
+import { OPS_LABELS } from '../ops/opsLabels';
 
 function crisisLabel(c: OpsCrisis): string {
   return c.name['zh-Hant'] ?? c.name.zh ?? c.name.en ?? c.slug;
@@ -49,6 +49,7 @@ export function OpsDashboard() {
   const [assignZoneId, setAssignZoneId] = useState('');
 
   const [err, setErr] = useState<string | null>(null);
+  const [crisisFormMsg, setCrisisFormMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const selectedCrisis = crises.find((c) => c.id === selectedCrisisId) ?? null;
@@ -56,14 +57,16 @@ export function OpsDashboard() {
   const canAssignCoord = selectedCrisisId ? opsCanAssignCoordinator(user, selectedCrisisId) : false;
   const isLeadForSelected = selectedCrisisId ? opsIsCrisisLead(user, selectedCrisisId) : false;
 
-  const loadCrises = useCallback(() => {
-    opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises')
-      .then((d) => {
-        setCrises(d.items);
-        if (!selectedCrisisId && d.items.length > 0) setSelectedCrisisId(d.items[0].id);
-      })
-      .catch(() => setCrises([]));
-  }, [selectedCrisisId]);
+  const loadCrises = useCallback(async () => {
+    try {
+      const d = await opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises');
+      setCrises(d.items);
+      setSelectedCrisisId((prev) => prev || (d.items[0]?.id ?? ''));
+    } catch (e) {
+      setCrises([]);
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
 
   const loadZones = useCallback(() => {
     opsGet<{ items: OpsZone[] }>('/v1/ops/zones')
@@ -105,31 +108,34 @@ export function OpsDashboard() {
 
   if (!user) return <Navigate to="/ops/login" replace />;
 
-  const logout = () => {
-    clearOpsSession();
-    window.location.href = '/ops/login';
-  };
-
   const createCrisis = async () => {
+    if (!isAdmin) {
+      setCrisisFormMsg('僅系統管理員可建立危機');
+      return;
+    }
     if (!newCrisisSlug.trim() || !newCrisisName.trim()) {
-      setErr('請填寫 slug 與名稱');
+      setCrisisFormMsg('請填寫 slug 與名稱');
       return;
     }
     setBusy(true);
     setErr(null);
+    setCrisisFormMsg(null);
     try {
       const c = await opsPost<OpsCrisis>('/v1/ops/crises', {
         slug: newCrisisSlug.trim(),
-        name: { 'zh-Hant': newCrisisName.trim() },
+        name: { 'zh-Hant': newCrisisName.trim(), zh: newCrisisName.trim() },
         archive_status: 'draft',
       });
+      setCrises((prev) => (prev.some((x) => x.id === c.id) ? prev : [c, ...prev]));
+      setSelectedCrisisId(c.id);
       setNewCrisisSlug('');
       setNewCrisisName('');
-      setSelectedCrisisId(c.id);
-      loadCrises();
+      setCrisisFormMsg(`已建立「${crisisLabel(c)}」`);
+      await loadCrises();
       loadAudit();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setCrisisFormMsg(msg);
     } finally {
       setBusy(false);
     }
@@ -243,7 +249,7 @@ export function OpsDashboard() {
           '於營運地圖執行危機歸檔（設定時間窗後預覽／執行）',
         ]
       : [
-          '至營運地圖或回報儀表板查看指派分區內的回報',
+          `至${OPS_LABELS.map}或${OPS_LABELS.dashboard}查看指派分區內的回報`,
           '點選回報標記審核或加旗標',
         ];
 
@@ -251,7 +257,7 @@ export function OpsDashboard() {
     <section className="card ops-dashboard">
       <header className="ops-dash-header">
         <div>
-          <h1>營運控制台</h1>
+          <h1>{OPS_LABELS.console}</h1>
           <p className="muted">
             {user.email} · {roleLabel(user.role)}
             {user.crisis_lead_assignments && user.crisis_lead_assignments.length > 0 && (
@@ -259,14 +265,6 @@ export function OpsDashboard() {
             )}
           </p>
         </div>
-        <nav className="ops-dash-nav">
-          <Link to="/ops/map">營運地圖</Link>
-          <Link to="/dashboard">回報儀表板</Link>
-          <Link to="/">回報地圖</Link>
-          <button type="button" className="secondary" onClick={logout}>
-            登出
-          </button>
-        </nav>
       </header>
 
       {err && <p className="error">{err}</p>}
@@ -314,8 +312,11 @@ export function OpsDashboard() {
               onChange={(e) => setNewCrisisName(e.target.value)}
             />
             <button type="button" onClick={createCrisis} disabled={busy}>
-              建立危機
+              {busy ? '建立中…' : '建立危機'}
             </button>
+            {crisisFormMsg && (
+              <p className={crisisFormMsg.startsWith('已建立') ? 'ops-form-ok' : 'error'}>{crisisFormMsg}</p>
+            )}
           </div>
         )}
         <ul className="ops-crisis-list">
@@ -332,8 +333,8 @@ export function OpsDashboard() {
                 <span className="muted"> · {c.slug} · {zoneCount} 個分區</span>
                 {leads.length > 0 && <span className="muted"> · Lead：{leads.join('、')}</span>}
                 {selectedCrisisId === c.id && (
-                  <Link to={`/ops/map`} className="ops-dash-inline-link">
-                    至地圖畫分區 →
+                  <Link to="/ops/map" className="ops-dash-inline-link">
+                    至{OPS_LABELS.map}畫分區 →
                   </Link>
                 )}
               </li>
@@ -415,7 +416,7 @@ export function OpsDashboard() {
               </button>
               {crisisZones.length === 0 && (
                 <p className="muted">
-                  此危機尚無分區。<Link to="/ops/map">至營運地圖畫分區</Link>
+                  此危機尚無分區。<Link to="/ops/map">至{OPS_LABELS.map}畫分區</Link>
                 </p>
               )}
             </div>

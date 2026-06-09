@@ -5,6 +5,7 @@ import { apiGet, apiBase } from '../api';
 import { useI18n } from '../i18n/I18nContext';
 import { opsGet, type OpsCrisis, type OpsZone } from '../ops/opsApi';
 import { getOpsToken, getOpsUser, opsIsSystemAdmin } from '../ops/opsAuth';
+import { OPS_LABELS } from '../ops/opsLabels';
 
 const DEMO_CRISIS = 'a0000000-0000-0000-0000-000000000001';
 
@@ -118,13 +119,13 @@ export function Dashboard() {
         {opsUser ? (
           <>
             {' '}
-            · <Link to="/ops">營運控制台</Link> · <Link to="/ops/map">營運地圖</Link> · {opsUser.email} (
+            · <Link to="/ops">{OPS_LABELS.console}</Link> · <Link to="/ops/map">{OPS_LABELS.map}</Link> · {opsUser.email} (
             {opsUser.role})
           </>
         ) : (
           <>
             {' '}
-            · <Link to="/ops/login">營運登入</Link>
+            · <Link to="/ops/login">{OPS_LABELS.login}</Link>
           </>
         )}
         {!opsToken && (
@@ -144,8 +145,8 @@ export function Dashboard() {
           <strong>營運人員</strong>
           <p className="muted">
             建立危機、指派 Lead／Coordinator 請至{' '}
-            <Link to="/ops">營運控制台</Link>；畫分區與歸檔請至 <Link to="/ops/map">營運地圖</Link>。
-            {isAdmin && ' 您是系統管理員，可從控制台建立新危機。'}
+            <Link to="/ops">{OPS_LABELS.console}</Link>；畫分區與歸檔請至 <Link to="/ops/map">{OPS_LABELS.map}</Link>。
+            {isAdmin && ` 您是系統管理員，可從${OPS_LABELS.console}建立新危機。`}
           </p>
         </section>
       )}

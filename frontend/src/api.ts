@@ -15,11 +15,20 @@ function shouldUseFallbackBase(): boolean {
   return host.endsWith('.workers.dev') || host === 'beacon.cila.workers.dev';
 }
 
-function resolveBase(path: string): string {
+export function resolveApiBase(path: string): string {
   if (path.startsWith('http')) return '';
   if (API_BASE) return API_BASE;
   if (shouldUseFallbackBase() && path.startsWith('/v1/')) return API_FALLBACK_BASE;
   return '';
+}
+
+export function apiUrl(path: string): string {
+  if (path.startsWith('http')) return path;
+  return `${resolveApiBase(path)}${path}`;
+}
+
+function resolveBase(path: string): string {
+  return resolveApiBase(path);
 }
 
 function deviceHeaders(extra?: HeadersInit): HeadersInit {

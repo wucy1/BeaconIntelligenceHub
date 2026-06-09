@@ -4,6 +4,7 @@ import { Link, Navigate, useNavigate } from 'react-router-dom';
 
 import { opsPost } from '../ops/opsApi';
 import { getOpsToken, getOpsUser, setOpsSession, type OpsUserSession } from '../ops/opsAuth';
+import { OPS_LABELS } from '../ops/opsLabels';
 
 type LoginResp = {
   access_token: string;
@@ -37,10 +38,10 @@ export function OpsLogin() {
   };
 
   return (
-    <section className="card" style={{ maxWidth: 420 }}>
-      <h1>營運登入</h1>
+    <section className="card ops-login-card">
+      <h1>{OPS_LABELS.login}</h1>
       <p className="muted">
-        登入後進入營運控制台 · <Link to="/dashboard">回報儀表板</Link>
+        登入後進入{OPS_LABELS.console} · <Link to="/dashboard">{OPS_LABELS.dashboard}</Link>
       </p>
       <form onSubmit={onSubmit}>
         <label className="field">
