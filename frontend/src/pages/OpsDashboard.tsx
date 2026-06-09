@@ -333,7 +333,7 @@ export function OpsDashboard() {
                 <span className="muted"> · {c.slug} · {zoneCount} 個分區</span>
                 {leads.length > 0 && <span className="muted"> · Lead：{leads.join('、')}</span>}
                 {selectedCrisisId === c.id && (
-                  <Link to="/ops/map" className="ops-dash-inline-link">
+                  <Link to={`/ops/map?crisis_id=${c.id}`} className="ops-dash-inline-link">
                     至{OPS_LABELS.map}畫分區 →
                   </Link>
                 )}
@@ -416,7 +416,7 @@ export function OpsDashboard() {
               </button>
               {crisisZones.length === 0 && (
                 <p className="muted">
-                  此危機尚無分區。<Link to="/ops/map">至{OPS_LABELS.map}畫分區</Link>
+                  此危機尚無分區。<Link to={`/ops/map?crisis_id=${selectedCrisisId}`}>至{OPS_LABELS.map}畫分區</Link>
                 </p>
               )}
             </div>

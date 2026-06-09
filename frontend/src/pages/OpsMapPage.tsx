@@ -14,7 +14,7 @@ import {
   useMap,
   useMapEvents,
 } from 'react-leaflet';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 import 'leaflet/dist/leaflet.css';
 
@@ -31,11 +31,14 @@ import {
 } from '../ops/opsApi';
 import {
   clearOpsSession,
+  getOpsToken,
   getOpsUser,
   opsCanCreateZones,
   opsCanEditZone,
   opsCanRunArchive,
   opsIsSystemAdmin,
+  setOpsSession,
+  type OpsUserSession,
 } from '../ops/opsAuth';
 import { OPS_LABELS } from '../ops/opsLabels';
 import {
@@ -100,9 +103,13 @@ function roleLabel(role: string): string {
 }
 
 export function OpsMapPage() {
-  const user = getOpsUser();
+  const [searchParams] = useSearchParams();
+  const crisisFromUrl = searchParams.get('crisis_id') ?? '';
+  const [user, setUser] = useState<OpsUserSession | null>(() => getOpsUser());
   const isAdmin = opsIsSystemAdmin(user);
-  const [activeCrisisId, setActiveCrisisId] = useState<string>('');
+  const hasZoneDrawRole =
+    isAdmin || ((user?.crisis_lead_assignments?.length ?? 0) > 0);
+  const [activeCrisisId, setActiveCrisisId] = useState<string>(crisisFromUrl);
   const canCreateZones = activeCrisisId ? opsCanCreateZones(user, activeCrisisId) : false;
   const canArchive = activeCrisisId ? opsCanRunArchive(user, activeCrisisId) : false;
   const [zones, setZones] = useState<OpsZone[]>([]);
@@ -152,10 +159,14 @@ export function OpsMapPage() {
     opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises')
       .then((d) => {
         setCrises(d.items);
-        if (!activeCrisisId && d.items.length > 0) setActiveCrisisId(d.items[0].id);
+        setActiveCrisisId((prev) => {
+          if (prev && d.items.some((c) => c.id === prev)) return prev;
+          if (crisisFromUrl && d.items.some((c) => c.id === crisisFromUrl)) return crisisFromUrl;
+          return d.items[0]?.id ?? '';
+        });
       })
       .catch(() => setCrises([]));
-  }, [activeCrisisId]);
+  }, [crisisFromUrl]);
 
   const loadAudit = useCallback(() => {
     if (!isAdmin) return;
@@ -175,6 +186,30 @@ export function OpsMapPage() {
       .then((d) => setReports(d.items))
       .catch(() => setReports([]));
   }, [selectedZoneId, filterFrom, filterTo]);
+
+  useEffect(() => {
+    const token = getOpsToken();
+    const current = getOpsUser();
+    if (!token || !current) return;
+    opsGet<{
+      role: OpsUserSession['role'];
+      zone_assignments: OpsUserSession['zone_assignments'];
+      crisis_lead_assignments: OpsUserSession['crisis_lead_assignments'];
+      zone_ids: string[];
+    }>('/v1/ops/me')
+      .then((me) => {
+        const updated: OpsUserSession = {
+          ...current,
+          role: me.role,
+          zone_ids: me.zone_ids,
+          zone_assignments: me.zone_assignments,
+          crisis_lead_assignments: me.crisis_lead_assignments,
+        };
+        setOpsSession(token, updated);
+        setUser(updated);
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     loadCrises();
@@ -207,10 +242,13 @@ export function OpsMapPage() {
 
   const startDraw = () => {
     if (!activeCrisisId) {
-      setErr('請先選擇危機');
+      setErr(crises.length === 0 ? '尚無危機，請至營運控制台建立' : '請先於上方選擇危機');
       return;
     }
-    if (!canCreateZones) return;
+    if (!opsCanCreateZones(user, activeCrisisId)) {
+      setErr('您無權在此危機畫分區（需為系統管理員或該危機 Lead）');
+      return;
+    }
     resetDraft();
     setMapMode('draw');
     setPanel('zone');
@@ -456,7 +494,7 @@ export function OpsMapPage() {
             <strong>{OPS_LABELS.map}</strong>
             <span className="ops-map-sub">{user.email} · {roleLabel(user.role)}</span>
           </div>
-          {crises.length > 0 && (
+          {crises.length > 0 ? (
             <label className="ops-map-chip ops-map-crisis-select">
               危機
               <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
@@ -467,7 +505,11 @@ export function OpsMapPage() {
                 ))}
               </select>
             </label>
-          )}
+          ) : hasZoneDrawRole ? (
+            <span className="ops-map-chip muted">
+              尚無危機 · <Link to="/ops">至{OPS_LABELS.console}建立</Link>
+            </span>
+          ) : null}
         </div>
         <div className="ops-map-toolbar">
           <Link to="/ops" className="ops-map-chip ops-map-link">
@@ -483,8 +525,13 @@ export function OpsMapPage() {
       </div>
 
       <div className="ops-map-fab-col">
-        {canCreateZones && (
-          <button type="button" className={`ops-map-fab ${mapMode === 'draw' ? 'active' : ''}`} onClick={startDraw}>
+        {hasZoneDrawRole && (
+          <button
+            type="button"
+            className={`ops-map-fab ${mapMode === 'draw' ? 'active' : ''}`}
+            onClick={startDraw}
+            title={!canCreateZones && activeCrisisId ? '此危機無畫分區權限' : undefined}
+          >
             ＋ 畫分區
           </button>
         )}
