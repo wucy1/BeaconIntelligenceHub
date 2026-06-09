@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+from datetime import datetime
+from uuid import UUID
+
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+
+def _time_clause(captured_from, captured_to) -> tuple[str, dict]:
+    clause = ""
+    params: dict = {}
+    if captured_from is not None:
+        clause += " AND r.captured_at_client >= :captured_from"
+        params["captured_from"] = captured_from
+    if captured_to is not None:
+        clause += " AND r.captured_at_client <= :captured_to"
+        params["captured_to"] = captured_to
+    return clause, params
+
+
+def _zone_clause(zone_ids: list[UUID] | None) -> tuple[str, dict]:
+    if zone_ids is None:
+        return "", {}
+    if len(zone_ids) == 0:
+        return " AND FALSE", {}
+    return """
+      AND (
+        EXISTS (
+          SELECT 1 FROM zones z
+          WHERE z.id = ANY(CAST(:zone_ids AS uuid[]))
+            AND r.geom IS NOT NULL
+            AND ST_Intersects(r.geom, z.geom)
+        )
+        OR EXISTS (
+          SELECT 1 FROM zones z
+          JOIN buildings b ON b.id = r.building_id
+          WHERE z.id = ANY(CAST(:zone_ids AS uuid[]))
+            AND b.geom IS NOT NULL
+            AND ST_Intersects(b.geom, z.geom)
+        )
+      )
+    """, {"zone_ids": [str(z) for z in zone_ids]}
+
+
+def report_ids_for_archive(
+    db: Session,
+    crisis_id: UUID,
+    zone_ids: list[UUID] | None,
+    captured_from: datetime | None,
+    captured_to: datetime | None,
+    limit: int,
+    *,
+    exclude_already_linked: bool = True,
+) -> list[UUID]:
+    time_filter, time_params = _time_clause(captured_from, captured_to)
+    zone_filter, zone_params = _zone_clause(zone_ids)
+    link_filter = ""
+    if exclude_already_linked:
+        link_filter = """
+          AND NOT EXISTS (
+            SELECT 1 FROM report_crisis_links l
+            WHERE l.report_id = r.id AND l.crisis_id = CAST(:cid AS uuid)
+          )
+        """
+    params = {"cid": str(crisis_id), "lim": limit, **time_params, **zone_params}
+    rows = db.execute(
+        text(
+            f"""
+            SELECT r.id FROM reports r
+            WHERE TRUE
+              {time_filter}
+              {zone_filter}
+              {link_filter}
+            ORDER BY r.captured_at_client DESC
+            LIMIT :lim
+            """
+        ),
+        params,
+    ).scalars().all()
+    return list(rows)

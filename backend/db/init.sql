@@ -187,3 +187,22 @@ CREATE TABLE IF NOT EXISTS user_zone_assignments (
   assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, zone_id)
 );
+
+CREATE TABLE IF NOT EXISTS report_crisis_links (
+  report_id UUID NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+  crisis_id UUID NOT NULL REFERENCES crises(id) ON DELETE CASCADE,
+  linked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  linked_by UUID REFERENCES ops_users(id) ON DELETE SET NULL,
+  link_source TEXT NOT NULL DEFAULT 'batch_archive',
+  PRIMARY KEY (report_id, crisis_id)
+);
+
+CREATE TABLE IF NOT EXISTS ops_audit_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_user_id UUID REFERENCES ops_users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id UUID,
+  detail JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

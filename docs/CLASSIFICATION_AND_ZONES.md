@@ -5,41 +5,51 @@
 | 原則 | 說明 |
 |------|------|
 | 危機生命週期 | **不影響** Contributor 能否回報；`archive_status` 僅供事後歸檔 |
-| 危機 | 事後歸檔桶；多危機可並存、空間可重疊（3b：`report_crisis_links`） |
-| 分區 (zones) | 營運人員**手畫框**（可巢狀 `parent_zone_id`），非官方區劃 |
+| 危機 | 事後歸檔桶；多危機可並存、空間可重疊（`report_crisis_links`） |
+| 分區 (zones) | 營運人員**手畫多邊形**（可巢狀 `parent_zone_id`），非官方區劃 |
 | 角色 | `coordinator`（分區視野）< `crisis_lead` ≈ `system_admin`（全分區） |
 | 離線 | 上傳不綁危機；歸檔依時空規則事後處理 |
 | 認證 | 帳密 + JWT（`/v1/ops/auth/login`） |
+| 後台 UI | **Map first**：`/ops/map` 全螢幕地圖，操作以浮動卡片／tooltip 呈現 |
 
-## Phase 3a（本版）
+## Phase 3a（完成）
 
-- Migration `006_ops_zones_users.sql`：`zones`、`ops_users`、`user_zone_assignments`、危機歸檔欄位
-- API：`/v1/ops/*`（登入、分區 CRUD、分區篩選回報）
-- 前端：`/ops/login`、`/ops/zones`（地圖上**任意點擊畫多邊形**，不限大小）、儀表板分區篩選（已登入時）
+- Migration `006`：zones、ops_users、user_zone_assignments
+- 任意多邊形畫區、編輯邊界、刪除
+- 地圖上顯示回報點、分區篩選、時間篩選
+- 回報審核／旗標（點選 marker 浮卡）
 
-### 角色與可見範圍
+## Phase 3b（完成）
 
-| 角色 | 分區列表 | 建立/刪除分區 | 回報列表 |
-|------|----------|---------------|----------|
-| coordinator | 僅指派分區 | ✗ | 僅指派分區內（PostGIS intersect） |
-| crisis_lead | 全部 | ✓ | 全部（可選 `zone_id` 篩選） |
-| system_admin | 全部 | ✓ | 全部 |
+- Migration `007`：`report_crisis_links`
+- 危機 `archive_window_start/end` 時間定義（營運地圖「危機歸檔」面板）
+- `POST /v1/ops/crises/{id}/archive-preview` — 預覽符合時空規則的回報
+- `POST /v1/ops/crises/{id}/archive-run` — 批次寫入 `report_crisis_links`
+- Contributor 原始 `reports.crisis_id` 不變；連結表為事後分類
 
-### 首次建立管理員
+## Phase 3c（完成）
 
-1. 在 `backend/.env` 設定 `OPS_JWT_SECRET`、`OPS_BOOTSTRAP_PASSWORD`（可選 `OPS_BOOTSTRAP_EMAIL`）
-2. 執行 migration 006
-3. `python scripts/bootstrap_ops_admin.py` 或 `POST /v1/ops/bootstrap-admin`
+- `ops_audit_log` 表
+- `GET /v1/ops/audit-log` — 稽核列表（營運地圖「稽核」面板）
+- 分區 CRUD、危機更新、歸檔執行、回報審核皆寫入稽核
 
-### Coordinator 指派
+## 入口
 
-`POST /v1/ops/users/{user_id}/zones/{zone_id}`（需 crisis_lead 或 system_admin）
+| 路徑 | 說明 |
+|------|------|
+| `/ops/login` | 登入 |
+| `/ops/map` | **營運主畫面**（map first） |
+| `/ops/zones` | 導向 `/ops/map` |
 
-## Phase 3b（規劃）
+## 營運地圖操作摘要
 
-- `report_crisis_links`、多危機批次歸檔
-- `reports.crisis_id` 可改為可空（離線佇列不綁危機）
+1. **畫分區**：右側「＋ 畫分區」→ 點地圖頂點 → 完成 → 儲存
+2. **編輯**：點選紅框分區 → 浮卡「編輯邊界」→ 調整頂點 → 儲存
+3. **回報**：彩色圓點；點選可審核／旗標；左下可設時間篩選
+4. **危機歸檔**：選危機、設時間窗 → 預覽 → 執行歸檔
+5. **稽核**：檢視近期操作紀錄
 
-## Phase 3c（規劃）
+## Migrations
 
-- 歸檔預覽、稽核 log
+1. `006_ops_zones_users.sql`
+2. `007_archive_links_audit.sql`

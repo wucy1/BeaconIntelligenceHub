@@ -11,8 +11,10 @@ from shapely.geometry import shape
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.archive_logic import report_ids_for_archive
 from app.database import get_db
-from app.models import OpsUser, Report, UserZoneAssignment, Zone
+from app.models import Crisis, OpsAuditLog, OpsUser, Report, ReportCrisisLink, UserZoneAssignment, Zone
+from app.ops_audit import log_ops_action
 from app.ops_auth import (
     OpsPrincipal,
     create_access_token,
@@ -52,11 +54,44 @@ class OpsReportPatchBody(BaseModel):
     flagged: bool | None = None
 
 
+class CrisisCreateBody(BaseModel):
+    slug: str = Field(..., min_length=1, max_length=80)
+    name: dict[str, str]
+    archive_status: str = "draft"
+    archive_window_start: datetime | None = None
+    archive_window_end: datetime | None = None
+
+
+class CrisisPatchBody(BaseModel):
+    slug: str | None = None
+    name: dict[str, str] | None = None
+    archive_status: str | None = None
+    archive_window_start: datetime | None = None
+    archive_window_end: datetime | None = None
+
+
+class ArchiveRunBody(BaseModel):
+    zone_ids: list[UUID] | None = None
+    limit: int = Field(500, ge=1, le=2000)
+
+
 def _polygon_from_geojson(geojson: dict[str, Any]):
     g = shape(geojson)
     if g.geom_type != "Polygon":
         raise HTTPException(status_code=422, detail="geom must be a GeoJSON Polygon")
     return from_shape(g, srid=4326)
+
+
+def _crisis_out(c: Crisis) -> dict:
+    return {
+        "id": str(c.id),
+        "slug": c.slug,
+        "name": c.name,
+        "archive_status": c.archive_status,
+        "archive_window_start": c.archive_window_start.isoformat() if c.archive_window_start else None,
+        "archive_window_end": c.archive_window_end.isoformat() if c.archive_window_end else None,
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+    }
 
 
 def _zone_out(db: Session, zone: Zone) -> dict:
@@ -157,6 +192,14 @@ def create_zone(
         geom=_polygon_from_geojson(body.geom),
     )
     db.add(zone)
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="zone.create",
+        entity_type="zone",
+        entity_id=zone.id,
+        detail={"name": zone.name},
+    )
     db.commit()
     db.refresh(zone)
     return _zone_out(db, zone)
@@ -181,6 +224,14 @@ def patch_zone(
     if body.geom is not None:
         zone.geom = _polygon_from_geojson(body.geom)
     zone.updated_at = datetime.utcnow()
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="zone.update",
+        entity_type="zone",
+        entity_id=zone.id,
+        detail={"name": zone.name},
+    )
     db.commit()
     db.refresh(zone)
     return _zone_out(db, zone)
@@ -195,14 +246,205 @@ def delete_zone(
     zone = db.query(Zone).filter(Zone.id == zone_id).first()
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found")
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="zone.delete",
+        entity_type="zone",
+        entity_id=zone_id,
+        detail={"name": zone.name},
+    )
     db.delete(zone)
     db.commit()
     return {"ok": True}
 
 
+@router.get("/crises")
+def ops_list_crises(
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = db.query(Crisis).order_by(Crisis.created_at.desc()).all()
+    return {"items": [_crisis_out(c) for c in rows]}
+
+
+@router.post("/crises")
+def ops_create_crisis(
+    body: CrisisCreateBody,
+    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    if body.archive_status not in ("draft", "active", "archived"):
+        raise HTTPException(status_code=422, detail="Invalid archive_status")
+    crisis = Crisis(
+        slug=body.slug.strip(),
+        name=body.name,
+        archive_status=body.archive_status,
+        archive_window_start=body.archive_window_start,
+        archive_window_end=body.archive_window_end,
+    )
+    db.add(crisis)
+    db.flush()
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="crisis.create",
+        entity_type="crisis",
+        entity_id=crisis.id,
+        detail={"slug": crisis.slug},
+    )
+    db.commit()
+    db.refresh(crisis)
+    return _crisis_out(crisis)
+
+
+@router.patch("/crises/{crisis_id}")
+def ops_patch_crisis(
+    crisis_id: UUID,
+    body: CrisisPatchBody,
+    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
+    if not crisis:
+        raise HTTPException(status_code=404, detail="Crisis not found")
+    if body.slug is not None:
+        crisis.slug = body.slug.strip()
+    if body.name is not None:
+        crisis.name = body.name
+    if body.archive_status is not None:
+        if body.archive_status not in ("draft", "active", "archived"):
+            raise HTTPException(status_code=422, detail="Invalid archive_status")
+        crisis.archive_status = body.archive_status
+    if body.archive_window_start is not None:
+        crisis.archive_window_start = body.archive_window_start
+    if body.archive_window_end is not None:
+        crisis.archive_window_end = body.archive_window_end
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="crisis.update",
+        entity_type="crisis",
+        entity_id=crisis.id,
+        detail={"slug": crisis.slug, "archive_status": crisis.archive_status},
+    )
+    db.commit()
+    db.refresh(crisis)
+    return _crisis_out(crisis)
+
+
+@router.post("/crises/{crisis_id}/archive-preview")
+def ops_archive_preview(
+    crisis_id: UUID,
+    body: ArchiveRunBody,
+    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
+    if not crisis:
+        raise HTTPException(status_code=404, detail="Crisis not found")
+    zone_ids = body.zone_ids
+    if zone_ids is None and not principal.sees_all_zones():
+        zone_ids = list(principal.zone_ids)
+    ids = report_ids_for_archive(
+        db,
+        crisis_id,
+        zone_ids,
+        crisis.archive_window_start,
+        crisis.archive_window_end,
+        body.limit,
+        exclude_already_linked=True,
+    )
+    linked = db.query(ReportCrisisLink).filter(ReportCrisisLink.crisis_id == crisis_id).count()
+    return {
+        "crisis_id": str(crisis_id),
+        "matched_count": len(ids),
+        "sample_report_ids": [str(i) for i in ids[:20]],
+        "already_linked_count": linked,
+        "archive_window_start": crisis.archive_window_start.isoformat() if crisis.archive_window_start else None,
+        "archive_window_end": crisis.archive_window_end.isoformat() if crisis.archive_window_end else None,
+        "zone_ids": [str(z) for z in zone_ids] if zone_ids else None,
+    }
+
+
+@router.post("/crises/{crisis_id}/archive-run")
+def ops_archive_run(
+    crisis_id: UUID,
+    body: ArchiveRunBody,
+    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
+    if not crisis:
+        raise HTTPException(status_code=404, detail="Crisis not found")
+    zone_ids = body.zone_ids
+    if zone_ids is None and not principal.sees_all_zones():
+        zone_ids = list(principal.zone_ids)
+    ids = report_ids_for_archive(
+        db,
+        crisis_id,
+        zone_ids,
+        crisis.archive_window_start,
+        crisis.archive_window_end,
+        body.limit,
+        exclude_already_linked=True,
+    )
+    created = 0
+    for rid in ids:
+        db.add(
+            ReportCrisisLink(
+                report_id=rid,
+                crisis_id=crisis_id,
+                linked_by=principal.user_id,
+                link_source="batch_archive",
+            )
+        )
+        created += 1
+    if crisis.archive_status == "draft" and created > 0:
+        crisis.archive_status = "active"
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="crisis.archive_run",
+        entity_type="crisis",
+        entity_id=crisis_id,
+        detail={"linked_count": created, "zone_ids": [str(z) for z in zone_ids] if zone_ids else None},
+    )
+    db.commit()
+    return {"ok": True, "linked_count": created, "crisis_id": str(crisis_id)}
+
+
+@router.get("/audit-log")
+def ops_audit_log(
+    limit: int = Query(50, ge=1, le=200),
+    principal: OpsPrincipal = Depends(require_ops_roles("crisis_lead", "system_admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = (
+        db.query(OpsAuditLog)
+        .order_by(OpsAuditLog.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": str(r.id),
+                "actor_user_id": str(r.actor_user_id) if r.actor_user_id else None,
+                "action": r.action,
+                "entity_type": r.entity_type,
+                "entity_id": str(r.entity_id) if r.entity_id else None,
+                "detail": r.detail,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+    }
+
+
 @router.get("/reports")
 def ops_list_reports(
-    crisis_id: UUID,
+    crisis_id: UUID | None = None,
     zone_id: UUID | None = None,
     captured_from: datetime | None = None,
     captured_to: datetime | None = None,
@@ -247,21 +489,32 @@ def ops_list_reports(
 def ops_patch_report(
     report_id: UUID,
     body: OpsReportPatchBody,
-    crisis_id: UUID,
+    crisis_id: UUID | None = None,
     principal: OpsPrincipal = Depends(get_ops_principal),
     db: Session = Depends(get_db),
 ) -> dict:
-    r = db.query(Report).filter(Report.id == report_id, Report.crisis_id == crisis_id).first()
+    q = db.query(Report).filter(Report.id == report_id)
+    if crisis_id is not None:
+        q = q.filter(Report.crisis_id == crisis_id)
+    r = q.first()
     if not r:
         raise HTTPException(status_code=404, detail="Report not found")
     if not principal.sees_all_zones():
-        visible = report_ids_in_zones(db, crisis_id, principal.zone_ids, None, None, 500)
+        visible = report_ids_in_zones(db, None, principal.zone_ids, None, None, 500)
         if r.id not in visible:
             raise HTTPException(status_code=403, detail="Report outside your zones")
     if body.reviewed is not None:
         r.admin_reviewed = body.reviewed
     if body.flagged is not None:
         r.admin_flagged = body.flagged
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="report.review",
+        entity_type="report",
+        entity_id=report_id,
+        detail={"reviewed": body.reviewed, "flagged": body.flagged},
+    )
     db.commit()
     return {"ok": True, "id": str(report_id)}
 

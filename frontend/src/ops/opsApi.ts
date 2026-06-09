@@ -75,3 +75,47 @@ export type OpsZone = {
   created_at: string | null;
   updated_at: string | null;
 };
+
+export type OpsCrisis = {
+  id: string;
+  slug: string;
+  name: Record<string, string>;
+  archive_status: 'draft' | 'active' | 'archived';
+  archive_window_start: string | null;
+  archive_window_end: string | null;
+  created_at: string | null;
+};
+
+export type OpsReport = {
+  id: string;
+  crisis_id: string;
+  building_id: string | null;
+  damage_level: string;
+  site_status: string;
+  captured_at_client: string;
+  received_at_server: string;
+  geom: GeoJSON.Point | null;
+  description_preview: string;
+  admin_reviewed: boolean;
+  admin_flagged: boolean;
+};
+
+export type ArchivePreview = {
+  crisis_id: string;
+  matched_count: number;
+  sample_report_ids: string[];
+  already_linked_count: number;
+  archive_window_start: string | null;
+  archive_window_end: string | null;
+  zone_ids: string[] | null;
+};
+
+export type AuditEntry = {
+  id: string;
+  actor_user_id: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  detail: Record<string, unknown>;
+  created_at: string | null;
+};

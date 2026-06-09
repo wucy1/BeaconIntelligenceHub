@@ -32,14 +32,18 @@ def resolve_zone_filter_ids(
 
 def report_ids_in_zones(
     db: Session,
-    crisis_id: UUID,
+    crisis_id: UUID | None,
     zone_ids: list[UUID] | None,
     captured_from,
     captured_to,
     limit: int,
 ) -> list[UUID]:
     time_filter = ""
-    params: dict = {"cid": str(crisis_id), "lim": limit}
+    params: dict = {"lim": limit}
+    crisis_filter = ""
+    if crisis_id is not None:
+        crisis_filter = " AND r.crisis_id = CAST(:cid AS uuid)"
+        params["cid"] = str(crisis_id)
     if captured_from is not None:
         time_filter += " AND r.captured_at_client >= :captured_from"
         params["captured_from"] = captured_from
@@ -74,7 +78,8 @@ def report_ids_in_zones(
         text(
             f"""
             SELECT r.id FROM reports r
-            WHERE r.crisis_id = CAST(:cid AS uuid)
+            WHERE TRUE
+              {crisis_filter}
               {time_filter}
               {zone_filter}
             ORDER BY r.captured_at_client DESC

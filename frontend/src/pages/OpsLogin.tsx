@@ -24,7 +24,7 @@ export function OpsLogin() {
     try {
       const data = await opsPost<LoginResp>('/v1/ops/auth/login', { email, password });
       setOpsSession(data.access_token, data.user);
-      navigate('/ops/zones');
+      navigate('/ops/map');
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : String(ex));
     } finally {

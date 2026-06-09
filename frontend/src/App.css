@@ -1773,3 +1773,248 @@ button.danger {
   padding-top: 0;
   border-top: none;
 }
+
+/* —— Ops map-first (Phase 3) —— */
+.ops-map-page .ops-map-overlay-top {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  right: 0.5rem;
+  z-index: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.ops-map-page .ops-map-overlay-top > * {
+  pointer-events: auto;
+}
+
+.ops-map-chip {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.ops-map-chip.muted {
+  color: #64748b;
+}
+
+.ops-map-title {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+}
+
+.ops-map-sub {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.ops-map-toolbar {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.ops-map-link {
+  text-decoration: none;
+  color: #1d4ed8;
+}
+
+.ops-map-fab-col {
+  position: absolute;
+  right: 0.5rem;
+  top: 4.5rem;
+  z-index: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ops-map-fab {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
+  text-align: left;
+}
+
+.ops-map-fab.active {
+  background: #1d4ed8;
+  color: #fff;
+  border-color: #1d4ed8;
+}
+
+.ops-map-filter-bar {
+  position: absolute;
+  left: 0.5rem;
+  bottom: 0.5rem;
+  z-index: 600;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  max-width: min(100% - 1rem, 42rem);
+}
+
+.ops-map-filter-bar input[type='datetime-local'] {
+  font-size: 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.15rem 0.3rem;
+}
+
+.ops-map-card {
+  position: absolute;
+  z-index: 650;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.18);
+  max-width: min(20rem, 92vw);
+  pointer-events: auto;
+}
+
+.ops-map-card-zone {
+  left: 0.5rem;
+  top: 4.5rem;
+}
+
+.ops-map-card-wide {
+  right: 0.5rem;
+  top: 4.5rem;
+  max-width: min(22rem, 92vw);
+  max-height: min(70vh, 520px);
+  overflow: auto;
+}
+
+.ops-map-card-audit {
+  bottom: 3.5rem;
+  top: auto;
+  right: 0.5rem;
+}
+
+.ops-map-card-report {
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 3.5rem;
+  top: auto;
+}
+
+.ops-map-card h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.ops-map-card-close {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.45rem;
+  background: transparent;
+  border: none;
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 0.15rem 0.35rem;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.ops-map-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.ops-map-card-actions button {
+  font-size: 0.78rem;
+  padding: 0.4rem 0.65rem;
+}
+
+.ops-map-card-actions button.secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.ops-map-card-actions button.danger {
+  background: #b91c1c;
+}
+
+.ops-input,
+.ops-field select,
+.ops-field input {
+  width: 100%;
+  font-size: 0.85rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0.4rem 0.5rem;
+}
+
+.ops-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.ops-preview-box {
+  margin-top: 0.65rem;
+  padding: 0.5rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.ops-audit-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.ops-audit-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.35rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ops-map-toast {
+  position: absolute;
+  top: 3.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 700;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ops-map-toast button {
+  background: transparent;
+  color: inherit;
+  padding: 0 0.25rem;
+  font-size: 1rem;
+}

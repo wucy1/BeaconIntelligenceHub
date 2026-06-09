@@ -98,7 +98,7 @@ export function Dashboard() {
         {opsUser ? (
           <>
             {' '}
-            · <Link to="/ops/zones">營運分區</Link> · {opsUser.email} ({opsUser.role})
+            · <Link to="/ops/map">營運地圖</Link> · {opsUser.email} ({opsUser.role})
           </>
         ) : (
           <>
