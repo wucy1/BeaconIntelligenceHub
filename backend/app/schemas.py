@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class HealthResponse(BaseModel):
     ok: bool = True
-    postgis: bool = True
+    postgis: bool | None = None
 
 
 class CrisisOut(BaseModel):

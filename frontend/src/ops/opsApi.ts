@@ -1,4 +1,4 @@
-import { apiUrl } from '../api';
+import { apiFetch, apiUrl, formatApiError } from '../api';
 import { getOpsToken } from './opsAuth';
 
 function opsHeaders(extra?: HeadersInit): HeadersInit {
@@ -12,42 +12,34 @@ function opsHeaders(extra?: HeadersInit): HeadersInit {
 }
 
 async function opsFetch(path: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(apiUrl(path), {
+  return apiFetch(path, {
     ...init,
     headers: opsHeaders(init?.headers),
   });
-  return res;
 }
 
-function formatOpsError(status: number, text: string): string {
-  try {
-    const j = JSON.parse(text) as { detail?: string | Array<{ msg?: string }>; hint?: string };
-    if (j.hint) return `${status} — ${j.hint}`;
-    if (typeof j.detail === 'string' && j.detail) return `${status} — ${j.detail}`;
-    if (Array.isArray(j.detail)) {
-      const msg = j.detail.map((d) => d.msg).filter(Boolean).join('；');
-      if (msg) return `${status} — ${msg}`;
-    }
-  } catch {
-    /* not JSON */
-  }
-  if (text === 'Internal Server Error' || !text.trim()) {
-    return `${status} — 後端錯誤（請確認資料庫 migration 已執行，含 007 ops_audit_log）`;
-  }
-  return `${status} ${text}`;
-}
-
-async function parseOpsJson<T>(res: Response): Promise<T> {
+async function parseOpsJson<T>(res: Response, path: string): Promise<T> {
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(formatOpsError(res.status, text));
+    throw new Error(formatApiError(res.status, text));
   }
-  return JSON.parse(text) as T;
+  const ct = res.headers.get('content-type') ?? '';
+  if (!ct.includes('application/json') && text.trimStart().startsWith('<')) {
+    throw new Error(
+      `API 回傳 HTML 而非 JSON。請求網址：${apiUrl(path)}；` +
+        '請在 Cloudflare Build 設定 VITE_API_BASE 或清除快取後重試。',
+    );
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`無法解析 API 回應：${text.slice(0, 80)}…`);
+  }
 }
 
 export async function opsGet<T>(path: string): Promise<T> {
   const res = await opsFetch(path);
-  return parseOpsJson<T>(res);
+  return parseOpsJson<T>(res, path);
 }
 
 export async function opsPost<T>(path: string, body: unknown): Promise<T> {
@@ -56,7 +48,7 @@ export async function opsPost<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  return parseOpsJson<T>(res);
+  return parseOpsJson<T>(res, path);
 }
 
 export async function opsPatch<T>(path: string, body: unknown): Promise<T> {
@@ -65,14 +57,14 @@ export async function opsPatch<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  return parseOpsJson<T>(res);
+  return parseOpsJson<T>(res, path);
 }
 
 export async function opsDelete(path: string): Promise<void> {
   const res = await opsFetch(path, { method: 'DELETE' });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`${res.status} ${text}`);
+    throw new Error(formatApiError(res.status, text));
   }
 }
 

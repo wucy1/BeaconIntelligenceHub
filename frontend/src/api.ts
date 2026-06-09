@@ -2,17 +2,23 @@ import { getDeviceId } from './utils/deviceId';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 const API_FALLBACK_BASE = import.meta.env.VITE_API_FALLBACK ?? 'https://beaconintelligencehub.onrender.com';
-const DEFAULT_TIMEOUT_MS = 12_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 export function apiBase(): string {
   return API_BASE;
 }
 
+function isLocalDevHost(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return host === 'localhost' || host === '127.0.0.1';
+}
+
 function shouldUseFallbackBase(): boolean {
   if (API_BASE) return false;
   if (typeof window === 'undefined') return false;
-  const host = window.location.hostname;
-  return host.endsWith('.workers.dev') || host === 'beacon.cila.workers.dev';
+  // 本機 dev 走 Vite proxy（相對路徑 /v1）；其餘正式環境 fallback 到 Render API
+  return !isLocalDevHost();
 }
 
 export function resolveApiBase(path: string): string {
@@ -27,8 +33,9 @@ export function apiUrl(path: string): string {
   return `${resolveApiBase(path)}${path}`;
 }
 
-function resolveBase(path: string): string {
-  return resolveApiBase(path);
+/** 除錯用：目前實際打到的 API 根網址 */
+export function effectiveApiRoot(): string {
+  return resolveApiBase('/v1/health') || '(本站 /v1，僅本機 dev proxy)';
 }
 
 function deviceHeaders(extra?: HeadersInit): HeadersInit {
@@ -38,21 +45,28 @@ function deviceHeaders(extra?: HeadersInit): HeadersInit {
   };
 }
 
-async function fetchApi(path: string, init?: RequestInit): Promise<Response> {
+export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
-  const base = resolveBase(path);
-  const url = path.startsWith('http') ? path : `${base}${path}`;
+  const url = apiUrl(path);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {
-      throw new Error(
-        'API 請求逾時：請確認後端已啟動（預設 http://127.0.0.1:8000），且 Vite dev server 正在運行。',
-      );
+      const hint = isLocalDevHost()
+        ? '請確認本機後端已啟動（uvicorn app.main:app --reload --port 8000）。'
+        : `Render 可能冷啟動中或無回應（逾時 ${DEFAULT_TIMEOUT_MS / 1000}s）。請稍後重試，或至 Render Dashboard 確認服務狀態。`;
+      throw new Error(`API 請求逾時：${hint} 目標：${url}`);
     }
     if (e instanceof TypeError) {
-      throw new Error('無法連線 API：請確認後端已啟動（uvicorn app.main:app --reload --port 8000）。');
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      throw new Error(
+        `無法連線 API（${url}）。` +
+          (isLocalDevHost()
+            ? ' 請確認本機 uvicorn 已啟動。'
+            : ` 請確認 Render 後端已部署且 CORS_ORIGINS 包含 ${origin}；` +
+              '若剛喚醒失敗請至 Render Logs 查看 DATABASE_URL / migration。'),
+      );
     }
     throw e;
   } finally {
@@ -60,7 +74,14 @@ async function fetchApi(path: string, init?: RequestInit): Promise<Response> {
   }
 }
 
-function formatApiError(status: number, text: string): string {
+async function fetchApi(path: string, init?: RequestInit): Promise<Response> {
+  return apiFetch(path, init);
+}
+
+export function formatApiError(status: number, text: string): string {
+  if (status === 503 && !text.trim()) {
+    return '503 — 後端暫時無法服務（Render hibernate-wake-error 或資料庫未連線）。請至 Render Dashboard 查看 Logs 並 Redeploy。';
+  }
   try {
     const j = JSON.parse(text) as { hint?: string; detail?: string; error?: string };
     if (j.hint) return `${status} — ${j.hint}`;

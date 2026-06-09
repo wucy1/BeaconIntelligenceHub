@@ -3,11 +3,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from app.config import settings
-from app.database import engine
 from app.db_url import is_placeholder_database_url
 from app.routers import admin, analytics, buildings, crises, export, files, health, ops, public, reports, uploads
 
@@ -20,12 +18,8 @@ async def lifespan(_app: FastAPI):
             "       貼到 backend/.env 的 DATABASE_URL= 那一行，然後重啟 uvicorn。\n"
         )
     else:
-        try:
-            with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-            print("[BIH] Database connection OK")
-        except Exception as exc:
-            print(f"[BIH] WARNING: Database not reachable at startup: {exc}")
+        # 不在啟動階段阻塞連線：Neon 冷啟動常 >5s，會導致 Render health check 逾時。
+        print("[BIH] API ready; DB status via GET /health/ready")
     yield
 
 

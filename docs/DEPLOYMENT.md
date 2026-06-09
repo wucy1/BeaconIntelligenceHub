@@ -175,7 +175,7 @@ Cloudflare「Connect to a repository」若出現 **Deploy command（Required）*
 | Runtime | **Docker** |
 | Dockerfile Path | `./Dockerfile` |
 | Plan | Free（冷啟動較慢，可接受） |
-| Health Check Path | `/health` |
+| Health Check Path | `/health`（輕量、不連 DB；深度檢查用 `/health/ready`） |
 
 4. **Environment**（至少）：
 
@@ -239,8 +239,11 @@ R2 bucket CORS 需允許 `https://beacon.cila.workers.dev`（PUT/GET）。
 
 ```text
 https://你的-api網址/health
+https://你的-api網址/health/ready
 https://你的-api網址/v1/public/active-window
 ```
+
+**Render 反覆「health check timed out after 5 seconds」：** 多半是 `/health` 在冷啟動時連 Neon 逾時。本專案 `/health` 已改為立即回 200；請確認 Dashboard 的 Health Check Path 為 `/health`（不是 `/health/ready`），並 Redeploy。
 
 應回 JSON，不是 HTML。
 
