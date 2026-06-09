@@ -18,6 +18,7 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 import 'leaflet/dist/leaflet.css';
 
+import { wakeApiBackend } from '../api';
 import {
   opsDelete,
   opsGet,
@@ -188,6 +189,7 @@ export function OpsMapPage() {
   }, [selectedZoneId, filterFrom, filterTo]);
 
   useEffect(() => {
+    void wakeApiBackend();
     const token = getOpsToken();
     const current = getOpsUser();
     if (!token || !current) return;

@@ -2273,6 +2273,33 @@ button.linkish {
   font-weight: 600;
 }
 
+.ops-api-banner {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.65rem 0.85rem;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.ops-api-banner p {
+  margin: 0 0 0.5rem;
+}
+
+.ops-api-banner p:last-child {
+  margin-bottom: 0;
+}
+
+.ops-api-banner-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.ops-api-banner-error p {
+  margin-bottom: 0.5rem;
+}
+
 @media (max-width: 640px) {
   .ops-header {
     flex-direction: column;

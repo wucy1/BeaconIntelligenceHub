@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 
+import { wakeApiBackend } from '../api';
 import {
   opsDelete,
   opsGet,
@@ -27,6 +28,11 @@ function roleLabel(role: string): string {
   return '營運人員';
 }
 
+function pickCrisisId(prev: string, items: OpsCrisis[]): string {
+  if (prev && items.some((c) => c.id === prev)) return prev;
+  return items[0]?.id ?? '';
+}
+
 export function OpsDashboard() {
   const user = getOpsUser();
   const isAdmin = opsIsSystemAdmin(user);
@@ -44,29 +50,48 @@ export function OpsDashboard() {
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserName, setNewUserName] = useState('');
   const [assignLeadUserId, setAssignLeadUserId] = useState('');
+  const [assignLeadCrisisId, setAssignLeadCrisisId] = useState('');
+  const [assignCoordCrisisId, setAssignCoordCrisisId] = useState('');
   const [assignUserId, setAssignUserId] = useState('');
   const [assignZoneId, setAssignZoneId] = useState('');
 
-  const [err, setErr] = useState<string | null>(null);
+  const [apiBanner, setApiBanner] = useState<string | null>(null);
+  const [apiWaking, setApiWaking] = useState(false);
   const [crisisFormMsg, setCrisisFormMsg] = useState<string | null>(null);
   const [teamFormMsg, setTeamFormMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const selectedCrisis = crises.find((c) => c.id === selectedCrisisId) ?? null;
-  const crisisZones = zones.filter((z) => z.crisis_id === selectedCrisisId);
+  const assignLeadCrisis = crises.find((c) => c.id === assignLeadCrisisId) ?? null;
+  const coordCrisisId = isAdmin ? assignCoordCrisisId : selectedCrisisId;
+  const crisisZones = zones.filter((z) => z.crisis_id === coordCrisisId);
   const canAssignCoord = selectedCrisisId ? opsCanAssignCoordinator(user, selectedCrisisId) : false;
   const isLeadForSelected = selectedCrisisId ? opsIsCrisisLead(user, selectedCrisisId) : false;
 
-  const loadCrises = useCallback(async (reportError = true) => {
+  const loadCrises = useCallback(async () => {
     try {
       const d = await opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises');
       setCrises(d.items);
-      setSelectedCrisisId((prev) => prev || (d.items[0]?.id ?? ''));
+      setSelectedCrisisId((prev) => pickCrisisId(prev, d.items));
+      setAssignLeadCrisisId((prev) => pickCrisisId(prev, d.items));
+      setAssignCoordCrisisId((prev) => pickCrisisId(prev, d.items));
+      setApiBanner(null);
     } catch (e) {
       setCrises([]);
-      if (reportError) setErr(e instanceof Error ? e.message : String(e));
+      setApiBanner(e instanceof Error ? e.message : String(e));
     }
   }, []);
+
+  const reloadAll = useCallback(async () => {
+    setApiWaking(true);
+    setApiBanner(null);
+    await wakeApiBackend();
+    await loadCrises();
+    loadZones();
+    await loadUsers();
+    loadAudit();
+    setApiWaking(false);
+  }, [loadCrises, loadUsers, loadAudit]);
 
   const loadZones = useCallback(() => {
     opsGet<{ items: OpsZone[] }>('/v1/ops/zones')
@@ -99,11 +124,7 @@ export function OpsDashboard() {
   }, [isAdmin]);
 
   useEffect(() => {
-    void loadCrises();
-    loadZones();
-    void loadUsers();
-    loadAudit();
-    // 僅 mount 時載入一次；勿把會隨輸入變動的 user 物件放進 callback 依賴
+    void reloadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -123,7 +144,7 @@ export function OpsDashboard() {
       return;
     }
     setBusy(true);
-    setErr(null);
+    setApiBanner(null);
     setCrisisFormMsg(null);
     try {
       const c = await opsPost<OpsCrisis>('/v1/ops/crises', {
@@ -136,7 +157,7 @@ export function OpsDashboard() {
       setNewCrisisSlug('');
       setNewCrisisName('');
       setCrisisFormMsg(`已建立「${crisisLabel(c)}」`);
-      await loadCrises(false);
+      await loadCrises();
       loadAudit();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -175,19 +196,22 @@ export function OpsDashboard() {
   };
 
   const assignCrisisLead = async () => {
-    if (!assignLeadUserId || !selectedCrisisId) {
-      setErr('請選擇人員與危機');
+    if (!assignLeadUserId || !assignLeadCrisisId) {
+      setTeamFormMsg('請選擇危機與營運人員');
       return;
     }
     setBusy(true);
-    setErr(null);
+    setTeamFormMsg(null);
+    const leadEmail = opsUsers.find((u) => u.id === assignLeadUserId)?.email;
+    const crisisName = assignLeadCrisis ? crisisLabel(assignLeadCrisis) : '';
     try {
-      await opsPost(`/v1/ops/users/${assignLeadUserId}/crises/${selectedCrisisId}`, {});
+      await opsPost(`/v1/ops/users/${assignLeadUserId}/crises/${assignLeadCrisisId}`, {});
       setAssignLeadUserId('');
-      loadUsers();
+      setTeamFormMsg(`已指派 ${leadEmail ?? '人員'} 為「${crisisName}」Lead`);
+      await loadUsers();
       loadAudit();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setTeamFormMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -195,19 +219,20 @@ export function OpsDashboard() {
 
   const assignZoneToUser = async () => {
     if (!assignUserId || !assignZoneId) {
-      setErr('請選擇人員與分區');
+      setTeamFormMsg('請選擇人員與分區');
       return;
     }
     setBusy(true);
-    setErr(null);
+    setTeamFormMsg(null);
     try {
       await opsPost(`/v1/ops/users/${assignUserId}/zones/${assignZoneId}`, {
         assignment_role: 'coordinator',
       });
-      loadUsers();
+      setTeamFormMsg('已指派 Coordinator');
+      await loadUsers();
       loadAudit();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setTeamFormMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -217,10 +242,10 @@ export function OpsDashboard() {
     setBusy(true);
     try {
       await opsDelete(`/v1/ops/users/${userId}/crises/${crisisId}`);
-      loadUsers();
+      await loadUsers();
       loadAudit();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setTeamFormMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -230,10 +255,10 @@ export function OpsDashboard() {
     setBusy(true);
     try {
       await opsDelete(`/v1/ops/users/${userId}/zones/${zoneId}`);
-      loadUsers();
+      await loadUsers();
       loadAudit();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setTeamFormMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -274,7 +299,21 @@ export function OpsDashboard() {
         </div>
       </header>
 
-      {err && <p className="error">{err}</p>}
+      {(apiWaking || apiBanner) && (
+        <div className={`ops-api-banner${apiBanner ? ' ops-api-banner-error' : ''}`}>
+          {apiWaking && !apiBanner && (
+            <p>後端喚醒中，請稍候…（Render 免費方案冷啟動可能需 30–60 秒）</p>
+          )}
+          {apiBanner && (
+            <>
+              <p>{apiBanner}</p>
+              <button type="button" className="secondary" onClick={() => void reloadAll()} disabled={apiWaking}>
+                重新連線
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       <section className="ops-dash-section ops-dash-workflow">
         <h2>營運流程</h2>
@@ -387,16 +426,34 @@ export function OpsDashboard() {
           {isAdmin && (
             <div className="ops-dash-form">
               <h3>指派危機 Lead</h3>
-              <p className="muted">危機：{selectedCrisis ? crisisLabel(selectedCrisis) : '—'}</p>
-              <select className="ops-input" value={assignLeadUserId} onChange={(e) => setAssignLeadUserId(e.target.value)}>
-                <option value="">選擇營運人員</option>
-                {opsUsers.filter((u) => u.role !== 'system_admin').map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.email}
-                  </option>
-                ))}
-              </select>
-              <button type="button" onClick={assignCrisisLead} disabled={busy || !selectedCrisisId}>
+              <p className="muted">可為任一危機指派 Lead，與上方「目前操作危機」無關。</p>
+              <label className="ops-field">
+                危機
+                <select
+                  className="ops-input"
+                  value={assignLeadCrisisId}
+                  onChange={(e) => setAssignLeadCrisisId(e.target.value)}
+                >
+                  <option value="">選擇危機</option>
+                  {crises.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {crisisLabel(c)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="ops-field">
+                營運人員
+                <select className="ops-input" value={assignLeadUserId} onChange={(e) => setAssignLeadUserId(e.target.value)}>
+                  <option value="">選擇營運人員</option>
+                  {opsUsers.filter((u) => u.role !== 'system_admin').map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.email}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" onClick={assignCrisisLead} disabled={busy || !assignLeadCrisisId || !assignLeadUserId}>
                 設為此危機 Lead
               </button>
             </div>
@@ -405,6 +462,28 @@ export function OpsDashboard() {
             <div className="ops-dash-form">
               <h3>指派分區 Coordinator</h3>
               <p className="muted">請先於營運地圖畫好分區，再指派人員。</p>
+              {isAdmin && crises.length > 0 && (
+                <label className="ops-field">
+                  危機
+                  <select
+                    className="ops-input"
+                    value={assignCoordCrisisId}
+                    onChange={(e) => {
+                      setAssignCoordCrisisId(e.target.value);
+                      setAssignZoneId('');
+                    }}
+                  >
+                    {crises.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {crisisLabel(c)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {!isAdmin && selectedCrisis && (
+                <p className="muted">危機：{crisisLabel(selectedCrisis)}</p>
+              )}
               <select className="ops-input" value={assignUserId} onChange={(e) => setAssignUserId(e.target.value)}>
                 <option value="">選擇人員</option>
                 {(isAdmin ? opsUsers.filter((u) => u.role !== 'system_admin') : assignableUsers).map((u) => (
@@ -426,7 +505,7 @@ export function OpsDashboard() {
               </button>
               {crisisZones.length === 0 && (
                 <p className="muted">
-                  此危機尚無分區。<Link to={`/ops/map?crisis_id=${selectedCrisisId}`}>至{OPS_LABELS.map}畫分區</Link>
+                  此危機尚無分區。<Link to={`/ops/map?crisis_id=${coordCrisisId}`}>至{OPS_LABELS.map}畫分區</Link>
                 </p>
               )}
             </div>

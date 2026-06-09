@@ -2,7 +2,10 @@ import { getDeviceId } from './utils/deviceId';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 const API_FALLBACK_BASE = import.meta.env.VITE_API_FALLBACK ?? 'https://beaconintelligencehub.onrender.com';
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 45_000;
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+const PROD_RETRY_ATTEMPTS = 4;
+const RETRY_DELAY_MS = 2000;
 
 export function apiBase(): string {
   return API_BASE;
@@ -17,7 +20,6 @@ function isLocalDevHost(): boolean {
 function shouldUseFallbackBase(): boolean {
   if (API_BASE) return false;
   if (typeof window === 'undefined') return false;
-  // 本機 dev 走 Vite proxy（相對路徑 /v1）；其餘正式環境 fallback 到 Render API
   return !isLocalDevHost();
 }
 
@@ -33,9 +35,12 @@ export function apiUrl(path: string): string {
   return `${resolveApiBase(path)}${path}`;
 }
 
-/** 除錯用：目前實際打到的 API 根網址 */
 export function effectiveApiRoot(): string {
   return resolveApiBase('/v1/health') || '(本站 /v1，僅本機 dev proxy)';
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function deviceHeaders(extra?: HeadersInit): HeadersInit {
@@ -45,42 +50,76 @@ function deviceHeaders(extra?: HeadersInit): HeadersInit {
   };
 }
 
-export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+function isTransientFetchError(e: unknown): boolean {
+  if (e instanceof TypeError) return true;
+  if (e instanceof DOMException && e.name === 'AbortError') return true;
+  return false;
+}
+
+function connectionErrorMessage(url: string): string {
+  if (isLocalDevHost()) {
+    return '無法連線本機 API，請確認 uvicorn 已啟動（port 8000）。';
+  }
+  return (
+    '後端暫時無法連線（Render 冷啟動常需 30–60 秒）。' +
+    ' 系統會自動重試；若仍失敗請稍後再按「重新連線」。'
+  );
+}
+
+async function fetchOnce(url: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
-  const url = apiUrl(path);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
-  } catch (e) {
-    if (e instanceof DOMException && e.name === 'AbortError') {
-      const hint = isLocalDevHost()
-        ? '請確認本機後端已啟動（uvicorn app.main:app --reload --port 8000）。'
-        : `Render 可能冷啟動中或無回應（逾時 ${DEFAULT_TIMEOUT_MS / 1000}s）。請稍後重試，或至 Render Dashboard 確認服務狀態。`;
-      throw new Error(`API 請求逾時：${hint} 目標：${url}`);
-    }
-    if (e instanceof TypeError) {
-      const origin = typeof window !== 'undefined' ? window.location.origin : '';
-      throw new Error(
-        `無法連線 API（${url}）。` +
-          (isLocalDevHost()
-            ? ' 請確認本機 uvicorn 已啟動。'
-            : ` 請確認 Render 後端已部署且 CORS_ORIGINS 包含 ${origin}；` +
-              '若剛喚醒失敗請至 Render Logs 查看 DATABASE_URL / migration。'),
-      );
-    }
-    throw e;
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function fetchApi(path: string, init?: RequestInit): Promise<Response> {
-  return apiFetch(path, init);
+/** 帶自動重試的 fetch（Render 冷啟動／503 時重試） */
+export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const url = apiUrl(path);
+  const maxAttempts = isLocalDevHost() ? 1 : PROD_RETRY_ATTEMPTS;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) await sleep(RETRY_DELAY_MS * attempt);
+    try {
+      const res = await fetchOnce(url, init);
+      if (RETRYABLE_STATUS.has(res.status) && attempt < maxAttempts - 1) {
+        await res.text().catch(() => undefined);
+        continue;
+      }
+      return res;
+    } catch (e) {
+      lastError = e;
+      if (attempt < maxAttempts - 1 && isTransientFetchError(e)) continue;
+      break;
+    }
+  }
+
+  if (lastError instanceof DOMException && lastError.name === 'AbortError') {
+    throw new Error(`API 請求逾時（${DEFAULT_TIMEOUT_MS / 1000}s）。${connectionErrorMessage(url)}`);
+  }
+  if (lastError instanceof TypeError || lastError instanceof DOMException) {
+    throw new Error(`${connectionErrorMessage(url)}`);
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+/** 喚醒 Render 後端（進入營運台時可先呼叫） */
+export async function wakeApiBackend(): Promise<boolean> {
+  try {
+    const res = await apiFetch('/health');
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export function formatApiError(status: number, text: string): string {
   if (status === 503 && !text.trim()) {
-    return '503 — 後端暫時無法服務（Render hibernate-wake-error 或資料庫未連線）。請至 Render Dashboard 查看 Logs 並 Redeploy。';
+    return '後端暫時無法服務（可能正在喚醒或資料庫未連線），請稍後重試。';
   }
   try {
     const j = JSON.parse(text) as { hint?: string; detail?: string; error?: string };
@@ -91,7 +130,7 @@ export function formatApiError(status: number, text: string): string {
     /* not JSON */
   }
   if (text === 'Internal Server Error' || !text.trim()) {
-    return `${status} — 後端錯誤（常為 DATABASE_URL 未設定或資料庫未連線）。請看終端機 uvicorn 日誌。`;
+    return `${status} — 後端錯誤，請至 Render Logs 查看。`;
   }
   return `${status} ${text}`;
 }
@@ -105,17 +144,18 @@ async function parseJson<T>(res: Response): Promise<T> {
   if (!ct.includes('application/json') && text.trimStart().startsWith('<')) {
     const base = API_BASE || API_FALLBACK_BASE || '(未設定 VITE_API_BASE)';
     throw new Error(
-      `API 回傳了 HTML 而非 JSON（常見原因：前端仍打到本站 /v1、或瀏覽器快取舊版 JS）。` +
-        ` 請在 Network 確認請求網址為後端 API；Build 變數 VITE_API_BASE=${base}；並清除本站資料後重試。`,
+      `API 回傳 HTML 而非 JSON。請確認 VITE_API_BASE=${base}，並清除瀏覽器快取後重試。`,
     );
   }
   try {
     return JSON.parse(text) as T;
   } catch {
-    throw new Error(
-      `無法解析 API 回應為 JSON：${text.slice(0, 80)}…（請確認 VITE_API_BASE 與 Render CORS_ORIGINS）`,
-    );
+    throw new Error(`無法解析 API 回應：${text.slice(0, 80)}…`);
   }
+}
+
+async function fetchApi(path: string, init?: RequestInit): Promise<Response> {
+  return apiFetch(path, init);
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
@@ -148,7 +188,7 @@ export async function apiDelete(path: string): Promise<void> {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`${res.status} ${text}`);
+    throw new Error(formatApiError(res.status, text));
   }
 }
 
@@ -178,11 +218,9 @@ export async function apiPutRaw(url: string, body: Blob, contentType: string): P
   } catch (e) {
     if (e instanceof TypeError) {
       if (url.includes('r2.cloudflarestorage.com')) {
-        throw new Error(
-          '圖片上傳失敗（R2 跨域）：請在 R2 bucket 設定 CORS，或將 UPLOAD_VIA_API=true 並用 localhost 作為 PUBLIC_BASE_URL。',
-        );
+        throw new Error('圖片上傳失敗（R2 跨域）。');
       }
-      throw new Error('圖片上傳失敗：無法連到上傳端點，請確認後端已啟動。');
+      throw new Error('圖片上傳失敗：無法連到上傳端點。');
     }
     throw e;
   }
