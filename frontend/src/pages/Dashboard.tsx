@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 
 import { apiGet, apiBase } from '../api';
 import { useI18n } from '../i18n/I18nContext';
-import { opsGet, type OpsZone } from '../ops/opsApi';
-import { getOpsToken, getOpsUser } from '../ops/opsAuth';
+import { opsGet, type OpsCrisis, type OpsZone } from '../ops/opsApi';
+import { getOpsToken, getOpsUser, opsIsSystemAdmin } from '../ops/opsAuth';
 
 const DEMO_CRISIS = 'a0000000-0000-0000-0000-000000000001';
 
@@ -30,29 +30,47 @@ type Analytics = {
   damage_counts: Record<string, number>;
 };
 
+function crisisLabel(c: OpsCrisis): string {
+  return c.name['zh-Hant'] ?? c.name.zh ?? c.name.en ?? c.slug;
+}
+
 export function Dashboard() {
   const { t } = useI18n();
   const opsUser = getOpsUser();
   const opsToken = getOpsToken();
+  const isAdmin = opsIsSystemAdmin(opsUser);
   const [data, setData] = useState<ListResp | null>(null);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [zones, setZones] = useState<OpsZone[]>([]);
+  const [crises, setCrises] = useState<OpsCrisis[]>([]);
+  const [crisisId, setCrisisId] = useState(DEMO_CRISIS);
   const [zoneId, setZoneId] = useState<string>('');
   const [err, setErr] = useState<string | null>(null);
   const [latestOnly, setLatestOnly] = useState(true);
 
   useEffect(() => {
     if (!opsToken) return;
-    opsGet<{ items: OpsZone[] }>('/v1/ops/zones')
+    opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises')
+      .then((d) => {
+        setCrises(d.items);
+        if (d.items.length > 0) setCrisisId(d.items[0].id);
+      })
+      .catch(() => setCrises([]));
+  }, [opsToken]);
+
+  useEffect(() => {
+    if (!opsToken) return;
+    const q = crisisId ? `?crisis_id=${crisisId}` : '';
+    opsGet<{ items: OpsZone[] }>(`/v1/ops/zones${q}`)
       .then((d) => setZones(d.items))
       .catch(() => setZones([]));
-  }, [opsToken]);
+  }, [opsToken, crisisId]);
 
   useEffect(() => {
     const loadReports = async () => {
       try {
         if (opsToken) {
-          const q = new URLSearchParams({ crisis_id: DEMO_CRISIS, limit: '100' });
+          const q = new URLSearchParams({ crisis_id: crisisId, limit: '100' });
           if (zoneId) q.set('zone_id', zoneId);
           const d = await opsGet<ListResp>(`/v1/ops/reports?${q}`);
           setData({ items: d.items, nextCursor: null, zone_scope: d.zone_scope });
@@ -77,7 +95,7 @@ export function Dashboard() {
     } else {
       setAnalytics(null);
     }
-  }, [latestOnly, opsToken, zoneId]);
+  }, [latestOnly, opsToken, zoneId, crisisId]);
 
   if (err) {
     return (
@@ -89,6 +107,8 @@ export function Dashboard() {
   if (!data) return <p>{t('common.loading')}</p>;
 
   const api = apiBase();
+  const activeCrisis = crises.find((c) => c.id === crisisId);
+  const exportCrisisId = opsToken ? crisisId : DEMO_CRISIS;
 
   return (
     <section className="card">
@@ -98,7 +118,8 @@ export function Dashboard() {
         {opsUser ? (
           <>
             {' '}
-            · <Link to="/ops/map">營運地圖</Link> · {opsUser.email} ({opsUser.role})
+            · <Link to="/ops">營運控制台</Link> · <Link to="/ops/map">營運地圖</Link> · {opsUser.email} (
+            {opsUser.role})
           </>
         ) : (
           <>
@@ -117,6 +138,33 @@ export function Dashboard() {
           </>
         )}
       </p>
+
+      {opsToken && (
+        <section className="ops-dash-banner">
+          <strong>營運人員</strong>
+          <p className="muted">
+            建立危機、指派 Lead／Coordinator 請至{' '}
+            <Link to="/ops">營運控制台</Link>；畫分區與歸檔請至 <Link to="/ops/map">營運地圖</Link>。
+            {isAdmin && ' 您是系統管理員，可從控制台建立新危機。'}
+          </p>
+        </section>
+      )}
+
+      {opsToken && crises.length > 0 && (
+        <p>
+          <label>
+            危機{' '}
+            <select value={crisisId} onChange={(e) => { setCrisisId(e.target.value); setZoneId(''); }}>
+              {crises.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {crisisLabel(c)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {activeCrisis && <span className="muted" style={{ marginLeft: 8 }}>{activeCrisis.archive_status}</span>}
+        </p>
+      )}
 
       {opsToken && zones.length > 0 && (
         <p>
@@ -140,18 +188,20 @@ export function Dashboard() {
       )}
 
       <p>
-        <a href={`${api}/v1/export?crisis_id=${DEMO_CRISIS}&format=csv`}>{t('dashboard.exportCsv')}</a> ·{' '}
-        <a href={`${api}/v1/export?crisis_id=${DEMO_CRISIS}&format=geojson`}>{t('dashboard.exportGeojson')}</a>
+        <a href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=csv`}>{t('dashboard.exportCsv')}</a> ·{' '}
+        <a href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=geojson`}>{t('dashboard.exportGeojson')}</a>
         {' · '}
-        <a href={`${api}/v1/export?crisis_id=${DEMO_CRISIS}&format=csv&latest=1`}>{t('dashboard.exportLatestCsv')}</a>
+        <a href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=csv&latest=1`}>{t('dashboard.exportLatestCsv')}</a>
         {' · '}
-        <a href={`${api}/v1/export?crisis_id=${DEMO_CRISIS}&format=geojson&latest=1`}>
+        <a href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=geojson&latest=1`}>
           {t('dashboard.exportLatestGeojson')}
         </a>
       </p>
-      <p className="muted">
-        {t('dashboard.crisisId')}: {DEMO_CRISIS}
-      </p>
+      {!opsToken && (
+        <p className="muted">
+          {t('dashboard.crisisId')}: {DEMO_CRISIS}
+        </p>
+      )}
 
       {analytics && (
         <section className="analytics-box">

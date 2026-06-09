@@ -8,6 +8,7 @@ import { Admin } from './pages/Admin';
 import { Dashboard } from './pages/Dashboard';
 import { Home } from './pages/Home';
 import { MapPage } from './pages/MapPage';
+import { OpsDashboard } from './pages/OpsDashboard';
 import { OpsLogin } from './pages/OpsLogin';
 import { OpsMapPage } from './pages/OpsMapPage';
 import { ReportNew } from './pages/ReportNew';
@@ -25,7 +26,7 @@ function DevLayout({ children }: { children: ReactNode }) {
           <a href="/dev">{t('nav.home')}</a>
           <a href="/dashboard">{t('nav.dashboard')}</a>
           <a href="/admin">{t('nav.admin')}</a>
-          <a href="/ops/map">Ops</a>
+          <a href="/ops">營運控制台</a>
           <LanguageSwitcher />
         </nav>
       </header>
@@ -81,8 +82,16 @@ export default function App() {
               </DevLayout>
             }
           />
+          <Route
+            path="/ops"
+            element={
+              <DevLayout>
+                <OpsDashboard />
+              </DevLayout>
+            }
+          />
           <Route path="/ops/map" element={<OpsMapPage />} />
-          <Route path="/ops/zones" element={<OpsMapPage />} />
+          <Route path="/ops/zones" element={<Navigate to="/ops/map" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

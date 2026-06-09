@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 
 import { opsPost } from '../ops/opsApi';
-import { setOpsSession, type OpsUserSession } from '../ops/opsAuth';
+import { getOpsToken, getOpsUser, setOpsSession, type OpsUserSession } from '../ops/opsAuth';
 
 type LoginResp = {
   access_token: string;
@@ -17,6 +17,10 @@ export function OpsLogin() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  if (getOpsToken() && getOpsUser()) {
+    return <Navigate to="/ops" replace />;
+  }
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -24,7 +28,7 @@ export function OpsLogin() {
     try {
       const data = await opsPost<LoginResp>('/v1/ops/auth/login', { email, password });
       setOpsSession(data.access_token, data.user);
-      navigate('/ops/map');
+      navigate('/ops');
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : String(ex));
     } finally {
@@ -36,7 +40,7 @@ export function OpsLogin() {
     <section className="card" style={{ maxWidth: 420 }}>
       <h1>營運登入</h1>
       <p className="muted">
-        Coordinator / Crisis lead / System admin · <Link to="/dashboard">儀表板</Link>
+        登入後進入營運控制台 · <Link to="/dashboard">回報儀表板</Link>
       </p>
       <form onSubmit={onSubmit}>
         <label className="field">
