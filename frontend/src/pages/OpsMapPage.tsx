@@ -10,6 +10,7 @@ import {
   Polygon,
   Polyline,
   TileLayer,
+  ZoomControl,
   useMap,
   useMapEvents,
 } from 'react-leaflet';
@@ -32,11 +33,14 @@ import {
 import {
   clearOpsSession,
   getOpsUser,
+  opsCanAssignCoordinator,
   opsCanCreateZones,
   opsCanEditZone,
-  opsCanManageUsers,
+  opsCanOpenStaffPanel,
   opsCanRunArchive,
   opsIsSystemAdmin,
+  setOpsSession,
+  getOpsToken,
 } from '../ops/opsAuth';
 import {
   formatArea,
@@ -102,12 +106,15 @@ function roleLabel(role: string): string {
 export function OpsMapPage() {
   const user = getOpsUser();
   const isAdmin = opsIsSystemAdmin(user);
-  const canCreateZones = opsCanCreateZones(user);
-  const canArchive = opsCanRunArchive(user);
-  const canManageUsers = opsCanManageUsers(user);
+  const [activeCrisisId, setActiveCrisisId] = useState<string>('');
+  const canCreateZones = activeCrisisId ? opsCanCreateZones(user, activeCrisisId) : false;
+  const canArchive = activeCrisisId ? opsCanRunArchive(user, activeCrisisId) : false;
+  const canOpenStaff = opsCanOpenStaffPanel(user);
+  const canAssignCoord = activeCrisisId ? opsCanAssignCoordinator(user, activeCrisisId) : false;
 
   const [zones, setZones] = useState<OpsZone[]>([]);
   const [opsUsers, setOpsUsers] = useState<OpsUserRecord[]>([]);
+  const [assignableUsers, setAssignableUsers] = useState<Array<{ id: string; email: string }>>([]);
   const [reports, setReports] = useState<OpsReport[]>([]);
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
@@ -115,7 +122,6 @@ export function OpsMapPage() {
 
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
-  const [activeCrisisId, setActiveCrisisId] = useState<string>('');
   const [panel, setPanel] = useState<PanelKey>(null);
   const [mapMode, setMapMode] = useState<MapMode>('browse');
 
@@ -139,10 +145,11 @@ export function OpsMapPage() {
   const [newUserName, setNewUserName] = useState('');
   const [assignUserId, setAssignUserId] = useState('');
   const [assignZoneId, setAssignZoneId] = useState('');
-  const [assignRole, setAssignRole] = useState<'lead' | 'coordinator'>('coordinator');
+  const [assignLeadUserId, setAssignLeadUserId] = useState('');
 
   const selectedZone = zones.find((z) => z.id === selectedZoneId) ?? null;
-  const canEditSelectedZone = selectedZone ? opsCanEditZone(user, selectedZone.id) : false;
+  const canEditSelectedZone = selectedZone ? opsCanEditZone(user, selectedZone.crisis_id ?? undefined) : false;
+  const crisisZones = zones.filter((z) => !activeCrisisId || z.crisis_id === activeCrisisId);
   const selectedReport = reports.find((r) => r.id === selectedReportId) ?? null;
   const activeCrisis = crises.find((c) => c.id === activeCrisisId) ?? null;
 
@@ -154,8 +161,9 @@ export function OpsMapPage() {
   );
 
   const loadZones = useCallback(() => {
-    opsGet<{ items: OpsZone[] }>('/v1/ops/zones').then((d) => setZones(d.items)).catch(() => setZones([]));
-  }, []);
+    const q = activeCrisisId ? `?crisis_id=${activeCrisisId}` : '';
+    opsGet<{ items: OpsZone[] }>(`/v1/ops/zones${q}`).then((d) => setZones(d.items)).catch(() => setZones([]));
+  }, [activeCrisisId]);
 
   const loadCrises = useCallback(() => {
     opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises')
@@ -174,11 +182,21 @@ export function OpsMapPage() {
   }, [isAdmin]);
 
   const loadUsers = useCallback(() => {
-    if (!canManageUsers) return;
+    if (!isAdmin) return;
     opsGet<{ items: OpsUserRecord[] }>('/v1/ops/users')
       .then((d) => setOpsUsers(d.items))
       .catch(() => setOpsUsers([]));
-  }, [canManageUsers]);
+  }, [isAdmin]);
+
+  const refreshMe = useCallback(() => {
+    const token = getOpsToken();
+    if (!token || !user) return;
+    opsGet<{ zone_assignments: OpsUserRecord['zone_assignments']; crisis_lead_assignments: OpsUserRecord['crisis_lead_assignments'] }>(
+      '/v1/ops/me',
+    ).then((me) => {
+      setOpsSession(token, { ...user, zone_assignments: me.zone_assignments, crisis_lead_assignments: me.crisis_lead_assignments });
+    }).catch(() => undefined);
+  }, [user]);
 
   const loadReports = useCallback(() => {
     const q = new URLSearchParams({ limit: '300' });
@@ -193,9 +211,12 @@ export function OpsMapPage() {
   }, [selectedZoneId, filterFrom, filterTo]);
 
   useEffect(() => {
-    loadZones();
     loadCrises();
-  }, [loadZones, loadCrises]);
+  }, [loadCrises]);
+
+  useEffect(() => {
+    loadZones();
+  }, [loadZones]);
 
   useEffect(() => {
     loadReports();
@@ -219,6 +240,10 @@ export function OpsMapPage() {
   };
 
   const startDraw = () => {
+    if (!activeCrisisId) {
+      setErr('請先選擇危機');
+      return;
+    }
     if (!canCreateZones) return;
     resetDraft();
     setMapMode('draw');
@@ -248,8 +273,8 @@ export function OpsMapPage() {
   };
 
   const saveZone = async () => {
-    if (!zoneName.trim() || !draftPolygon || !closed) {
-      setErr('請完成名稱與多邊形');
+    if (!activeCrisisId || !zoneName.trim() || !draftPolygon || !closed) {
+      setErr('請選擇危機並完成名稱與多邊形');
       return;
     }
     setBusy(true);
@@ -258,7 +283,11 @@ export function OpsMapPage() {
       if (editingZoneId) {
         await opsPatch(`/v1/ops/zones/${editingZoneId}`, { name: zoneName.trim(), geom: draftPolygon });
       } else {
-        await opsPost('/v1/ops/zones', { name: zoneName.trim(), geom: draftPolygon });
+        await opsPost('/v1/ops/zones', {
+          crisis_id: activeCrisisId,
+          name: zoneName.trim(),
+          geom: draftPolygon,
+        });
       }
       resetDraft();
       loadZones();
@@ -388,8 +417,40 @@ export function OpsMapPage() {
     setBusy(true);
     try {
       await opsPost(`/v1/ops/users/${assignUserId}/zones/${assignZoneId}`, {
-        assignment_role: assignRole,
+        assignment_role: 'coordinator',
       });
+      loadUsers();
+      loadAudit();
+      refreshMe();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const assignCrisisLead = async () => {
+    if (!assignLeadUserId || !activeCrisisId) {
+      setErr('請選擇人員與危機');
+      return;
+    }
+    setBusy(true);
+    try {
+      await opsPost(`/v1/ops/users/${assignLeadUserId}/crises/${activeCrisisId}`, {});
+      setAssignLeadUserId('');
+      loadUsers();
+      loadAudit();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const unassignCrisisLead = async (userId: string, crisisId: string) => {
+    setBusy(true);
+    try {
+      await opsDelete(`/v1/ops/users/${userId}/crises/${crisisId}`);
       loadUsers();
       loadAudit();
     } catch (e) {
@@ -405,6 +466,7 @@ export function OpsMapPage() {
       await opsDelete(`/v1/ops/users/${userId}/zones/${zoneId}`);
       loadUsers();
       loadAudit();
+      refreshMe();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -412,10 +474,20 @@ export function OpsMapPage() {
     }
   };
 
+  const loadAssignableUsers = useCallback(() => {
+    if (!canOpenStaff) return;
+    opsGet<{ items: Array<{ id: string; email: string }> }>('/v1/ops/users/assignable')
+      .then((d) => setAssignableUsers(d.items))
+      .catch(() => setAssignableUsers([]));
+  }, [canOpenStaff]);
+
   const togglePanel = (key: PanelKey) => {
     setPanel((p) => (p === key ? null : key));
     if (key === 'audit') loadAudit();
-    if (key === 'users') loadUsers();
+    if (key === 'users') {
+      loadUsers();
+      loadAssignableUsers();
+    }
   };
 
   return (
@@ -427,8 +499,10 @@ export function OpsMapPage() {
         style={{ cursor: mapMode === 'draw' || mapMode === 'edit' ? 'crosshair' : undefined }}
       >
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <ZoomControl position="topleft" />
         <FlyToZone zone={flyZone} />
-        {((mapMode === 'draw' && canCreateZones) || (mapMode === 'edit' && editingZoneId && opsCanEditZone(user, editingZoneId))) && (
+        {((mapMode === 'draw' && canCreateZones) ||
+          (mapMode === 'edit' && editingZoneId && opsCanEditZone(user, zones.find((z) => z.id === editingZoneId)?.crisis_id ?? undefined))) && (
           <PolygonDrawHandler
             active
             onAddVertex={(v) => {
@@ -510,20 +584,30 @@ export function OpsMapPage() {
       </MapContainer>
 
       <div className="ops-map-overlay-top">
-        <div className="ops-map-chip ops-map-title">
-          <strong>營運地圖</strong>
-          <span className="ops-map-sub">
-            {user.email} · {roleLabel(user.role)}
-            {!isAdmin && user.zone_assignments?.length
-              ? ` · ${user.zone_assignments.map((a) => `${a.assignment_role}@${a.zone_id.slice(0, 4)}`).join(', ')}`
-              : ''}
-          </span>
+        <div className="ops-map-zoom-spacer" aria-hidden="true" />
+        <div className="ops-map-header-center">
+          <div className="ops-map-chip ops-map-title">
+            <strong>營運地圖</strong>
+            <span className="ops-map-sub">{user.email} · {roleLabel(user.role)}</span>
+          </div>
+          {crises.length > 0 && (
+            <label className="ops-map-chip ops-map-crisis-select">
+              危機
+              <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
+                {crises.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {crisisLabel(c)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
         <div className="ops-map-toolbar">
           <Link to="/" className="ops-map-chip ops-map-link">
             回報地圖
           </Link>
-          <button type="button" className="ops-map-chip" onClick={logout}>
+          <button type="button" className="ops-map-chip ops-map-btn" onClick={logout}>
             登出
           </button>
         </div>
@@ -540,7 +624,7 @@ export function OpsMapPage() {
             危機歸檔
           </button>
         )}
-        {canManageUsers && (
+        {canOpenStaff && (
           <button type="button" className={`ops-map-fab ${panel === 'users' ? 'active' : ''}`} onClick={() => togglePanel('users')}>
             人員
           </button>
@@ -696,70 +780,99 @@ export function OpsMapPage() {
         </div>
       )}
 
-      {panel === 'users' && canManageUsers && (
+      {panel === 'users' && canOpenStaff && (
         <div className="ops-map-card ops-map-card-wide">
           <button type="button" className="ops-map-card-close" onClick={() => setPanel(null)}>
             ×
           </button>
           <h3>人員管理</h3>
-          <p className="muted">帳號僅分系統管理員／營運人員；Lead 與 Coordinator 依分區指派。</p>
-          <div className="ops-user-create">
-            <h4>新增營運人員</h4>
-            <input className="ops-input" placeholder="email" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} />
-            <input className="ops-input" type="password" placeholder="密碼（≥8）" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} />
-            <input className="ops-input" placeholder="顯示名稱（選填）" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
-            <button type="button" onClick={createUser} disabled={busy}>
-              建立
-            </button>
-          </div>
-          <div className="ops-user-assign">
-            <h4>分區指派</h4>
-            <select className="ops-input" value={assignUserId} onChange={(e) => setAssignUserId(e.target.value)}>
-              <option value="">選擇人員</option>
-              {opsUsers.filter((u) => u.role !== 'system_admin').map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.email}
-                </option>
-              ))}
-            </select>
-            <select className="ops-input" value={assignZoneId} onChange={(e) => setAssignZoneId(e.target.value)}>
-              <option value="">選擇分區</option>
-              {zones.map((z) => (
-                <option key={z.id} value={z.id}>
-                  {z.name}
-                </option>
-              ))}
-            </select>
-            <select className="ops-input" value={assignRole} onChange={(e) => setAssignRole(e.target.value as 'lead' | 'coordinator')}>
-              <option value="coordinator">Coordinator（檢視／審核）</option>
-              <option value="lead">Lead（編輯分區／歸檔）</option>
-            </select>
-            <button type="button" onClick={assignZoneToUser} disabled={busy}>
-              指派
-            </button>
-          </div>
-          <ul className="ops-users-list">
-            {opsUsers.map((u) => (
-              <li key={u.id}>
-                <strong>{u.email}</strong>
-                <span className="muted"> {roleLabel(u.role)}</span>
-                {u.zone_assignments.length > 0 && (
-                  <ul>
-                    {u.zone_assignments.map((a) => (
-                      <li key={`${u.id}-${a.zone_id}`}>
-                        {a.zone_name ?? a.zone_id.slice(0, 8)} — {a.assignment_role}
-                        {u.role !== 'system_admin' && (
+          <p className="muted">危機 Lead 於危機層級指派；Lead 畫分區後可指派 Coordinator。</p>
+          {isAdmin && (
+            <div className="ops-user-create">
+              <h4>新增營運人員</h4>
+              <input className="ops-input" placeholder="email" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} />
+              <input className="ops-input" type="password" placeholder="密碼（≥8）" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} />
+              <input className="ops-input" placeholder="顯示名稱（選填）" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
+              <button type="button" className="ops-map-btn" onClick={createUser} disabled={busy}>
+                建立
+              </button>
+            </div>
+          )}
+          {isAdmin && (
+            <div className="ops-user-assign">
+              <h4>指派危機 Lead</h4>
+              <select className="ops-input" value={assignLeadUserId} onChange={(e) => setAssignLeadUserId(e.target.value)}>
+                <option value="">選擇人員</option>
+                {opsUsers.filter((u) => u.role !== 'system_admin').map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.email}
+                  </option>
+                ))}
+              </select>
+              <p className="muted">目前危機：{activeCrisis ? crisisLabel(activeCrisis) : '—'}</p>
+              <button type="button" className="ops-map-btn" onClick={assignCrisisLead} disabled={busy || !activeCrisisId}>
+                設為此危機 Lead
+              </button>
+            </div>
+          )}
+          {canAssignCoord && (
+            <div className="ops-user-assign">
+              <h4>指派分區 Coordinator</h4>
+              <select className="ops-input" value={assignUserId} onChange={(e) => setAssignUserId(e.target.value)}>
+                <option value="">選擇人員</option>
+                {(isAdmin ? opsUsers.filter((u) => u.role !== 'system_admin') : assignableUsers).map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.email}
+                  </option>
+                ))}
+              </select>
+              <select className="ops-input" value={assignZoneId} onChange={(e) => setAssignZoneId(e.target.value)}>
+                <option value="">選擇分區</option>
+                {crisisZones.map((z) => (
+                  <option key={z.id} value={z.id}>
+                    {z.name}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="ops-map-btn" onClick={assignZoneToUser} disabled={busy}>
+                指派 Coordinator
+              </button>
+            </div>
+          )}
+          {isAdmin && (
+            <ul className="ops-users-list">
+              {opsUsers.map((u) => (
+                <li key={u.id}>
+                  <strong>{u.email}</strong>
+                  <span className="muted"> {roleLabel(u.role)}</span>
+                  {u.crisis_lead_assignments?.length > 0 && (
+                    <ul>
+                      {u.crisis_lead_assignments.map((a) => (
+                        <li key={`${u.id}-c-${a.crisis_id}`}>
+                          危機 Lead — {a.crisis_slug ?? a.crisis_id.slice(0, 8)}
+                          <button type="button" className="linkish" onClick={() => unassignCrisisLead(u.id, a.crisis_id)}>
+                            移除
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {u.zone_assignments.length > 0 && (
+                    <ul>
+                      {u.zone_assignments.map((a) => (
+                        <li key={`${u.id}-${a.zone_id}`}>
+                          {a.zone_name ?? a.zone_id.slice(0, 8)} — coordinator
                           <button type="button" className="linkish" onClick={() => unassignZone(u.id, a.zone_id)}>
                             移除
                           </button>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

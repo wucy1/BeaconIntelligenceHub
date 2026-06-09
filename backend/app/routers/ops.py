@@ -13,7 +13,16 @@ from sqlalchemy.orm import Session
 
 from app.archive_logic import report_ids_for_archive
 from app.database import get_db
-from app.models import Crisis, OpsAuditLog, OpsUser, Report, ReportCrisisLink, UserZoneAssignment, Zone
+from app.models import (
+    Crisis,
+    CrisisLeadAssignment,
+    OpsAuditLog,
+    OpsUser,
+    Report,
+    ReportCrisisLink,
+    UserZoneAssignment,
+    Zone,
+)
 from app.ops_audit import log_ops_action
 from app.ops_auth import (
     OpsPrincipal,
@@ -37,6 +46,7 @@ class LoginBody(BaseModel):
 
 
 class ZoneCreateBody(BaseModel):
+    crisis_id: UUID
     name: str = Field(..., min_length=1, max_length=200)
     description: str | None = None
     parent_zone_id: UUID | None = None
@@ -120,6 +130,7 @@ def _zone_out(db: Session, zone: Zone) -> dict:
     ).scalar_one()
     return {
         "id": str(zone.id),
+        "crisis_id": str(zone.crisis_id) if zone.crisis_id else None,
         "name": zone.name,
         "description": zone.description,
         "parent_zone_id": str(zone.parent_zone_id) if zone.parent_zone_id else None,
@@ -146,6 +157,23 @@ def _zone_assignments_payload(db: Session, user_id: UUID) -> list[dict]:
     ]
 
 
+def _crisis_leads_payload(db: Session, user_id: UUID) -> list[dict]:
+    rows = (
+        db.query(CrisisLeadAssignment, Crisis.name, Crisis.slug)
+        .join(Crisis, Crisis.id == CrisisLeadAssignment.crisis_id)
+        .filter(CrisisLeadAssignment.user_id == user_id)
+        .all()
+    )
+    return [
+        {
+            "crisis_id": str(a.crisis_id),
+            "crisis_slug": slug,
+            "crisis_name": name,
+        }
+        for a, name, slug in rows
+    ]
+
+
 def _user_out(db: Session, user: OpsUser) -> dict:
     return {
         "id": str(user.id),
@@ -155,6 +183,7 @@ def _user_out(db: Session, user: OpsUser) -> dict:
         "is_active": bool(user.is_active),
         "created_at": user.created_at.isoformat() if user.created_at else None,
         "zone_assignments": _zone_assignments_payload(db, user.id),
+        "crisis_lead_assignments": _crisis_leads_payload(db, user.id),
     }
 
 
@@ -191,6 +220,7 @@ def ops_login(body: LoginBody, db: Session = Depends(get_db)) -> dict:
             "role": user.role,
             "zone_ids": [a["zone_id"] for a in assignments],
             "zone_assignments": assignments,
+            "crisis_lead_assignments": _crisis_leads_payload(db, user.id),
         },
     }
 
@@ -208,16 +238,31 @@ def ops_me(principal: OpsPrincipal = Depends(get_ops_principal)) -> dict:
             {"zone_id": str(a.zone_id), "assignment_role": a.assignment_role}
             for a in principal.assignments
         ],
+        "crisis_lead_assignments": [
+            {"crisis_id": str(cid)} for cid in principal.crisis_lead_ids
+        ],
     }
 
 
 @router.get("/zones")
 def list_zones(
+    crisis_id: UUID | None = None,
     principal: OpsPrincipal = Depends(get_ops_principal),
     db: Session = Depends(get_db),
 ) -> dict:
     q = db.query(Zone).order_by(Zone.name.asc())
-    if not principal.sees_all_zones():
+    if crisis_id is not None:
+        q = q.filter(Zone.crisis_id == crisis_id)
+    if principal.is_system_admin():
+        pass
+    elif principal.crisis_lead_ids:
+        from sqlalchemy import or_
+
+        clauses = [Zone.crisis_id.in_(principal.crisis_lead_ids)]
+        if principal.zone_ids:
+            clauses.append(Zone.id.in_(principal.zone_ids))
+        q = q.filter(or_(*clauses))
+    else:
         if not principal.zone_ids:
             return {"items": []}
         q = q.filter(Zone.id.in_(principal.zone_ids))
@@ -228,14 +273,17 @@ def list_zones(
 @router.post("/zones")
 def create_zone(
     body: ZoneCreateBody,
-    principal: OpsPrincipal = Depends(require_system_admin()),
+    principal: OpsPrincipal = Depends(get_ops_principal),
     db: Session = Depends(get_db),
 ) -> dict:
+    if not principal.can_create_zones(body.crisis_id):
+        raise HTTPException(status_code=403, detail="Cannot create zones for this crisis")
     if body.parent_zone_id:
         parent = db.query(Zone).filter(Zone.id == body.parent_zone_id).first()
         if not parent:
             raise HTTPException(status_code=404, detail="parent_zone_id not found")
     zone = Zone(
+        crisis_id=body.crisis_id,
         name=body.name.strip(),
         description=body.description,
         parent_zone_id=body.parent_zone_id,
@@ -265,7 +313,7 @@ def patch_zone(
     zone = db.query(Zone).filter(Zone.id == zone_id).first()
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found")
-    if not principal.can_edit_zone(zone_id):
+    if not principal.can_edit_zone(zone.crisis_id):
         raise HTTPException(status_code=403, detail="Cannot edit this zone")
     if body.name is not None:
         zone.name = body.name.strip()
@@ -292,12 +340,14 @@ def patch_zone(
 @router.delete("/zones/{zone_id}")
 def delete_zone(
     zone_id: UUID,
-    principal: OpsPrincipal = Depends(require_system_admin()),
+    principal: OpsPrincipal = Depends(get_ops_principal),
     db: Session = Depends(get_db),
 ) -> dict:
     zone = db.query(Zone).filter(Zone.id == zone_id).first()
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found")
+    if not principal.can_delete_zone(zone.crisis_id):
+        raise HTTPException(status_code=403, detail="Cannot delete this zone")
     log_ops_action(
         db,
         actor_user_id=principal.user_id,
@@ -316,7 +366,18 @@ def ops_list_crises(
     principal: OpsPrincipal = Depends(get_ops_principal),
     db: Session = Depends(get_db),
 ) -> dict:
-    rows = db.query(Crisis).order_by(Crisis.created_at.desc()).all()
+    q = db.query(Crisis).order_by(Crisis.created_at.desc())
+    visible = principal.visible_crisis_ids()
+    if visible is not None:
+        crisis_ids = set(visible)
+        if principal.zone_ids:
+            for (cid,) in db.query(Zone.crisis_id).filter(Zone.id.in_(principal.zone_ids)).distinct():
+                if cid:
+                    crisis_ids.add(cid)
+        if not crisis_ids:
+            return {"items": []}
+        q = q.filter(Crisis.id.in_(list(crisis_ids)))
+    rows = q.all()
     return {"items": [_crisis_out(c) for c in rows]}
 
 
@@ -360,6 +421,8 @@ def ops_patch_crisis(
     crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
     if not crisis:
         raise HTTPException(status_code=404, detail="Crisis not found")
+    if not principal.can_manage_crisis(crisis_id):
+        raise HTTPException(status_code=403, detail="Cannot manage this crisis")
     if body.slug is not None:
         crisis.slug = body.slug.strip()
     if body.name is not None:
@@ -395,9 +458,12 @@ def ops_archive_preview(
     crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
     if not crisis:
         raise HTTPException(status_code=404, detail="Crisis not found")
+    if not principal.can_run_archive(crisis_id):
+        raise HTTPException(status_code=403, detail="Cannot archive this crisis")
     zone_ids = body.zone_ids
-    if zone_ids is None and not principal.sees_all_zones():
-        zone_ids = list(principal.zone_ids)
+    if zone_ids is None and not principal.is_system_admin():
+        zone_rows = db.query(Zone.id).filter(Zone.crisis_id == crisis_id).all()
+        zone_ids = [row[0] for row in zone_rows] if zone_rows else list(principal.zone_ids)
     ids = report_ids_for_archive(
         db,
         crisis_id,
@@ -429,9 +495,12 @@ def ops_archive_run(
     crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
     if not crisis:
         raise HTTPException(status_code=404, detail="Crisis not found")
+    if not principal.can_run_archive(crisis_id):
+        raise HTTPException(status_code=403, detail="Cannot archive this crisis")
     zone_ids = body.zone_ids
-    if zone_ids is None and not principal.sees_all_zones():
-        zone_ids = list(principal.zone_ids)
+    if zone_ids is None and not principal.is_system_admin():
+        zone_rows = db.query(Zone.id).filter(Zone.crisis_id == crisis_id).all()
+        zone_ids = [row[0] for row in zone_rows] if zone_rows else list(principal.zone_ids)
     ids = report_ids_for_archive(
         db,
         crisis_id,
@@ -580,6 +649,27 @@ def ops_list_users(
     return {"items": [_user_out(db, u) for u in users]}
 
 
+@router.get("/users/assignable")
+def ops_list_assignable_users(
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not principal.is_system_admin() and not principal.crisis_lead_ids:
+        raise HTTPException(status_code=403, detail="Not allowed")
+    users = (
+        db.query(OpsUser)
+        .filter(OpsUser.role == "coordinator", OpsUser.is_active.is_(True))
+        .order_by(OpsUser.email.asc())
+        .all()
+    )
+    return {
+        "items": [
+            {"id": str(u.id), "email": u.email, "display_name": u.display_name}
+            for u in users
+        ]
+    }
+
+
 @router.post("/users")
 def ops_create_user(
     body: UserCreateBody,
@@ -645,16 +735,79 @@ def ops_patch_user(
     return _user_out(db, user)
 
 
+@router.post("/users/{user_id}/crises/{crisis_id}")
+def assign_crisis_lead(
+    user_id: UUID,
+    crisis_id: UUID,
+    principal: OpsPrincipal = Depends(require_system_admin()),
+    db: Session = Depends(get_db),
+) -> dict:
+    user = db.query(OpsUser).filter(OpsUser.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.role == "system_admin":
+        raise HTTPException(status_code=422, detail="System admin does not need crisis lead assignment")
+    crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
+    if not crisis:
+        raise HTTPException(status_code=404, detail="Crisis not found")
+    existing = (
+        db.query(CrisisLeadAssignment)
+        .filter(CrisisLeadAssignment.user_id == user_id, CrisisLeadAssignment.crisis_id == crisis_id)
+        .first()
+    )
+    if not existing:
+        db.add(CrisisLeadAssignment(user_id=user_id, crisis_id=crisis_id))
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="user.crisis_lead_assign",
+        entity_type="ops_user",
+        entity_id=user_id,
+        detail={"crisis_id": str(crisis_id)},
+    )
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/users/{user_id}/crises/{crisis_id}")
+def unassign_crisis_lead(
+    user_id: UUID,
+    crisis_id: UUID,
+    principal: OpsPrincipal = Depends(require_system_admin()),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = (
+        db.query(CrisisLeadAssignment)
+        .filter(CrisisLeadAssignment.user_id == user_id, CrisisLeadAssignment.crisis_id == crisis_id)
+        .first()
+    )
+    if row:
+        log_ops_action(
+            db,
+            actor_user_id=principal.user_id,
+            action="user.crisis_lead_unassign",
+            entity_type="ops_user",
+            entity_id=user_id,
+            detail={"crisis_id": str(crisis_id)},
+        )
+        db.delete(row)
+        db.commit()
+    return {"ok": True}
+
+
 @router.post("/users/{user_id}/zones/{zone_id}")
 def assign_user_zone(
     user_id: UUID,
     zone_id: UUID,
     body: ZoneAssignBody,
-    principal: OpsPrincipal = Depends(require_system_admin()),
+    principal: OpsPrincipal = Depends(get_ops_principal),
     db: Session = Depends(get_db),
 ) -> dict:
-    if body.assignment_role not in ("lead", "coordinator"):
-        raise HTTPException(status_code=422, detail="assignment_role must be lead or coordinator")
+    if body.assignment_role != "coordinator":
+        raise HTTPException(
+            status_code=422,
+            detail="Zone assignment is coordinator only; use crisis lead assignment for leads",
+        )
     user = db.query(OpsUser).filter(OpsUser.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -663,19 +816,21 @@ def assign_user_zone(
     zone = db.query(Zone).filter(Zone.id == zone_id).first()
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found")
+    if not principal.can_assign_coordinator(zone.crisis_id):
+        raise HTTPException(status_code=403, detail="Cannot assign coordinator for this zone")
     existing = (
         db.query(UserZoneAssignment)
         .filter(UserZoneAssignment.user_id == user_id, UserZoneAssignment.zone_id == zone_id)
         .first()
     )
     if existing:
-        existing.assignment_role = body.assignment_role
+        existing.assignment_role = "coordinator"
     else:
         db.add(
             UserZoneAssignment(
                 user_id=user_id,
                 zone_id=zone_id,
-                assignment_role=body.assignment_role,
+                assignment_role="coordinator",
             )
         )
     log_ops_action(
@@ -684,7 +839,7 @@ def assign_user_zone(
         action="user.zone_assign",
         entity_type="ops_user",
         entity_id=user_id,
-        detail={"zone_id": str(zone_id), "assignment_role": body.assignment_role},
+        detail={"zone_id": str(zone_id), "assignment_role": "coordinator"},
     )
     db.commit()
     return {"ok": True}
@@ -694,9 +849,14 @@ def assign_user_zone(
 def unassign_user_zone(
     user_id: UUID,
     zone_id: UUID,
-    principal: OpsPrincipal = Depends(require_system_admin()),
+    principal: OpsPrincipal = Depends(get_ops_principal),
     db: Session = Depends(get_db),
 ) -> dict:
+    zone = db.query(Zone).filter(Zone.id == zone_id).first()
+    if not zone:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    if not principal.can_assign_coordinator(zone.crisis_id):
+        raise HTTPException(status_code=403, detail="Cannot unassign coordinator for this zone")
     row = (
         db.query(UserZoneAssignment)
         .filter(UserZoneAssignment.user_id == user_id, UserZoneAssignment.zone_id == zone_id)

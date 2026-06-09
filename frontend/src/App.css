@@ -1775,15 +1775,19 @@ button.danger {
 }
 
 /* —— Ops map-first (Phase 3) —— */
+.ops-map-page .leaflet-top.leaflet-left {
+  z-index: 800;
+}
+
 .ops-map-page .ops-map-overlay-top {
   position: absolute;
   top: 0.5rem;
   left: 0.5rem;
   right: 0.5rem;
   z-index: 600;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: 2.5rem 1fr auto;
+  align-items: start;
   gap: 0.5rem;
   pointer-events: none;
 }
@@ -1792,12 +1796,43 @@ button.danger {
   pointer-events: auto;
 }
 
+.ops-map-page .ops-map-zoom-spacer {
+  pointer-events: none;
+}
+
+.ops-map-page .ops-map-header-center {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.ops-map-page .ops-map-crisis-select {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.ops-map-page .ops-map-crisis-select select {
+  font-size: 0.78rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+  color: #0f172a;
+  background: #fff;
+}
+
 .ops-map-chip {
   background: rgba(255, 255, 255, 0.94);
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 0.35rem 0.6rem;
   font-size: 0.8rem;
+  color: #0f172a;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
   display: inline-flex;
   align-items: center;
@@ -1840,8 +1875,11 @@ button.danger {
   gap: 0.35rem;
 }
 
-.ops-map-fab {
-  background: rgba(255, 255, 255, 0.96);
+.ops-map-page .ops-map-fab,
+.ops-map-page .ops-map-btn,
+.ops-map-page .ops-map-toolbar button {
+  background: #fff;
+  color: #0f172a;
   border: 1px solid #cbd5e1;
   border-radius: 10px;
   padding: 0.45rem 0.65rem;
@@ -1852,10 +1890,16 @@ button.danger {
   text-align: left;
 }
 
-.ops-map-fab.active {
+.ops-map-page .ops-map-fab.active {
   background: #1d4ed8;
   color: #fff;
   border-color: #1d4ed8;
+}
+
+.ops-map-page .ops-map-card-actions button:not(.secondary):not(.danger) {
+  background: #1d4ed8;
+  color: #fff;
+  border: none;
 }
 
 .ops-map-filter-bar {

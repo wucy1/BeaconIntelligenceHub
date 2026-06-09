@@ -162,6 +162,7 @@ END $$;
 
 CREATE TABLE IF NOT EXISTS zones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  crisis_id UUID REFERENCES crises(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   description TEXT,
   parent_zone_id UUID REFERENCES zones(id) ON DELETE SET NULL,
@@ -196,6 +197,13 @@ CREATE TABLE IF NOT EXISTS report_crisis_links (
   linked_by UUID REFERENCES ops_users(id) ON DELETE SET NULL,
   link_source TEXT NOT NULL DEFAULT 'batch_archive',
   PRIMARY KEY (report_id, crisis_id)
+);
+
+CREATE TABLE IF NOT EXISTS crisis_lead_assignments (
+  user_id UUID NOT NULL REFERENCES ops_users(id) ON DELETE CASCADE,
+  crisis_id UUID NOT NULL REFERENCES crises(id) ON DELETE CASCADE,
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, crisis_id)
 );
 
 CREATE TABLE IF NOT EXISTS ops_audit_log (

@@ -68,6 +68,7 @@ export async function opsDelete(path: string): Promise<void> {
 
 export type OpsZone = {
   id: string;
+  crisis_id: string | null;
   name: string;
   description: string | null;
   parent_zone_id: string | null;
@@ -121,6 +122,11 @@ export type OpsUserRecord = {
     zone_id: string;
     zone_name?: string;
     assignment_role: 'lead' | 'coordinator';
+  }>;
+  crisis_lead_assignments: Array<{
+    crisis_id: string;
+    crisis_slug?: string;
+    crisis_name?: Record<string, string>;
   }>;
 };
 

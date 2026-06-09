@@ -90,6 +90,7 @@ class Zone(Base):
     __tablename__ = "zones"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    crisis_id = Column(UUID(as_uuid=True), ForeignKey("crises.id", ondelete="CASCADE"), nullable=True)
     name = Column(Text, nullable=False)
     description = Column(Text, nullable=True)
     parent_zone_id = Column(UUID(as_uuid=True), ForeignKey("zones.id", ondelete="SET NULL"), nullable=True)
@@ -116,6 +117,14 @@ class UserZoneAssignment(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("ops_users.id", ondelete="CASCADE"), primary_key=True)
     zone_id = Column(UUID(as_uuid=True), ForeignKey("zones.id", ondelete="CASCADE"), primary_key=True)
     assignment_role = Column(String, nullable=False, default="coordinator")
+    assigned_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class CrisisLeadAssignment(Base):
+    __tablename__ = "crisis_lead_assignments"
+
+    user_id = Column(UUID(as_uuid=True), ForeignKey("ops_users.id", ondelete="CASCADE"), primary_key=True)
+    crisis_id = Column(UUID(as_uuid=True), ForeignKey("crises.id", ondelete="CASCADE"), primary_key=True)
     assigned_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 

@@ -12,9 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import OpsUser, UserZoneAssignment
+from app.models import CrisisLeadAssignment, OpsUser, UserZoneAssignment
 
-ACCOUNT_ROLES = frozenset({"coordinator", "crisis_lead", "system_admin"})
 ZONE_ASSIGNMENT_ROLES = frozenset({"lead", "coordinator"})
 
 
@@ -59,9 +58,15 @@ def decode_access_token(token: str) -> dict:
 
 
 class OpsPrincipal:
-    def __init__(self, user: OpsUser, assignments: list[ZoneAssignment]):
+    def __init__(
+        self,
+        user: OpsUser,
+        zone_assignments: list[ZoneAssignment],
+        crisis_lead_ids: list[UUID],
+    ):
         self.user = user
-        self.assignments = assignments
+        self.assignments = zone_assignments
+        self.crisis_lead_ids = crisis_lead_ids
 
     @property
     def role(self) -> str:
@@ -75,11 +80,11 @@ class OpsPrincipal:
     def zone_ids(self) -> list[UUID]:
         return [a.zone_id for a in self.assignments]
 
-    def lead_zone_ids(self) -> list[UUID]:
-        return [a.zone_id for a in self.assignments if a.assignment_role == "lead"]
-
     def is_system_admin(self) -> bool:
         return self.role == "system_admin"
+
+    def is_crisis_lead(self, crisis_id: UUID) -> bool:
+        return self.is_system_admin() or crisis_id in self.crisis_lead_ids
 
     def sees_all_zones(self) -> bool:
         return self.is_system_admin()
@@ -87,26 +92,48 @@ class OpsPrincipal:
     def can_manage_users(self) -> bool:
         return self.is_system_admin()
 
-    def can_create_zones(self) -> bool:
-        return self.is_system_admin()
+    def can_manage_crisis(self, crisis_id: UUID) -> bool:
+        return self.is_crisis_lead(crisis_id)
 
-    def can_delete_zone(self, _zone_id: UUID) -> bool:
-        return self.is_system_admin()
+    def can_create_zones(self, crisis_id: UUID) -> bool:
+        return self.can_manage_crisis(crisis_id)
 
-    def can_edit_zone(self, zone_id: UUID) -> bool:
-        return self.is_system_admin() or zone_id in self.lead_zone_ids()
+    def can_edit_zone(self, crisis_id: UUID | None) -> bool:
+        if crisis_id is None:
+            return self.is_system_admin()
+        return self.can_manage_crisis(crisis_id)
 
-    def can_run_archive(self) -> bool:
-        return self.is_system_admin() or bool(self.lead_zone_ids())
+    def can_delete_zone(self, crisis_id: UUID | None) -> bool:
+        return self.can_edit_zone(crisis_id)
 
-    def can_manage_crisis_meta(self) -> bool:
-        return self.is_system_admin() or bool(self.lead_zone_ids())
+    def can_assign_coordinator(self, crisis_id: UUID | None) -> bool:
+        return self.can_edit_zone(crisis_id)
+
+    def can_run_archive(self, crisis_id: UUID | None = None) -> bool:
+        if self.is_system_admin():
+            return True
+        if crisis_id is not None:
+            return crisis_id in self.crisis_lead_ids
+        return bool(self.crisis_lead_ids)
+
+    def visible_crisis_ids(self) -> list[UUID] | None:
+        """None = all crises (admin)."""
+        if self.is_system_admin():
+            return None
+        return list(self.crisis_lead_ids)
 
 
-def _load_assignments(db: Session, user_id: UUID) -> list[ZoneAssignment]:
+def _load_zone_assignments(db: Session, user_id: UUID) -> list[ZoneAssignment]:
     return [
         ZoneAssignment(zone_id=row.zone_id, assignment_role=row.assignment_role or "coordinator")
         for row in db.query(UserZoneAssignment).filter(UserZoneAssignment.user_id == user_id).all()
+    ]
+
+
+def _load_crisis_lead_ids(db: Session, user_id: UUID) -> list[UUID]:
+    return [
+        row.crisis_id
+        for row in db.query(CrisisLeadAssignment).filter(CrisisLeadAssignment.user_id == user_id).all()
     ]
 
 
@@ -122,7 +149,11 @@ def get_ops_principal(
     user = db.query(OpsUser).filter(OpsUser.id == user_id, OpsUser.is_active.is_(True)).first()
     if not user:
         raise HTTPException(status_code=401, detail="User not found or inactive")
-    return OpsPrincipal(user=user, assignments=_load_assignments(db, user.id))
+    return OpsPrincipal(
+        user=user,
+        zone_assignments=_load_zone_assignments(db, user.id),
+        crisis_lead_ids=_load_crisis_lead_ids(db, user.id),
+    )
 
 
 def require_system_admin():
@@ -138,15 +169,6 @@ def require_archive_permission():
     def _dep(principal: OpsPrincipal = Depends(get_ops_principal)) -> OpsPrincipal:
         if not principal.can_run_archive():
             raise HTTPException(status_code=403, detail="Archive permission required")
-        return principal
-
-    return _dep
-
-
-def require_ops_roles(*roles: str):
-    def _dep(principal: OpsPrincipal = Depends(get_ops_principal)) -> OpsPrincipal:
-        if principal.role not in roles:
-            raise HTTPException(status_code=403, detail="Insufficient role")
         return principal
 
     return _dep

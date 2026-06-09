@@ -7,8 +7,10 @@
 | 危機生命週期 | **不影響** Contributor 能否回報；`archive_status` 僅供事後歸檔 |
 | 危機 | 事後歸檔桶；多危機可並存、空間可重疊（`report_crisis_links`） |
 | 分區 (zones) | 營運人員**手畫多邊形**（可巢狀 `parent_zone_id`），非官方區劃 |
-| 帳號角色 | `system_admin`（系統管理員）或 `coordinator`（營運人員） |
-| 分區指派 | 每人於各分區為 `lead` 或 `coordinator`（非帳號層級） |
+| 帳號角色 | `system_admin` 或 `coordinator`（營運人員） |
+| 危機 Lead | `crisis_lead_assignments`：於**危機層級**指派，可畫該危機分區、歸檔、指派 Coordinator |
+| 分區 Coordinator | `user_zone_assignments`：僅檢視／審核該分區回報 |
+| 分區歸屬 | `zones.crisis_id`：每個分區屬於一個危機 |
 | 離線 | 上傳不綁危機；歸檔依時空規則事後處理 |
 | 認證 | 帳密 + JWT（`/v1/ops/auth/login`） |
 | 後台 UI | **Map first**：`/ops/map` 全螢幕地圖，操作以浮動卡片／tooltip 呈現 |
@@ -53,17 +55,18 @@
 
 ## 權限矩陣
 
-| 能力 | system_admin | 分區 lead | 分區 coordinator |
+| 能力 | system_admin | 危機 lead | 分區 coordinator |
 |------|--------------|-----------|----------------|
-| 看全部分區 | ✓ | ✗ | ✗ |
-| 新建/刪除分區 | ✓ | ✗ | ✗ |
-| 編輯分區邊界 | 全部 | 指派為 lead 的分區 | ✗ |
-| 看/審核回報 | 全部 | 指派分區內 | 指派分區內 |
-| 危機歸檔 | ✓ | ✓ | ✗ |
-| 人員管理 | ✓ | ✗ | ✗ |
+| 指派危機 lead | ✓ | ✗ | ✗ |
+| 畫分區（於危機下） | 全部危機 | 所指派危機 | ✗ |
+| 編輯/刪除分區 | 全部 | 所屬危機分區 | ✗ |
+| 指派 coordinator | ✓ | 所屬危機分區 | ✗ |
+| 看/審核回報 | 全部 | 危機內分區 | 指派分區 |
+| 危機歸檔 | ✓ | 所指派危機 | ✗ |
 
 ## Migrations
 
 1. `006_ops_zones_users.sql`
 2. `007_archive_links_audit.sql`
 3. `008_zone_assignment_roles.sql`
+4. `009_crisis_zones_leads.sql`
