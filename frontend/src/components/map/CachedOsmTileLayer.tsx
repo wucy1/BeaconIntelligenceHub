@@ -1,6 +1,6 @@
 import L from 'leaflet';
-import { useEffect, useRef, useState } from 'react';
-import { useMap } from 'react-leaflet';
+import { useEffect, useState } from 'react';
+import { TileLayer, useMap } from 'react-leaflet';
 
 import { getTileBlob, putTileBlob } from '../../offline/tileCache';
 import { osmTileUrl } from '../../offline/tileMath';
@@ -11,7 +11,7 @@ const OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const DEFAULT_MIN_ZOOM = 1;
 const DEFAULT_MAX_ZOOM = 22;
 
-const TILE_OPTS = {
+const ONLINE_TILE_OPTS = {
   attribution: ATTRIBUTION,
   maxZoom: 19,
   keepBuffer: 6,
@@ -19,31 +19,6 @@ const TILE_OPTS = {
   fadeAnimation: false,
   updateWhenIdle: false,
 } as L.TileLayerOptions;
-
-function MapTileResizeSync() {
-  const map = useMap();
-
-  useEffect(() => {
-    const sync = () => {
-      map.invalidateSize({ animate: false });
-    };
-
-    sync();
-    map.whenReady(sync);
-
-    window.addEventListener('resize', sync);
-    const container = map.getContainer();
-    const observer = new ResizeObserver(sync);
-    observer.observe(container);
-
-    return () => {
-      window.removeEventListener('resize', sync);
-      observer.disconnect();
-    };
-  }, [map]);
-
-  return null;
-}
 
 export type OfflineZoomLimits = {
   minZoom: number;
@@ -124,6 +99,35 @@ const CachedLayer = L.TileLayer.extend({
   },
 });
 
+function OfflineOsmTileLayer() {
+  const map = useMap();
+
+  useEffect(() => {
+    const layer = new (CachedLayer as unknown as typeof L.TileLayer)('', {
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      keepBuffer: 4,
+      crossOrigin: true,
+    });
+
+    let active = true;
+    const attach = () => {
+      if (!active) return;
+      layer.addTo(map);
+    };
+
+    if ((map as L.Map & { _loaded?: boolean })._loaded) attach();
+    else map.whenReady(attach);
+
+    return () => {
+      active = false;
+      map.removeLayer(layer);
+    };
+  }, [map]);
+
+  return null;
+}
+
 type Props = {
   /**
    * 離線已選區域：只限制縮放級距（與下載的 z 範圍一致），不用 maxBounds 以免無法放大。
@@ -134,37 +138,7 @@ type Props = {
 export function CachedOsmTileLayer({ offlineZoomLimits }: Props) {
   const map = useMap();
   const online = useOnlineStatus();
-  const layerRef = useRef<L.TileLayer | null>(null);
-  const modeKeyRef = useRef('');
   const useStandardTiles = online && !offlineZoomLimits;
-
-  useEffect(() => {
-    const modeKey = useStandardTiles ? 'standard' : 'offline';
-    if (layerRef.current && modeKeyRef.current === modeKey) return;
-
-    if (layerRef.current) {
-      map.removeLayer(layerRef.current);
-      layerRef.current = null;
-    }
-
-    layerRef.current = useStandardTiles
-      ? L.tileLayer(OSM_URL, TILE_OPTS)
-      : new (CachedLayer as unknown as typeof L.TileLayer)('', {
-          ...TILE_OPTS,
-          keepBuffer: 4,
-        });
-    layerRef.current.addTo(map);
-    layerRef.current.redraw();
-    modeKeyRef.current = modeKey;
-
-    return () => {
-      if (layerRef.current) {
-        map.removeLayer(layerRef.current);
-        layerRef.current = null;
-        modeKeyRef.current = '';
-      }
-    };
-  }, [map, useStandardTiles]);
 
   useEffect(() => {
     if (offlineZoomLimits) {
@@ -183,5 +157,19 @@ export function CachedOsmTileLayer({ offlineZoomLimits }: Props) {
     };
   }, [map, offlineZoomLimits]);
 
-  return <MapTileResizeSync />;
+  if (useStandardTiles) {
+    return (
+      <TileLayer
+        url={OSM_URL}
+        attribution={ONLINE_TILE_OPTS.attribution}
+        maxZoom={ONLINE_TILE_OPTS.maxZoom}
+        keepBuffer={ONLINE_TILE_OPTS.keepBuffer}
+        crossOrigin={ONLINE_TILE_OPTS.crossOrigin}
+        // Leaflet runtime options not in @types/leaflet
+        {...({ fadeAnimation: false, updateWhenIdle: false } as object)}
+      />
+    );
+  }
+
+  return <OfflineOsmTileLayer />;
 }

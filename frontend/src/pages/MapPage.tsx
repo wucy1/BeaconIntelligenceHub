@@ -723,7 +723,7 @@ export function MapPage() {
     setActiveTopPanel((prev) => (prev === panel ? null : panel));
   };
 
-  const mapRailFabCount = publicZones.length > 0 || publicZonesLoading ? 3 : 2;
+  const mapRailFabCount = publicZones.length > 0 ? 3 : 2;
 
   return (
     <div className="map-page" data-map-rail-fabs={mapRailFabCount}>
