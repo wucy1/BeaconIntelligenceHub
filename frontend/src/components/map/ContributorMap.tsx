@@ -20,6 +20,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import { centroidOfFeature } from '../../utils/buildingAtPoint';
 import { resolveGroupDisplay } from '../../utils/mapMarkers';
 import { CachedOsmTileLayer, type OfflineZoomLimits } from './CachedOsmTileLayer';
+import { CrisisZonesLayer } from './CrisisZonesLayer';
 import { ClusteredReportMarkers } from './ClusteredReportMarkers';
 import { DownloadPreviewLayer } from './DownloadPreviewLayer';
 import { OfflineRegionLayers } from './OfflineRegionLayers';
@@ -372,17 +373,6 @@ export function ContributorMap({
     [],
   );
 
-  const crisisZonesGeoJson = useMemo((): GeoJSON.FeatureCollection => {
-    return {
-      type: 'FeatureCollection',
-      features: crisisZones.map((z) => ({
-        type: 'Feature',
-        properties: { name: z.name, zoneId: z.id },
-        geometry: z.geom,
-      })),
-    };
-  }, [crisisZones]);
-
   const onEachBuilding = (feature: GeoJSON.Feature, layer: L.Layer) => {
     layer.on({
       click: (e) => {
@@ -433,22 +423,7 @@ export function ContributorMap({
       <ViewWatcher onViewChange={onViewChange} />
       <FlyTo target={flyTo} />
       <MapPlaceClick enabled={mapMode === 'new'} onPlace={onMapPlace} />
-      {crisisZonesGeoJson.features.length > 0 && (
-        <GeoJSON
-          key="crisis-zones"
-          data={crisisZonesGeoJson}
-          style={{
-            color: '#475569',
-            weight: 1.5,
-            dashArray: '5 4',
-            fillColor: '#94a3b8',
-            fillOpacity: 0.08,
-          }}
-          onEachFeature={(_f, layer) => {
-            (layer as L.Path).options.interactive = false;
-          }}
-        />
-      )}
+      {crisisZones.length > 0 && <CrisisZonesLayer zones={crisisZones} />}
       {crisisBounds && fitBoundsTick > 0 && (
         <FitBoundsOnce bounds={crisisBounds} tick={fitBoundsTick} />
       )}

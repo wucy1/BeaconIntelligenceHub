@@ -14,11 +14,36 @@ const DEFAULT_MAX_ZOOM = 22;
 const TILE_OPTS = {
   attribution: ATTRIBUTION,
   maxZoom: 19,
-  keepBuffer: 4,
+  keepBuffer: 6,
   crossOrigin: true,
   fadeAnimation: false,
-  unloadInvisibleTiles: false,
+  updateWhenIdle: false,
 } as L.TileLayerOptions;
+
+function MapTileResizeSync() {
+  const map = useMap();
+
+  useEffect(() => {
+    const sync = () => {
+      map.invalidateSize({ animate: false });
+    };
+
+    sync();
+    map.whenReady(sync);
+
+    window.addEventListener('resize', sync);
+    const container = map.getContainer();
+    const observer = new ResizeObserver(sync);
+    observer.observe(container);
+
+    return () => {
+      window.removeEventListener('resize', sync);
+      observer.disconnect();
+    };
+  }, [map]);
+
+  return null;
+}
 
 export type OfflineZoomLimits = {
   minZoom: number;
@@ -124,8 +149,12 @@ export function CachedOsmTileLayer({ offlineZoomLimits }: Props) {
 
     layerRef.current = useStandardTiles
       ? L.tileLayer(OSM_URL, TILE_OPTS)
-      : new (CachedLayer as unknown as typeof L.TileLayer)('', TILE_OPTS);
+      : new (CachedLayer as unknown as typeof L.TileLayer)('', {
+          ...TILE_OPTS,
+          keepBuffer: 4,
+        });
     layerRef.current.addTo(map);
+    layerRef.current.redraw();
     modeKeyRef.current = modeKey;
 
     return () => {
@@ -154,5 +183,5 @@ export function CachedOsmTileLayer({ offlineZoomLimits }: Props) {
     };
   }, [map, offlineZoomLimits]);
 
-  return null;
+  return <MapTileResizeSync />;
 }
