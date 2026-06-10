@@ -42,6 +42,8 @@ import { filterMarkersInBbox } from '../utils/mapBbox';
 
 const DEFAULT_CENTER: [number, number] = [20, 0];
 const DEFAULT_ZOOM = 14;
+/** 定位鈕：飛到使用者並放大至街道層級 */
+const LOCATE_ZOOM = 17;
 const MAP_CENTER_STORAGE_KEY_PREFIX = 'bih-map-center';
 
 type Placement = {
@@ -461,7 +463,7 @@ export function MapPage() {
     setInspectOpen(false);
     setLocatePending(true);
     if (geo.position) {
-      setFlyTarget({ lat: geo.position.lat, lng: geo.position.lng });
+      setFlyTarget({ lat: geo.position.lat, lng: geo.position.lng, zoom: LOCATE_ZOOM });
       setPinWithDetect(geo.position.lat, geo.position.lng, buildings);
       setLocatePending(false);
     }
@@ -478,7 +480,7 @@ export function MapPage() {
 
   useEffect(() => {
     if (!locatePending || !geo.position) return;
-    setFlyTarget({ lat: geo.position.lat, lng: geo.position.lng });
+    setFlyTarget({ lat: geo.position.lat, lng: geo.position.lng, zoom: LOCATE_ZOOM });
     setPinWithDetect(geo.position.lat, geo.position.lng, buildings);
     setLocatePending(false);
   }, [locatePending, geo.position, buildings, setPinWithDetect]);

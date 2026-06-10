@@ -167,12 +167,11 @@ select {
 
 /* —— Map-first contributor UI —— */
 .map-page {
-  /* 右側控制欄尺寸（一次算清，避免 FAB／縮放重疊）
-   * 按鈕 48px、間距 12px、底距 16px；2 顆縮放緊貼成組 */
-  --map-rail-right: 0.75rem;
-  --map-rail-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-  --map-rail-btn: 3rem;
-  --map-rail-gap: 0.75rem;
+  /* 右側控制欄：按鈕 42px、間距 8px、底距 12px；2 顆縮放緊貼成組 */
+  --map-rail-right: 0.65rem;
+  --map-rail-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  --map-rail-btn: 2.625rem;
+  --map-rail-gap: 0.5rem;
   --map-rail-fab-btns: 2;
   --map-rail-fabs-h: calc(
     var(--map-rail-fab-btns) * var(--map-rail-btn) +
@@ -219,11 +218,12 @@ select {
 .map-overlay-right {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 0.35rem;
-  max-width: min(12rem, 36vw);
+  align-items: stretch;
+  gap: 0.25rem;
   flex-shrink: 0;
-  width: min(12rem, 36vw);
+  width: min(7.5rem, 38vw);
+  max-width: min(7.5rem, 38vw);
+  min-width: min(7.5rem, 38vw);
 }
 
 .map-title-wrap {
@@ -235,17 +235,42 @@ select {
 
 .map-overlay-right .lang-switcher,
 .map-overlay-right .map-crisis-switcher {
+  align-self: flex-end;
+  width: max-content;
+  max-width: 100%;
+  flex-shrink: 0;
   background: rgba(255, 255, 255, 0.94);
-  padding: 0.35rem 0.5rem;
+  padding: 0.22rem 0.38rem;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
   border: 1px solid #e2e8f0;
+  font-size: 0.72rem;
+}
+
+.map-overlay-right .lang-switcher span.muted,
+.map-overlay-right .map-crisis-switcher span.muted {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
 }
 
 .map-overlay-right .map-crisis-switcher select {
   min-width: 0;
-  max-width: 11rem;
+  max-width: 6.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
+}
+
+.map-overlay-right .lang-switcher {
+  font-size: 0.66rem;
+}
+
+.map-overlay-right .lang-switcher select {
+  max-width: 6.75rem;
+  font-size: 0.66rem;
+  font-weight: 500;
 }
 
 .map-window-title {
@@ -305,7 +330,7 @@ select {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.25rem;
+  gap: 0.2rem;
 }
 
 .map-overlay-tab {
@@ -313,11 +338,12 @@ select {
   background: rgba(255, 255, 255, 0.95);
   color: #334155;
   border-radius: 8px;
-  padding: 0.2rem 0.45rem;
-  font-size: 0.64rem;
+  padding: 0.18rem 0.3rem;
+  font-size: 0.6rem;
   font-weight: 600;
   line-height: 1.2;
-  min-width: 5.6rem;
+  min-width: 0;
+  width: 100%;
 }
 
 .map-overlay-tab.active {
@@ -335,7 +361,8 @@ select {
   top: 3.35rem;
   left: 0.5rem;
   z-index: 610;
-  width: min(18rem, calc(100% - 1rem));
+  width: min(18rem, calc(100% - 9rem));
+  max-width: calc(100% - 9rem);
   max-height: calc(100dvh - 4.25rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   display: flex;
@@ -583,7 +610,7 @@ select {
   border: none;
   background: #fff;
   color: #334155;
-  font-size: 1.35rem;
+  font-size: 1.15rem;
   line-height: 1;
   cursor: pointer;
   padding: 0;
@@ -594,7 +621,7 @@ select {
 }
 
 .map-rail-zoom-out {
-  font-size: 1.5rem;
+  font-size: 1.3rem;
 }
 
 .map-fab-col {
@@ -624,36 +651,29 @@ select {
   border: none;
   background: #1d4ed8;
   color: #fff;
-  font-size: 1.65rem;
+  font-size: 1.45rem;
   line-height: 1;
-  box-shadow: 0 4px 14px rgba(29, 78, 216, 0.45);
+  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.4);
 }
 
 .map-fab-zones {
   border: 1px solid #cbd5e1;
   background: #fff;
   color: #475569;
-  font-size: 1.1rem;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
+  font-size: 0.98rem;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.18);
 }
 
 .map-fab-locate {
   border: none;
   background: #fff;
   color: #1d4ed8;
-  font-size: 1.2rem;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
+  font-size: 1.05rem;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.18);
 }
 
-
 .map-dev-links {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.35rem;
-  font-size: 0.75rem;
-  margin: 0;
+  display: none;
 }
 
 .map-dev-links a {
@@ -1613,27 +1633,7 @@ button.danger {
 
 @media (max-width: 640px) {
   .map-overlay-top {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: start;
     gap: 0.35rem 0.5rem;
-  }
-
-  .map-window-title {
-    grid-column: 1;
-    grid-row: 1;
-    max-width: 100%;
-    font-size: 0.78rem;
-    padding: 0.3rem 0.5rem;
-  }
-
-  .map-overlay-right {
-    grid-column: 2;
-    grid-row: 1;
-    width: min(7rem, 40vw);
-    max-width: min(7rem, 40vw);
-    min-width: min(7rem, 40vw);
-    gap: 0.25rem;
-    align-items: stretch;
   }
 
   .map-title-wrap {
@@ -1641,48 +1641,21 @@ button.danger {
     gap: 0.25rem;
   }
 
-  .map-overlay-right .lang-switcher,
-  .map-overlay-right .map-crisis-switcher {
-    align-self: flex-end;
-    width: max-content;
-    max-width: 100%;
-    flex-shrink: 0;
-  }
-
-  .map-overlay-right .lang-switcher span.muted,
-  .map-overlay-right .map-crisis-switcher span.muted {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+  .map-overlay-right {
+    width: min(7rem, 40vw);
+    max-width: min(7rem, 40vw);
+    min-width: min(7rem, 40vw);
   }
 
   .map-overlay-right .lang-switcher select,
   .map-overlay-right .map-crisis-switcher select {
     max-width: 6.5rem;
-    font-size: 0.75rem;
-  }
-
-  .map-dev-links {
-    display: none;
-  }
-
-  .map-overlay-controls {
-    align-items: stretch;
-  }
-
-  .map-overlay-tab {
-    min-width: 0;
-    width: 100%;
-    font-size: 0.6rem;
-    padding: 0.18rem 0.3rem;
   }
 
   .map-overlay-panel-host {
     top: 2.9rem;
-    width: min(15.5rem, calc(100% - 9.25rem));
-    max-width: calc(100% - 9.25rem);
+    width: min(15.5rem, calc(100% - 8.5rem));
+    max-width: calc(100% - 8.5rem);
     max-height: calc(100dvh - 3.75rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   }
 
