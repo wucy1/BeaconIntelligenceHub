@@ -1,19 +1,45 @@
 import L from 'leaflet';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMap } from 'react-leaflet';
 
 import { getTileBlob, putTileBlob } from '../../offline/tileCache';
 import { osmTileUrl } from '../../offline/tileMath';
 
 const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>';
+const OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
 const DEFAULT_MIN_ZOOM = 1;
 const DEFAULT_MAX_ZOOM = 22;
+
+const TILE_OPTS = {
+  attribution: ATTRIBUTION,
+  maxZoom: 19,
+  keepBuffer: 4,
+  crossOrigin: true,
+  fadeAnimation: false,
+  unloadInvisibleTiles: false,
+} as L.TileLayerOptions;
 
 export type OfflineZoomLimits = {
   minZoom: number;
   maxZoom: number;
 };
+
+function useOnlineStatus(): boolean {
+  const [online, setOnline] = useState(
+    () => typeof navigator !== 'undefined' && navigator.onLine,
+  );
+  useEffect(() => {
+    const sync = () => setOnline(navigator.onLine);
+    window.addEventListener('online', sync);
+    window.addEventListener('offline', sync);
+    return () => {
+      window.removeEventListener('online', sync);
+      window.removeEventListener('offline', sync);
+    };
+  }, []);
+  return online;
+}
 
 function cacheTileFromUrl(z: number, x: number, y: number, url: string): void {
   void fetch(url, { mode: 'cors', credentials: 'omit' })
@@ -55,19 +81,19 @@ const CachedLayer = L.TileLayer.extend({
     const z = coords.z;
     const online = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
-    void (async () => {
-      const cached = await getTileBlob(z, x, y);
+    if (online) {
+      tile.src = osmTileUrl(z, x, y);
+      return tile;
+    }
+
+    void getTileBlob(z, x, y).then((cached) => {
       if (cached) {
         tile.src = URL.createObjectURL(cached);
         return;
       }
-      if (!online) {
-        tile.style.background = '#d4d4d8';
-        finish();
-        return;
-      }
-      tile.src = osmTileUrl(z, x, y);
-    })();
+      tile.style.background = '#d4d4d8';
+      finish();
+    });
 
     return tile;
   },
@@ -82,20 +108,34 @@ type Props = {
 
 export function CachedOsmTileLayer({ offlineZoomLimits }: Props) {
   const map = useMap();
+  const online = useOnlineStatus();
+  const layerRef = useRef<L.TileLayer | null>(null);
+  const modeKeyRef = useRef('');
+  const useStandardTiles = online && !offlineZoomLimits;
 
   useEffect(() => {
-    const layer = new (CachedLayer as unknown as typeof L.TileLayer)('', {
-      attribution: ATTRIBUTION,
-      maxZoom: 19,
-      crossOrigin: true,
-      keepBuffer: 4,
-    });
-    layer.addTo(map);
+    const modeKey = useStandardTiles ? 'standard' : 'offline';
+    if (layerRef.current && modeKeyRef.current === modeKey) return;
+
+    if (layerRef.current) {
+      map.removeLayer(layerRef.current);
+      layerRef.current = null;
+    }
+
+    layerRef.current = useStandardTiles
+      ? L.tileLayer(OSM_URL, TILE_OPTS)
+      : new (CachedLayer as unknown as typeof L.TileLayer)('', TILE_OPTS);
+    layerRef.current.addTo(map);
+    modeKeyRef.current = modeKey;
 
     return () => {
-      map.removeLayer(layer);
+      if (layerRef.current) {
+        map.removeLayer(layerRef.current);
+        layerRef.current = null;
+        modeKeyRef.current = '';
+      }
     };
-  }, [map]);
+  }, [map, useStandardTiles]);
 
   useEffect(() => {
     if (offlineZoomLimits) {

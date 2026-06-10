@@ -58,7 +58,6 @@ type Props = {
   flyTo?: MapFlyTarget | null;
   initialCenter: [number, number];
   initialZoom: number;
-  savedView?: { lat: number; lng: number; zoom: number } | null;
   crisisBounds?: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   crisisZones?: Array<{ id: string; name: string; geom: GeoJSON.Polygon }>;
   fitBoundsTick?: number;
@@ -164,23 +163,6 @@ function ViewWatcher({
       if (timer.current) clearTimeout(timer.current);
     };
   }, [map]);
-
-  return null;
-}
-
-function MapViewRestore({
-  view,
-}: {
-  view: { lat: number; lng: number; zoom: number } | null | undefined;
-}) {
-  const map = useMap();
-  const appliedRef = useRef(false);
-
-  useEffect(() => {
-    if (!view || appliedRef.current) return;
-    appliedRef.current = true;
-    map.setView([view.lat, view.lng], view.zoom, { animate: false });
-  }, [view, map]);
 
   return null;
 }
@@ -356,7 +338,6 @@ export function ContributorMap({
   flyTo,
   initialCenter,
   initialZoom,
-  savedView = null,
   crisisBounds,
   crisisZones = [],
   fitBoundsTick = 0,
@@ -391,6 +372,17 @@ export function ContributorMap({
     [],
   );
 
+  const crisisZonesGeoJson = useMemo((): GeoJSON.FeatureCollection => {
+    return {
+      type: 'FeatureCollection',
+      features: crisisZones.map((z) => ({
+        type: 'Feature',
+        properties: { name: z.name, zoneId: z.id },
+        geometry: z.geom,
+      })),
+    };
+  }, [crisisZones]);
+
   const onEachBuilding = (feature: GeoJSON.Feature, layer: L.Layer) => {
     layer.on({
       click: (e) => {
@@ -413,11 +405,6 @@ export function ContributorMap({
     });
   };
 
-  const buildingKey = useMemo(
-    () => `${buildings.features.length}-${selectedBuildingId ?? ''}`,
-    [buildings.features.length, selectedBuildingId],
-  );
-
   return (
     <MapContainer
       className="contributor-map"
@@ -427,7 +414,6 @@ export function ContributorMap({
       zoomControl={false}
     >
       <MapRailZoom />
-      <MapViewRestore view={savedView} />
       <CachedOsmTileLayer offlineZoomLimits={offlineZoomLimits} />
       {downloadPreview && (
         <DownloadPreviewLayer
@@ -447,16 +433,10 @@ export function ContributorMap({
       <ViewWatcher onViewChange={onViewChange} />
       <FlyTo target={flyTo} />
       <MapPlaceClick enabled={mapMode === 'new'} onPlace={onMapPlace} />
-      {crisisZones.map((z) => {
-        const feature: GeoJSON.Feature<GeoJSON.Polygon> = {
-          type: 'Feature',
-          properties: { name: z.name },
-          geometry: z.geom,
-        };
-        return (
+      {crisisZonesGeoJson.features.length > 0 && (
         <GeoJSON
-          key={z.id}
-          data={feature}
+          key="crisis-zones"
+          data={crisisZonesGeoJson}
           style={{
             color: '#475569',
             weight: 1.5,
@@ -468,8 +448,7 @@ export function ContributorMap({
             (layer as L.Path).options.interactive = false;
           }}
         />
-        );
-      })}
+      )}
       {crisisBounds && fitBoundsTick > 0 && (
         <FitBoundsOnce bounds={crisisBounds} tick={fitBoundsTick} />
       )}
@@ -482,7 +461,7 @@ export function ContributorMap({
 
       {buildings.features.length > 0 && (
         <GeoJSON
-          key={buildingKey}
+          key="buildings-layer"
           data={buildings}
           style={(feature) => {
             const id = feature?.properties?.building_id as string | undefined;

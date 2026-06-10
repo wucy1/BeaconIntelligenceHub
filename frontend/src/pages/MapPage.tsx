@@ -141,6 +141,10 @@ export function MapPage() {
   bboxRef.current = bbox;
 
   const crisisId = selectedCrisisId;
+  const crisisIdRef = useRef(crisisId);
+  crisisIdRef.current = crisisId;
+  const buildingsCacheRef = useRef<Record<string, GeoJSON.FeatureCollection>>({});
+  const markersCacheRef = useRef<Record<string, MapMarker[]>>({});
   /** 全站共用視角；切換危機時不跳地圖位置 */
   const mapCenterStorageKey = `${MAP_CENTER_STORAGE_KEY_PREFIX}:view`;
 
@@ -288,16 +292,19 @@ export function MapPage() {
 
   useEffect(() => {
     if (!online || !crisisId || !bbox) return;
+    const requestedCrisisId = crisisId;
+    const requestedBbox = bbox;
     const timer = setTimeout(() => {
-      const q = encodeURIComponent(bbox);
+      const q = encodeURIComponent(requestedBbox);
       setBuildingsError(null);
-      apiGet<GeoJSON.FeatureCollection>(`/v1/crises/${crisisId}/buildings?bbox=${q}`)
+      apiGet<GeoJSON.FeatureCollection>(`/v1/crises/${requestedCrisisId}/buildings?bbox=${q}`)
         .then((fc) => {
-          if (bboxRef.current !== bbox) return;
+          if (bboxRef.current !== requestedBbox || crisisIdRef.current !== requestedCrisisId) return;
+          buildingsCacheRef.current[requestedCrisisId] = fc;
           setBuildings(fc);
         })
         .catch((e: Error) => {
-          if (bboxRef.current !== bbox) return;
+          if (bboxRef.current !== requestedBbox || crisisIdRef.current !== requestedCrisisId) return;
           setBuildingsError(e.message);
         });
     }, 350);
@@ -310,16 +317,18 @@ export function MapPage() {
       return;
     }
     const requestedBbox = bbox;
+    const requestedCrisisId = crisisId;
     const timer = setTimeout(() => {
       apiGet<{ items: MapMarker[] }>(
-        `/v1/public/markers?bbox=${encodeURIComponent(requestedBbox)}&mode=${mapMode}&crisis_id=${encodeURIComponent(crisisId)}`,
+        `/v1/public/markers?bbox=${encodeURIComponent(requestedBbox)}&mode=${mapMode}&crisis_id=${encodeURIComponent(requestedCrisisId)}`,
       )
         .then((r) => {
-          if (bboxRef.current !== requestedBbox) return;
+          if (bboxRef.current !== requestedBbox || crisisIdRef.current !== requestedCrisisId) return;
+          markersCacheRef.current[`${requestedCrisisId}:${mapMode}`] = r.items;
           setMarkers(filterMarkersInBbox(r.items, requestedBbox));
         })
         .catch(() => {
-          if (bboxRef.current !== requestedBbox) return;
+          if (bboxRef.current !== requestedBbox || crisisIdRef.current !== requestedCrisisId) return;
           setMarkers([]);
         });
     }, 350);
@@ -640,9 +649,15 @@ export function MapPage() {
   const onSelectCrisis = useCallback(
     (id: string) => {
       setZoneFitTick(0);
+      const cachedBuildings = buildingsCacheRef.current[id];
+      if (cachedBuildings) setBuildings(cachedBuildings);
+      const cachedMarkers = markersCacheRef.current[`${id}:${mapMode}`];
+      if (cachedMarkers && bboxRef.current) {
+        setMarkers(filterMarkersInBbox(cachedMarkers, bboxRef.current));
+      }
       selectCrisis(id);
     },
-    [selectCrisis],
+    [selectCrisis, mapMode],
   );
 
   const crisisLabel = useCallback(
@@ -659,10 +674,11 @@ export function MapPage() {
     [locale],
   );
 
-  if (crisesLoading) {
-    return <p className="map-status">{t('common.loading')}</p>;
-  }
-  if (needsFirstOnline) {
+  if (!crisisId) {
+    if (crisesLoading) {
+      return <p className="map-status">{t('common.loading')}</p>;
+    }
+    if (needsFirstOnline) {
     return (
       <section className="map-status card">
         <p className="error">{t('map.offline.needFirstVisit')}</p>
@@ -672,22 +688,19 @@ export function MapPage() {
         </button>
       </section>
     );
-  }
-
-  if (crisesError || publicCrises.length === 0) {
-    return (
-      <section className="map-status card">
-        <p className="error">{crisesError ?? t('map.err.noWindow')}</p>
-        <p className="muted">{t('map.err.backendSteps')}</p>
-        <pre className="map-cmd-hint">cd backend; uvicorn app.main:app --reload --port 8000</pre>
-        <button type="button" onClick={reloadCrises}>
-          {t('map.retry')}
-        </button>
-      </section>
-    );
-  }
-
-  if (!crisisId) {
+    }
+    if (crisesError || publicCrises.length === 0) {
+      return (
+        <section className="map-status card">
+          <p className="error">{crisesError ?? t('map.err.noWindow')}</p>
+          <p className="muted">{t('map.err.backendSteps')}</p>
+          <pre className="map-cmd-hint">cd backend; uvicorn app.main:app --reload --port 8000</pre>
+          <button type="button" onClick={reloadCrises}>
+            {t('map.retry')}
+          </button>
+        </section>
+      );
+    }
     return (
       <section className="map-status card">
         <p className="muted">{t('map.err.noWindow')}</p>
@@ -716,6 +729,7 @@ export function MapPage() {
     <div className="map-page" data-map-rail-fabs={mapRailFabCount}>
       <OfflineBanner mapPage />
       <ContributorMap
+        key="contributor-map"
         buildings={buildings}
         markers={markers}
         selectedBuildingId={placement.buildingId}
@@ -730,7 +744,6 @@ export function MapPage() {
         flyTo={flyTarget}
         initialCenter={mapCenter}
         initialZoom={mapZoom}
-        savedView={savedView}
         crisisZones={publicZones}
         zoneFitBounds={zoneFitBounds}
         zoneFitTick={zoneFitTick}

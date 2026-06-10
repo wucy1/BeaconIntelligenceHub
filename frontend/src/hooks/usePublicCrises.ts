@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiGet } from '../api';
 
@@ -17,6 +17,26 @@ export type PublicZone = {
 
 const SELECT_KEY = 'bih-selected-crisis-id';
 const CRISES_CACHE_KEY = 'bih-public-crises';
+const ZONES_CACHE_KEY = 'bih-public-zones';
+
+function readZonesCache(): Record<string, PublicZone[]> {
+  try {
+    const raw = sessionStorage.getItem(ZONES_CACHE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, PublicZone[]>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeZonesCache(cache: Record<string, PublicZone[]>): void {
+  try {
+    sessionStorage.setItem(ZONES_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    /* ignore */
+  }
+}
 
 function readCachedCrises(): PublicCrisis[] {
   try {
@@ -51,12 +71,16 @@ function pickCrisisId(items: PublicCrisis[], preferred?: string): string {
 export function usePublicCrises() {
   const [crises, setCrises] = useState<PublicCrisis[]>(() => readCachedCrises());
   const [selectedId, setSelectedId] = useState(() => pickCrisisId(readCachedCrises()));
-  const [zones, setZones] = useState<PublicZone[]>([]);
+  const [zones, setZones] = useState<PublicZone[]>(() => {
+    const id = pickCrisisId(readCachedCrises());
+    return id ? (readZonesCache()[id] ?? []) : [];
+  });
   const [zonesLoading, setZonesLoading] = useState(false);
   const [loading, setLoading] = useState(() => readCachedCrises().length === 0);
   const [error, setError] = useState<string | null>(null);
   const [needsFirstOnline, setNeedsFirstOnline] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const zonesCacheRef = useRef<Record<string, PublicZone[]>>(readZonesCache());
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
@@ -127,7 +151,13 @@ export function usePublicCrises() {
       return;
     }
     let cancelled = false;
-    setZonesLoading(true);
+    const cachedZones = zonesCacheRef.current[selectedId];
+    if (cachedZones) {
+      setZones(cachedZones);
+      setZonesLoading(false);
+    } else {
+      setZonesLoading(true);
+    }
 
     const loadZones = async () => {
       if (!navigator.onLine) {
@@ -136,7 +166,10 @@ export function usePublicCrises() {
       }
       try {
         const d = await apiGet<{ items: PublicZone[] }>(`/v1/public/zones?crisis_id=${selectedId}`);
-        if (!cancelled) setZones(d.items);
+        if (cancelled) return;
+        zonesCacheRef.current[selectedId] = d.items;
+        writeZonesCache(zonesCacheRef.current);
+        setZones(d.items);
       } catch {
         if (!cancelled) setZones([]);
       } finally {

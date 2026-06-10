@@ -29,6 +29,8 @@ type Props = {
   onViewDetails: (m: MapMarker) => void;
 };
 
+type TaggedCircleMarker = L.CircleMarker & { _bihId?: string };
+
 function popupHtml(m: DisplayMapMarker, labels: Labels): string {
   const statusLine =
     m.pinDisplay === 'repaired'
@@ -46,6 +48,27 @@ function popupHtml(m: DisplayMapMarker, labels: Labels): string {
   const mine = m.is_mine ? ` · ${labels.mineLabel}` : '';
   const time = new Date(m.captured_at_client).toLocaleString();
   return `<div class="marker-popup">${thumb}<p style="margin:0.35rem 0 0"><strong>${statusLine}</strong>${mine}</p><time style="font-size:0.78rem;color:#64748b">${time}</time>${count}<p style="margin:0.5rem 0 0"><button type="button" class="primary small marker-popup-btn" data-report-id="${m.id}">${labels.viewDetails}</button></p></div>`;
+}
+
+function bindMarkerPopup(
+  layer: TaggedCircleMarker,
+  m: DisplayMapMarker,
+  map: L.Map,
+  labels: Labels,
+  onViewDetails: (m: MapMarker) => void,
+) {
+  const popup = L.popup({ maxWidth: 280 }).setContent(popupHtml(m, labels));
+  layer.bindPopup(popup);
+  layer.on('popupopen', () => {
+    const el = document.querySelector(
+      `.marker-popup-btn[data-report-id="${m.id}"]`,
+    ) as HTMLButtonElement | null;
+    if (!el) return;
+    el.onclick = () => {
+      map.closePopup();
+      onViewDetails(m);
+    };
+  });
 }
 
 export function ClusteredReportMarkers({
@@ -84,42 +107,50 @@ export function ClusteredReportMarkers({
     }
 
     const group = groupRef.current;
-    group.clearLayers();
-
     const showActions = mapMode === 'all' || mapMode === 'mine';
+    const existingById = new Map<string, TaggedCircleMarker>();
+    group.eachLayer((layer) => {
+      const tagged = layer as TaggedCircleMarker;
+      if (tagged._bihId) existingById.set(tagged._bihId, tagged);
+    });
 
+    const nextIds = new Set<string>();
     for (const m of display) {
+      nextIds.add(m.id);
       const [lng, lat] = m.geom.coordinates;
       const color = pinFillColor(m);
+      const existing = existingById.get(m.id);
+      if (existing) {
+        existing.setStyle({
+          radius: m.is_mine ? 11 : 9,
+          color: '#fff',
+          weight: 2,
+          fillColor: color,
+          fillOpacity: 0.95,
+        });
+        existing.setLatLng([lat, lng]);
+        continue;
+      }
+
       const layer = L.circleMarker([lat, lng], {
         radius: m.is_mine ? 11 : 9,
         color: '#fff',
         weight: 2,
         fillColor: color,
         fillOpacity: 0.95,
-      });
+      }) as TaggedCircleMarker;
+      layer._bihId = m.id;
 
       if (showActions) {
-        const popup = L.popup({ maxWidth: 280 }).setContent(popupHtml(m, labelsRef.current));
-        layer.bindPopup(popup);
-        layer.on('popupopen', () => {
-          const el = document.querySelector(
-            `.marker-popup-btn[data-report-id="${m.id}"]`,
-          ) as HTMLButtonElement | null;
-          if (!el) return;
-          el.onclick = () => {
-            map.closePopup();
-            onViewRef.current(m);
-          };
-        });
+        bindMarkerPopup(layer, m, map, labelsRef.current, onViewRef.current);
       }
 
       group.addLayer(layer);
     }
 
-    return () => {
-      group.clearLayers();
-    };
+    for (const [id, layer] of existingById) {
+      if (!nextIds.has(id)) group.removeLayer(layer);
+    }
   }, [markers, showOthers, mapMode, map]);
 
   useEffect(() => {
