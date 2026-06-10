@@ -1,45 +1,20 @@
 import L from 'leaflet';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { TileLayer, useMap } from 'react-leaflet';
 
 import { getTileBlob, putTileBlob } from '../../offline/tileCache';
 import { osmTileUrl } from '../../offline/tileMath';
 
 const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>';
-const OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+export const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
 const DEFAULT_MIN_ZOOM = 1;
 const DEFAULT_MAX_ZOOM = 22;
-
-const ONLINE_TILE_OPTS = {
-  attribution: ATTRIBUTION,
-  maxZoom: 19,
-  keepBuffer: 6,
-  crossOrigin: true,
-  fadeAnimation: false,
-  updateWhenIdle: false,
-} as L.TileLayerOptions;
 
 export type OfflineZoomLimits = {
   minZoom: number;
   maxZoom: number;
 };
-
-function useOnlineStatus(): boolean {
-  const [online, setOnline] = useState(
-    () => typeof navigator !== 'undefined' && navigator.onLine,
-  );
-  useEffect(() => {
-    const sync = () => setOnline(navigator.onLine);
-    window.addEventListener('online', sync);
-    window.addEventListener('offline', sync);
-    return () => {
-      window.removeEventListener('online', sync);
-      window.removeEventListener('offline', sync);
-    };
-  }, []);
-  return online;
-}
 
 function cacheTileFromUrl(z: number, x: number, y: number, url: string): void {
   void fetch(url, { mode: 'cors', credentials: 'omit' })
@@ -99,7 +74,82 @@ const CachedLayer = L.TileLayer.extend({
   },
 });
 
-function OfflineOsmTileLayer() {
+/** 桌面寬螢幕初次排版時 Leaflet 尺寸常偏小，延遲校正一次即可。 */
+export function MapViewportSync() {
+  const map = useMap();
+
+  useEffect(() => {
+    let cancelled = false;
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const sync = () => {
+      if (cancelled) return;
+      map.invalidateSize({ animate: false });
+    };
+
+    const scheduleSync = () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(sync, 80);
+    };
+
+    map.whenReady(sync);
+    requestAnimationFrame(() => requestAnimationFrame(sync));
+    const bootTimer = window.setTimeout(sync, 200);
+
+    window.addEventListener('resize', scheduleSync);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(bootTimer);
+      if (resizeTimer) clearTimeout(resizeTimer);
+      window.removeEventListener('resize', scheduleSync);
+    };
+  }, [map]);
+
+  return null;
+}
+
+export function MapZoomLimits({
+  offlineZoomLimits,
+}: {
+  offlineZoomLimits?: OfflineZoomLimits | null;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (offlineZoomLimits) {
+      map.setMinZoom(offlineZoomLimits.minZoom);
+      map.setMaxZoom(offlineZoomLimits.maxZoom);
+    } else {
+      map.setMinZoom(DEFAULT_MIN_ZOOM);
+      map.setMaxZoom(DEFAULT_MAX_ZOOM);
+    }
+    map.setMaxBounds(undefined);
+
+    return () => {
+      map.setMinZoom(DEFAULT_MIN_ZOOM);
+      map.setMaxZoom(DEFAULT_MAX_ZOOM);
+      map.setMaxBounds(undefined);
+    };
+  }, [map, offlineZoomLimits]);
+
+  return null;
+}
+
+export function StandardOsmTileLayer() {
+  return (
+    <TileLayer
+      url={OSM_TILE_URL}
+      attribution={ATTRIBUTION}
+      maxZoom={19}
+      keepBuffer={6}
+      crossOrigin
+      {...({ fadeAnimation: false, updateWhenIdle: false } as object)}
+    />
+  );
+}
+
+export function OfflineOsmTileLayer() {
   const map = useMap();
 
   useEffect(() => {
@@ -129,47 +179,17 @@ function OfflineOsmTileLayer() {
 }
 
 type Props = {
-  /**
-   * 離線已選區域：只限制縮放級距（與下載的 z 範圍一致），不用 maxBounds 以免無法放大。
-   */
+  online: boolean;
   offlineZoomLimits?: OfflineZoomLimits | null;
 };
 
-export function CachedOsmTileLayer({ offlineZoomLimits }: Props) {
-  const map = useMap();
-  const online = useOnlineStatus();
+/** @deprecated Prefer MapZoomLimits + StandardOsmTileLayer/OfflineOsmTileLayer as MapContainer direct children */
+export function CachedOsmTileLayer({ online, offlineZoomLimits }: Props) {
   const useStandardTiles = online && !offlineZoomLimits;
-
-  useEffect(() => {
-    if (offlineZoomLimits) {
-      map.setMinZoom(offlineZoomLimits.minZoom);
-      map.setMaxZoom(offlineZoomLimits.maxZoom);
-    } else {
-      map.setMinZoom(DEFAULT_MIN_ZOOM);
-      map.setMaxZoom(DEFAULT_MAX_ZOOM);
-    }
-    map.setMaxBounds(undefined);
-
-    return () => {
-      map.setMinZoom(DEFAULT_MIN_ZOOM);
-      map.setMaxZoom(DEFAULT_MAX_ZOOM);
-      map.setMaxBounds(undefined);
-    };
-  }, [map, offlineZoomLimits]);
-
-  if (useStandardTiles) {
-    return (
-      <TileLayer
-        url={OSM_URL}
-        attribution={ONLINE_TILE_OPTS.attribution}
-        maxZoom={ONLINE_TILE_OPTS.maxZoom}
-        keepBuffer={ONLINE_TILE_OPTS.keepBuffer}
-        crossOrigin={ONLINE_TILE_OPTS.crossOrigin}
-        // Leaflet runtime options not in @types/leaflet
-        {...({ fadeAnimation: false, updateWhenIdle: false } as object)}
-      />
-    );
-  }
-
-  return <OfflineOsmTileLayer />;
+  return (
+    <>
+      <MapZoomLimits offlineZoomLimits={offlineZoomLimits} />
+      {useStandardTiles ? <StandardOsmTileLayer /> : <OfflineOsmTileLayer />}
+    </>
+  );
 }

@@ -19,7 +19,13 @@ import 'leaflet/dist/leaflet.css';
 import { useI18n } from '../../i18n/I18nContext';
 import { centroidOfFeature } from '../../utils/buildingAtPoint';
 import { resolveGroupDisplay } from '../../utils/mapMarkers';
-import { CachedOsmTileLayer, type OfflineZoomLimits } from './CachedOsmTileLayer';
+import {
+  MapViewportSync,
+  MapZoomLimits,
+  OfflineOsmTileLayer,
+  StandardOsmTileLayer,
+  type OfflineZoomLimits,
+} from './CachedOsmTileLayer';
 import { CrisisZonesLayer } from './CrisisZonesLayer';
 import { ClusteredReportMarkers } from './ClusteredReportMarkers';
 import { DownloadPreviewLayer } from './DownloadPreviewLayer';
@@ -68,6 +74,7 @@ type Props = {
   reportPin?: { lat: number; lng: number } | null;
   onMapPlace?: (lat: number, lng: number) => void;
   onReportPinMove?: (lat: number, lng: number) => void;
+  online?: boolean;
   offlineZoomLimits?: OfflineZoomLimits | null;
   savedRegions?: MapRegionMeta[];
   activeSavedRegionId?: string | null;
@@ -348,6 +355,7 @@ export function ContributorMap({
   reportPin = null,
   onMapPlace,
   onReportPinMove,
+  online = true,
   offlineZoomLimits,
   savedRegions = [],
   activeSavedRegionId = null,
@@ -402,9 +410,12 @@ export function ContributorMap({
       zoom={initialZoom}
       scrollWheelZoom
       zoomControl={false}
+      style={{ width: '100%', height: '100%' }}
     >
+      <MapViewportSync />
       <MapRailZoom />
-      <CachedOsmTileLayer offlineZoomLimits={offlineZoomLimits} />
+      <MapZoomLimits offlineZoomLimits={offlineZoomLimits} />
+      {online && !offlineZoomLimits ? <StandardOsmTileLayer /> : <OfflineOsmTileLayer />}
       {downloadPreview && (
         <DownloadPreviewLayer
           center={downloadPreview.center}

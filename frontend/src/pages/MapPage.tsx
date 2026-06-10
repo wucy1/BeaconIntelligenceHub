@@ -77,7 +77,6 @@ export function MapPage() {
     selectedId: selectedCrisisId,
     selectCrisis,
     zones: publicZones,
-    zonesLoading: publicZonesLoading,
     error: crisesError,
     loading: crisesLoading,
     reload: reloadCrises,
@@ -751,6 +750,7 @@ export function MapPage() {
         reportPin={mapMode === 'new' ? placement.pin : null}
         onMapPlace={onMapPlace}
         onReportPinMove={onReportPinMove}
+        online={online}
         offlineZoomLimits={null}
         savedRegions={offlineTiles.regions}
         activeSavedRegionId={activeRegionId}

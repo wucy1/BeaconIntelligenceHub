@@ -183,7 +183,7 @@ select {
   position: fixed;
   inset: 0;
   width: 100%;
-  height: 100dvh;
+  height: 100%;
   overflow: hidden;
   background: #e2e8f0;
 }
@@ -192,13 +192,12 @@ select {
   --map-rail-fab-btns: 3;
 }
 
-.contributor-map {
+.map-page .contributor-map.leaflet-container {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   z-index: 0;
-}
-
-.map-page .leaflet-container {
   background: #f2efe9;
 }
 
