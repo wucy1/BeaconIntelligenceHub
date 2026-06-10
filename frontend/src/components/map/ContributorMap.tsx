@@ -62,6 +62,7 @@ type Props = {
   onBboxChange: (bbox: string) => void;
   onViewChange?: (view: { lat: number; lng: number; zoom: number }) => void;
   flyTo?: MapFlyTarget | null;
+  onFlyComplete?: () => void;
   initialCenter: [number, number];
   initialZoom: number;
   crisisBounds?: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
@@ -82,9 +83,10 @@ type Props = {
   regionFitTick?: number;
   /** 連線時、下載前：橘色虛線方框預覽將下載的範圍 */
   downloadPreview?: {
-    center: { lat: number; lng: number };
+    center?: { lat: number; lng: number };
     sideKm: number;
     variant?: 'target' | 'preview';
+    anchorToMapCenter?: boolean;
   } | null;
 };
 
@@ -98,13 +100,40 @@ const reportPinIcon = new L.Icon({
 
 export type MapFlyTarget = { lat: number; lng: number; zoom?: number };
 
-function FlyTo({ target }: { target: MapFlyTarget | null | undefined }) {
+function FlyTo({
+  target,
+  onComplete,
+}: {
+  target: MapFlyTarget | null | undefined;
+  onComplete?: () => void;
+}) {
   const map = useMap();
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
   useEffect(() => {
     if (!target) return;
-    // 只在呼叫端明確指定 zoom 時才縮放，避免自動放大造成圖釘視覺漂移。
     const z = target.zoom ?? map.getZoom();
-    map.flyTo([target.lat, target.lng], z, { duration: 0.6 });
+    const dest = L.latLng(target.lat, target.lng);
+    const current = map.getCenter();
+    const samePlace =
+      Math.abs(current.lat - dest.lat) < 1e-6 &&
+      Math.abs(current.lng - dest.lng) < 1e-6 &&
+      map.getZoom() === z;
+    if (samePlace) {
+      onCompleteRef.current?.();
+      return;
+    }
+
+    const finish = () => {
+      map.off('moveend', finish);
+      onCompleteRef.current?.();
+    };
+    map.once('moveend', finish);
+    map.flyTo(dest, z, { duration: 0.6 });
+    return () => {
+      map.off('moveend', finish);
+    };
   }, [target?.lat, target?.lng, target?.zoom, target, map]);
   return null;
 }
@@ -343,6 +372,7 @@ export function ContributorMap({
   onBboxChange,
   onViewChange,
   flyTo,
+  onFlyComplete,
   initialCenter,
   initialZoom,
   crisisBounds,
@@ -426,6 +456,7 @@ export function ContributorMap({
           center={downloadPreview.center}
           sideKm={downloadPreview.sideKm}
           variant={downloadPreview.variant}
+          anchorToMapCenter={downloadPreview.anchorToMapCenter}
         />
       )}
       {savedRegions.length > 0 && (
@@ -437,7 +468,7 @@ export function ContributorMap({
       )}
       <BboxWatcher onBboxChange={onBboxChange} />
       <ViewWatcher onViewChange={onViewChange} />
-      <FlyTo target={flyTo} />
+      <FlyTo target={flyTo} onComplete={onFlyComplete} />
       <MapPlaceClick enabled={mapMode === 'new'} onPlace={onMapPlace} />
       {crisisZones.length > 0 && <CrisisZonesLayer zones={crisisZones} />}
       {crisisBounds && fitBoundsTick > 0 && (

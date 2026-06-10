@@ -178,23 +178,24 @@ export function MapPage() {
     return DEFAULT_CENTER;
   }, [geo.position, savedView]);
   const mapZoom = savedView?.zoom ?? DEFAULT_ZOOM;
+  /** 下載／離線覆蓋範圍：用 bbox 中心（moveend 才更新），不跟 ViewWatcher 每幀漂移 */
   const tileCenter = useMemo(() => {
-    if (viewCenter) return viewCenter;
-    const fromView = centerFromBbox(bbox);
-    if (fromView) return fromView;
+    const fromBbox = centerFromBbox(bbox);
+    if (fromBbox) return fromBbox;
     if (geo.position) return { lat: geo.position.lat, lng: geo.position.lng };
     return { lat: mapCenter[0], lng: mapCenter[1] };
-  }, [viewCenter, bbox, geo.position, mapCenter]);
+  }, [bbox, geo.position, mapCenter]);
   const offlineTiles = useOfflineMapTiles(tileCenter);
 
-  const downloadTargetPreview = useMemo(() => {
-    if (!tileCenter) return null;
-    return {
-      center: tileCenter,
+  /** 中心紅框：永遠顯示，由圖層直接跟隨 map.getCenter()，不經 React state */
+  const downloadPreview = useMemo(
+    () => ({
       sideKm: DEFAULT_BOX_SIDE_KM,
       variant: 'target' as const,
-    };
-  }, [tileCenter]);
+      anchorToMapCenter: true,
+    }),
+    [],
+  );
 
   const goToRegion = useCallback((r: MapRegionMeta) => {
     setActiveRegionId(r.id);
@@ -204,6 +205,10 @@ export function MapPage() {
       zoom: !online ? PREFETCH_ZOOM_MAX : undefined,
     });
   }, [online]);
+
+  const onFlyComplete = useCallback(() => {
+    setFlyTarget(null);
+  }, []);
 
   /** 恢復連線時自動切回連線地圖（不重複顯示橫幅） */
   useEffect(() => {
@@ -741,6 +746,7 @@ export function MapPage() {
         onBboxChange={setBbox}
         onViewChange={onViewChange}
         flyTo={flyTarget}
+        onFlyComplete={onFlyComplete}
         initialCenter={mapCenter}
         initialZoom={mapZoom}
         crisisZones={publicZones}
@@ -758,7 +764,7 @@ export function MapPage() {
           const r = offlineTiles.regions.find((x) => x.id === id);
           if (r) goToRegion(r);
         }}
-        downloadPreview={downloadTargetPreview}
+        downloadPreview={downloadPreview}
       />
 
       {activeTopPanel && (
