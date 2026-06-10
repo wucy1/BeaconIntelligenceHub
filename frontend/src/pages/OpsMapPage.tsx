@@ -114,6 +114,7 @@ export function OpsMapPage() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [flyZone, setFlyZone] = useState<OpsZone | null>(null);
+  const [zonesRevision, setZonesRevision] = useState(0);
 
   const selectedZone = zones.find((z) => z.id === selectedZoneId) ?? null;
   const canEditSelectedZone = selectedZone ? opsCanEditZone(user, selectedZone.crisis_id ?? undefined) : false;
@@ -287,18 +288,33 @@ export function OpsMapPage() {
     setBusy(true);
     setErr(null);
     try {
+      let saved: OpsZone;
       if (editingZoneId) {
-        await opsPatch(`/v1/ops/zones/${editingZoneId}`, { name: zoneName.trim(), geom: polygon });
+        saved = await opsPatch<OpsZone>(`/v1/ops/zones/${editingZoneId}`, {
+          name: zoneName.trim(),
+          geom: polygon,
+        });
       } else {
-        await opsPost('/v1/ops/zones', {
+        saved = await opsPost<OpsZone>('/v1/ops/zones', {
           crisis_id: activeCrisisId,
           name: zoneName.trim(),
           geom: polygon,
         });
       }
+      setZones((prev) => {
+        const idx = prev.findIndex((z) => z.id === saved.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = saved;
+          return next;
+        }
+        return [...prev, saved];
+      });
+      setZonesRevision((n) => n + 1);
       resetDraft();
       setPanel(null);
       await loadZones();
+      setZonesRevision((n) => n + 1);
       loadAudit();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -434,7 +450,7 @@ export function OpsMapPage() {
           const selected = z.id === selectedZoneId;
           return (
             <GeoJSON
-              key={z.id}
+              key={`${z.id}-${zonesRevision}-${z.updated_at ?? ''}`}
               data={feature}
               style={{
                 color: selected ? '#0d47a1' : '#b91c1c',

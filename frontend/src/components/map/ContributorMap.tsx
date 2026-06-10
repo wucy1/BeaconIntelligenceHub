@@ -59,7 +59,10 @@ type Props = {
   initialCenter: [number, number];
   initialZoom: number;
   crisisBounds?: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  crisisZones?: Array<{ id: string; name: string; geom: GeoJSON.Polygon }>;
   fitBoundsTick?: number;
+  zoneFitBounds?: L.LatLngBounds | null;
+  zoneFitTick?: number;
   mapMode?: 'all' | 'mine' | 'new';
   reportPin?: { lat: number; lng: number } | null;
   onMapPlace?: (lat: number, lng: number) => void;
@@ -290,7 +293,10 @@ export function ContributorMap({
   initialCenter,
   initialZoom,
   crisisBounds,
+  crisisZones = [],
   fitBoundsTick = 0,
+  zoneFitBounds = null,
+  zoneFitTick = 0,
   mapMode = 'all',
   reportPin = null,
   onMapPlace,
@@ -375,8 +381,34 @@ export function ContributorMap({
       <CenterWatcher onViewCenterChange={onViewCenterChange} />
       <FlyTo target={flyTo} />
       <MapPlaceClick enabled={mapMode === 'new'} onPlace={onMapPlace} />
+      {crisisZones.map((z) => {
+        const feature: GeoJSON.Feature<GeoJSON.Polygon> = {
+          type: 'Feature',
+          properties: { name: z.name },
+          geometry: z.geom,
+        };
+        return (
+        <GeoJSON
+          key={z.id}
+          data={feature}
+          style={{
+            color: '#475569',
+            weight: 1.5,
+            dashArray: '5 4',
+            fillColor: '#94a3b8',
+            fillOpacity: 0.08,
+          }}
+          onEachFeature={(_f, layer) => {
+            (layer as L.Path).options.interactive = false;
+          }}
+        />
+        );
+      })}
       {crisisBounds && fitBoundsTick > 0 && (
         <FitBoundsOnce bounds={crisisBounds} tick={fitBoundsTick} />
+      )}
+      {zoneFitBounds && zoneFitTick > 0 && (
+        <FitLatLngBoundsOnce bounds={zoneFitBounds} tick={zoneFitTick} maxZoom={14} />
       )}
       {regionFitBounds && regionFitTick > 0 && (
         <FitLatLngBoundsOnce bounds={regionFitBounds} tick={regionFitTick} maxZoom={16} />

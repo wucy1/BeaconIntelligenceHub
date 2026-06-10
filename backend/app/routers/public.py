@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.image_urls import thumb_url_for_report
-from app.models import Crisis, Report, ReportImage
+from app.models import Crisis, Report, ReportImage, Zone
 from app.duplicate import find_possible_duplicate
 from app.reporter import device_id_header, reporter_hash_from_device
 from app.schemas import MyContributionOut
@@ -26,6 +26,57 @@ def _active_crisis(db: Session) -> Crisis:
     if not c:
         raise HTTPException(status_code=503, detail="No active reporting window configured")
     return c
+
+
+@router.get("/crises")
+def public_crises(db: Session = Depends(get_db)) -> dict:
+    """Ongoing crises for contributor map (excludes archived)."""
+    rows = (
+        db.query(Crisis)
+        .filter(Crisis.archive_status != "archived")
+        .order_by(Crisis.created_at.desc())
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": str(c.id),
+                "slug": c.slug,
+                "name": c.name,
+                "archive_status": c.archive_status,
+            }
+            for c in rows
+        ]
+    }
+
+
+@router.get("/zones")
+def public_zones(
+    crisis_id: UUID = Query(...),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Reference zones for a crisis (display only; reporting is not gated on zones)."""
+    crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
+    if not crisis:
+        raise HTTPException(status_code=404, detail="Crisis not found")
+    zones = db.query(Zone).filter(Zone.crisis_id == crisis_id).order_by(Zone.name.asc()).all()
+    items = []
+    for z in zones:
+        gj = db.execute(
+            text("SELECT ST_AsGeoJSON(geom)::json FROM zones WHERE id = :id"),
+            {"id": z.id},
+        ).scalar_one()
+        items.append({"id": str(z.id), "name": z.name, "geom": gj})
+    return {"items": items, "crisis_id": str(crisis_id)}
+
+
+def _resolve_crisis(db: Session, crisis_id: UUID | None) -> Crisis:
+    if crisis_id is not None:
+        c = db.query(Crisis).filter(Crisis.id == crisis_id).first()
+        if not c:
+            raise HTTPException(status_code=404, detail="Crisis not found")
+        return c
+    return _active_crisis(db)
 
 
 @router.get("/active-window")
@@ -184,6 +235,7 @@ def my_contribution(
 def public_markers(
     bbox: str = Query(..., description="minLng,minLat,maxLng,maxLat"),
     mode: str = Query("all", pattern="^(all|mine|new)$"),
+    crisis_id: UUID | None = None,
     limit: int = Query(200, ge=1, le=500),
     x_device_id: str | None = Header(None, alias="X-Device-Id"),
     db: Session = Depends(get_db),
@@ -193,7 +245,7 @@ def public_markers(
 
     min_lng, min_lat, max_lng, max_lat = _parse_bbox(bbox)
 
-    crisis = _active_crisis(db)
+    crisis = _resolve_crisis(db, crisis_id)
     reporter_hash = None
     did = device_id_header(x_device_id)
     if did:

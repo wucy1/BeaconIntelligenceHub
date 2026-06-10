@@ -236,6 +236,44 @@ select {
   gap: 0.15rem;
 }
 
+.map-crisis-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+  border: 1px solid #e2e8f0;
+  max-width: min(20rem, 52vw);
+  min-width: 0;
+}
+
+.map-crisis-picker-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.map-crisis-select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #fff;
+  color: #0f172a;
+}
+
+.map-zone-count {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
 .map-window-subtitle {
   font-size: 0.72rem;
   color: #64748b;

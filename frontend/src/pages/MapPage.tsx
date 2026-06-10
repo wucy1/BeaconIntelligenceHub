@@ -1,3 +1,4 @@
+import L from 'leaflet';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiGet } from '../api';
@@ -14,7 +15,7 @@ import { ContributionStrip } from '../components/map/ContributionStrip';
 import { PlacementBar } from '../components/map/PlacementBar';
 import { ReportSheet } from '../components/map/ReportSheet';
 import { OfflineBanner } from '../components/OfflineBanner';
-import { useActiveWindow } from '../hooks/useActiveWindow';
+import { usePublicCrises } from '../hooks/usePublicCrises';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useOfflineMapTiles } from '../hooks/useOfflineMapTiles';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
@@ -63,30 +64,6 @@ function centerFromBbox(bbox: string | null): { lat: number; lng: number } | nul
   return { lat: (south + north) / 2, lng: (west + east) / 2 };
 }
 
-function centerFromGeoBounds(
-  bounds: GeoJSON.Polygon | GeoJSON.MultiPolygon | null | undefined,
-): { lat: number; lng: number } | null {
-  if (!bounds) return null;
-  const coords =
-    bounds.type === 'Polygon'
-      ? bounds.coordinates.flat()
-      : bounds.coordinates.flat(2);
-  if (!coords.length) return null;
-  let minLng = Infinity;
-  let minLat = Infinity;
-  let maxLng = -Infinity;
-  let maxLat = -Infinity;
-  for (const [lng, lat] of coords) {
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
-    minLng = Math.min(minLng, lng);
-    minLat = Math.min(minLat, lat);
-    maxLng = Math.max(maxLng, lng);
-    maxLat = Math.max(maxLat, lat);
-  }
-  if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) return null;
-  return { lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2 };
-}
-
 function fmtCoord(v: number): string {
   return v.toFixed(5);
 }
@@ -94,13 +71,15 @@ function fmtCoord(v: number): string {
 export function MapPage() {
   const { t, locale } = useI18n();
   const {
-    window: activeWindow,
-    error: windowError,
-    loading: windowLoading,
-    reload: reloadWindow,
-    fromCache: _crisisFromCache,
+    crises: publicCrises,
+    selectedId: selectedCrisisId,
+    selectCrisis,
+    zones: publicZones,
+    error: crisesError,
+    loading: crisesLoading,
+    reload: reloadCrises,
     needsFirstOnline,
-  } = useActiveWindow();
+  } = usePublicCrises();
   const online = useOnlineStatus();
   const wasOfflineRef = useRef(false);
   const geo = useGeolocation();
@@ -135,7 +114,6 @@ export function MapPage() {
     lng: number;
     zoom?: number;
   } | null>(null);
-  const [fitBoundsTick, setFitBoundsTick] = useState(0);
   const [locatePending, setLocatePending] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   /** 每次開啟「新增」表單遞增，強制 ReportSheet 重掛載以免殘留編輯資料 */
@@ -158,18 +136,20 @@ export function MapPage() {
 
   bboxRef.current = bbox;
 
-  const crisisId = activeWindow?.crisis_id ?? '';
+  const crisisId = selectedCrisisId;
   const mapCenterStorageKey = crisisId
     ? `${MAP_CENTER_STORAGE_KEY_PREFIX}:${crisisId}`
     : `${MAP_CENTER_STORAGE_KEY_PREFIX}:default`;
 
-  const crisisBounds = activeWindow?.bounds as
-    | GeoJSON.Polygon
-    | GeoJSON.MultiPolygon
-    | null
-    | undefined;
-
-  const hasReferenceBounds = Boolean(crisisBounds);
+  const [zoneFitTick, setZoneFitTick] = useState(0);
+  const zoneFitBounds = useMemo(() => {
+    if (publicZones.length === 0) return null;
+    const bounds = L.latLngBounds([]);
+    for (const z of publicZones) {
+      z.geom.coordinates[0].forEach(([lng, lat]) => bounds.extend([lat, lng]));
+    }
+    return bounds.isValid() ? bounds : null;
+  }, [publicZones]);
 
   const savedCenter = useMemo((): { lat: number; lng: number } | null => {
     try {
@@ -182,13 +162,18 @@ export function MapPage() {
       return null;
     }
   }, [mapCenterStorageKey]);
+  const zoneCenter = useMemo(() => {
+    if (!zoneFitBounds) return null;
+    const c = zoneFitBounds.getCenter();
+    return { lat: c.lat, lng: c.lng };
+  }, [zoneFitBounds]);
+
   const mapCenter = useMemo((): [number, number] => {
     if (geo.position) return [geo.position.lat, geo.position.lng];
     if (savedCenter) return [savedCenter.lat, savedCenter.lng];
-    const fromBounds = centerFromGeoBounds(crisisBounds);
-    if (fromBounds) return [fromBounds.lat, fromBounds.lng];
+    if (zoneCenter) return [zoneCenter.lat, zoneCenter.lng];
     return DEFAULT_CENTER;
-  }, [geo.position, savedCenter, crisisBounds]);
+  }, [geo.position, savedCenter, zoneCenter]);
   const tileCenter = useMemo(() => {
     if (viewCenter) return viewCenter;
     const fromView = centerFromBbox(bbox);
@@ -225,10 +210,10 @@ export function MapPage() {
     setActiveRegionId(null);
     if (wasOfflineRef.current) {
       wasOfflineRef.current = false;
-      reloadWindow();
+      reloadCrises();
       setRefreshKey((k) => k + 1);
     }
-  }, [online, reloadWindow]);
+  }, [online, reloadCrises]);
 
   useEffect(() => {
     if (online || offlineTiles.regions.length === 0 || activeRegionId) return;
@@ -326,7 +311,7 @@ export function MapPage() {
     const requestedBbox = bbox;
     const timer = setTimeout(() => {
       apiGet<{ items: MapMarker[] }>(
-        `/v1/public/markers?bbox=${encodeURIComponent(requestedBbox)}&mode=${mapMode}`,
+        `/v1/public/markers?bbox=${encodeURIComponent(requestedBbox)}&mode=${mapMode}&crisis_id=${encodeURIComponent(crisisId)}`,
       )
         .then((r) => {
           if (bboxRef.current !== requestedBbox) return;
@@ -338,7 +323,7 @@ export function MapPage() {
         });
     }, 350);
     return () => clearTimeout(timer);
-  }, [online, bbox, mapMode, refreshKey]);
+  }, [online, bbox, mapMode, crisisId, refreshKey]);
 
   const showOthers = mapMode === 'all';
 
@@ -642,20 +627,25 @@ export function MapPage() {
   const hasPlacement = Boolean(placement.pin || placement.buildingId);
   const showPlacementBar = mapMode === 'new' && hasPlacement && !sheetOpen;
 
-  const windowTitle = useMemo(() => {
-    if (!activeWindow?.name) return t('app.title');
-    const n = activeWindow.name;
-    return (
-      (n[locale] as string) ||
-      (n.en as string) ||
-      (n['zh-Hant'] as string) ||
-      (n['zh-Hans'] as string) ||
-      (n.zh as string) ||
-      activeWindow.slug
-    );
-  }, [activeWindow, locale, t]);
+  const crisisLabel = useCallback(
+    (c: { name: Record<string, string>; slug: string }) => {
+      const n = c.name;
+      return (
+        (n[locale] as string) ||
+        (n['zh-Hant'] as string) ||
+        (n.zh as string) ||
+        (n.en as string) ||
+        c.slug
+      );
+    },
+    [locale],
+  );
 
-  if (windowLoading) {
+  useEffect(() => {
+    if (publicZones.length > 0) setZoneFitTick((n) => n + 1);
+  }, [selectedCrisisId, publicZones]);
+
+  if (crisesLoading) {
     return <p className="map-status">{t('common.loading')}</p>;
   }
   if (needsFirstOnline) {
@@ -663,27 +653,36 @@ export function MapPage() {
       <section className="map-status card">
         <p className="error">{t('map.offline.needFirstVisit')}</p>
         <p className="muted">{t('map.offline.needFirstVisitHint')}</p>
-        <button type="button" onClick={reloadWindow}>
+        <button type="button" onClick={reloadCrises}>
           {t('map.retry')}
         </button>
       </section>
     );
   }
 
-  if (windowError || !activeWindow) {
+  if (crisesError || publicCrises.length === 0) {
     return (
       <section className="map-status card">
-        <p className="error">{windowError ?? t('map.err.noWindow')}</p>
+        <p className="error">{crisesError ?? t('map.err.noWindow')}</p>
         <p className="muted">{t('map.err.backendSteps')}</p>
         <pre className="map-cmd-hint">cd backend; uvicorn app.main:app --reload --port 8000</pre>
-        <button type="button" onClick={reloadWindow}>
+        <button type="button" onClick={reloadCrises}>
           {t('map.retry')}
         </button>
       </section>
     );
   }
 
-  const unspecifiedPhase = activeWindow.reporting_phase !== 'defined';
+  if (!crisisId) {
+    return (
+      <section className="map-status card">
+        <p className="muted">{t('map.err.noWindow')}</p>
+        <button type="button" onClick={reloadCrises}>
+          {t('map.retry')}
+        </button>
+      </section>
+    );
+  }
   const contributionPanelOpen = activeTopPanel === 'contribution' && Boolean(crisisId);
   const contributionFetchable = online && mapMode !== 'new' && Boolean(crisisId);
   const connectionLampClass = online
@@ -699,7 +698,7 @@ export function MapPage() {
 
   return (
     <div className="map-page">
-      <OfflineBanner />
+      <OfflineBanner mapPage />
       <ContributorMap
         buildings={buildings}
         markers={markers}
@@ -715,8 +714,9 @@ export function MapPage() {
         flyTo={flyTarget}
         initialCenter={mapCenter}
         initialZoom={DEFAULT_ZOOM}
-        crisisBounds={crisisBounds}
-        fitBoundsTick={fitBoundsTick}
+        crisisZones={publicZones}
+        zoneFitBounds={zoneFitBounds}
+        zoneFitTick={zoneFitTick}
         mapMode={mapMode}
         reportPin={mapMode === 'new' ? placement.pin : null}
         onMapPlace={onMapPlace}
@@ -932,12 +932,26 @@ export function MapPage() {
 
       <div className="map-overlay-top">
         <div className="map-title-wrap">
-          <span className="map-window-title">
-            {windowTitle}
-            {unspecifiedPhase && (
-              <small className="map-window-subtitle">{t('map.unspecified.hint')}</small>
+          <div className="map-crisis-picker">
+            <label className="map-crisis-picker-label" htmlFor="map-crisis-select">
+              {t('map.crisis.select')}
+            </label>
+            <select
+              id="map-crisis-select"
+              className="map-crisis-select"
+              value={crisisId}
+              onChange={(e) => selectCrisis(e.target.value)}
+            >
+              {publicCrises.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {crisisLabel(c)}
+                </option>
+              ))}
+            </select>
+            {publicZones.length > 0 && (
+              <span className="map-zone-count">{t('map.crisis.zoneCount', { count: publicZones.length })}</span>
             )}
-          </span>
+          </div>
           <span
             className={connectionLampClass}
             aria-label={online ? t('status.online') : t('status.offline')}
@@ -1030,12 +1044,12 @@ export function MapPage() {
         />
       )}
 
-      {hasReferenceBounds && (
+      {publicZones.length > 0 && (
         <button
           type="button"
           className="map-fab-area"
-          title={t('map.showReferenceArea')}
-          onClick={() => setFitBoundsTick((n) => n + 1)}
+          title={t('map.crisis.showZones')}
+          onClick={() => setZoneFitTick((n) => n + 1)}
         >
           ⊞
         </button>

@@ -3,7 +3,12 @@ import { useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import { countPending, syncQueue } from '../offline/queue';
 
-export function OfflineBanner() {
+type Props = {
+  /** 地圖頁：僅在有待同步回報時顯示（連線狀態由地圖右上角燈號負責） */
+  mapPage?: boolean;
+};
+
+export function OfflineBanner({ mapPage = false }: Props) {
   const { t } = useI18n();
   const [pending, setPending] = useState(0);
   const [syncing, setSyncing] = useState(false);
@@ -30,7 +35,8 @@ export function OfflineBanner() {
     };
   }, []);
 
-  if (pending === 0 && online) return null;
+  if (mapPage && pending === 0) return null;
+  if (!mapPage && pending === 0 && online) return null;
 
   return (
     <div className="offline-banner">
