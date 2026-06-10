@@ -20,10 +20,9 @@ import { useI18n } from '../../i18n/I18nContext';
 import { centroidOfFeature } from '../../utils/buildingAtPoint';
 import { resolveGroupDisplay } from '../../utils/mapMarkers';
 import {
-  MapViewportSync,
   MapZoomLimits,
   OfflineOsmTileLayer,
-  StandardOsmTileLayer,
+  OsmTileLayer,
   type OfflineZoomLimits,
 } from './CachedOsmTileLayer';
 import { CrisisZonesLayer } from './CrisisZonesLayer';
@@ -410,12 +409,18 @@ export function ContributorMap({
       zoom={initialZoom}
       scrollWheelZoom
       zoomControl={false}
-      style={{ width: '100%', height: '100%' }}
     >
-      <MapViewportSync />
+      {offlineZoomLimits ? (
+        <>
+          <OfflineOsmTileLayer />
+          <MapZoomLimits offlineZoomLimits={offlineZoomLimits} />
+        </>
+      ) : online ? (
+        <OsmTileLayer />
+      ) : (
+        <OfflineOsmTileLayer />
+      )}
       <MapRailZoom />
-      <MapZoomLimits offlineZoomLimits={offlineZoomLimits} />
-      {online && !offlineZoomLimits ? <StandardOsmTileLayer /> : <OfflineOsmTileLayer />}
       {downloadPreview && (
         <DownloadPreviewLayer
           center={downloadPreview.center}

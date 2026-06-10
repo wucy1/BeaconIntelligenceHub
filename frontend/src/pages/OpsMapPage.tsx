@@ -3,7 +3,7 @@ import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CircleMarker, GeoJSON, MapContainer, TileLayer, ZoomControl, useMap } from 'react-leaflet';
+import { CircleMarker, GeoJSON, MapContainer, ZoomControl, useMap } from 'react-leaflet';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 import 'leaflet/dist/leaflet.css';
@@ -31,6 +31,7 @@ import {
   setOpsSession,
   type OpsUserSession,
 } from '../ops/opsAuth';
+import { OsmTileLayer } from '../components/map/CachedOsmTileLayer';
 import { OpsPolygonEditor } from '../components/ops/OpsPolygonEditor';
 import { OPS_LABELS } from '../ops/opsLabels';
 import {
@@ -422,7 +423,7 @@ export function OpsMapPage() {
         className="contributor-map"
         style={{ cursor: mapMode === 'draw' || mapMode === 'edit' ? 'crosshair' : undefined }}
       >
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <OsmTileLayer />
         <ZoomControl position="topleft" />
         <FlyToZone zone={flyZone} />
         {isEditingShape && (mapMode === 'draw' ? canCreateZones : editingZoneId != null) && (
