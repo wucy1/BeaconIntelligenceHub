@@ -692,8 +692,10 @@ export function MapPage() {
     setActiveTopPanel((prev) => (prev === panel ? null : panel));
   };
 
+  const mapRailFabCount = publicZones.length > 0 ? 3 : 2;
+
   return (
-    <div className="map-page">
+    <div className="map-page" data-map-rail-fabs={mapRailFabCount}>
       <OfflineBanner mapPage />
       <ContributorMap
         buildings={buildings}
@@ -928,30 +930,6 @@ export function MapPage() {
 
       <div className="map-overlay-top">
         <div className="map-title-wrap">
-          <div className="map-crisis-picker">
-            <label className="map-crisis-picker-label" htmlFor="map-crisis-select">
-              {t('map.crisis.select')}
-            </label>
-            <select
-              id="map-crisis-select"
-              className="map-crisis-select"
-              value={crisisId}
-              onChange={(e) => onSelectCrisis(e.target.value)}
-            >
-              {publicCrises.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {crisisLabel(c)}
-                </option>
-              ))}
-            </select>
-            {publicZones.length > 0 && (
-              <span className="map-zone-count">
-                {t('map.crisis.zoneCount', { count: publicZones.length })}
-                {' · '}
-                {t('map.crisis.zoneHint')}
-              </span>
-            )}
-          </div>
           <span
             className={connectionLampClass}
             aria-label={online ? t('status.online') : t('status.offline')}
@@ -963,6 +941,21 @@ export function MapPage() {
           </span>
         </div>
         <div className="map-overlay-right">
+          <label className="lang-switcher map-crisis-switcher">
+            <span className="muted">{t('map.crisis.select')}</span>
+            <select
+              id="map-crisis-select"
+              value={crisisId}
+              onChange={(e) => onSelectCrisis(e.target.value)}
+              aria-label={t('map.crisis.select')}
+            >
+              {publicCrises.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {crisisLabel(c)}
+                </option>
+              ))}
+            </select>
+          </label>
           <LanguageSwitcher />
           <div className="map-overlay-controls">
             <button

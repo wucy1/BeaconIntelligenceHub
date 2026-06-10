@@ -167,12 +167,30 @@ select {
 
 /* —— Map-first contributor UI —— */
 .map-page {
+  /* 右側控制欄尺寸（一次算清，避免 FAB／縮放重疊）
+   * 按鈕 48px、間距 12px、底距 16px；2 顆縮放緊貼成組 */
+  --map-rail-right: 0.75rem;
+  --map-rail-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  --map-rail-btn: 3rem;
+  --map-rail-gap: 0.75rem;
+  --map-rail-fab-btns: 2;
+  --map-rail-fabs-h: calc(
+    var(--map-rail-fab-btns) * var(--map-rail-btn) +
+    (var(--map-rail-fab-btns) - 1) * var(--map-rail-gap)
+  );
+  --map-rail-zoom-bottom: calc(
+    var(--map-rail-bottom) + var(--map-rail-fabs-h) + var(--map-rail-gap)
+  );
   position: fixed;
   inset: 0;
   width: 100%;
   height: 100dvh;
   overflow: hidden;
   background: #e2e8f0;
+}
+
+.map-page[data-map-rail-fabs='3'] {
+  --map-rail-fab-btns: 3;
 }
 
 .contributor-map {
@@ -215,12 +233,19 @@ select {
   min-width: 0;
 }
 
-.map-overlay-right .lang-switcher {
+.map-overlay-right .lang-switcher,
+.map-overlay-right .map-crisis-switcher {
   background: rgba(255, 255, 255, 0.94);
   padding: 0.35rem 0.5rem;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
   border: 1px solid #e2e8f0;
+}
+
+.map-overlay-right .map-crisis-switcher select {
+  min-width: 0;
+  max-width: 11rem;
+  font-weight: 600;
 }
 
 .map-window-title {
@@ -234,44 +259,6 @@ select {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-}
-
-.map-crisis-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  background: rgba(255, 255, 255, 0.94);
-  padding: 0.4rem 0.55rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
-  border: 1px solid #e2e8f0;
-  max-width: min(20rem, 52vw);
-  min-width: 0;
-}
-
-.map-crisis-picker-label {
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.map-crisis-select {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  padding: 0.3rem 0.45rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  background: #fff;
-  color: #0f172a;
-}
-
-.map-zone-count {
-  font-size: 0.72rem;
-  color: #64748b;
 }
 
 .map-window-subtitle {
@@ -574,21 +561,51 @@ select {
   font: inherit;
 }
 
-/* 縮放鈕在右下、高於 FAB 欄；左側面板區與底部模式列保持淨空 */
-.map-page .leaflet-bottom.leaflet-right .leaflet-control-zoom {
-  margin-bottom: calc(11.5rem + env(safe-area-inset-bottom, 0px));
-  margin-right: 0.25rem;
+.map-rail-zoom {
+  position: fixed;
+  right: var(--map-rail-right);
+  bottom: var(--map-rail-zoom-bottom);
+  z-index: 500;
+  pointer-events: auto;
+  width: var(--map-rail-btn);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.18);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+}
+
+.map-rail-zoom-in,
+.map-rail-zoom-out {
+  width: var(--map-rail-btn);
+  height: var(--map-rail-btn);
+  border: none;
+  background: #fff;
+  color: #334155;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.map-rail-zoom-in {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.map-rail-zoom-out {
+  font-size: 1.5rem;
 }
 
 .map-fab-col {
-  position: absolute;
-  right: 0.75rem;
-  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  position: fixed;
+  right: var(--map-rail-right);
+  bottom: var(--map-rail-bottom);
   z-index: 500;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.65rem;
+  gap: var(--map-rail-gap);
 }
 
 .map-fab-col .map-fab-report,
@@ -596,43 +613,36 @@ select {
 .map-fab-col .map-fab-locate {
   position: static;
   flex-shrink: 0;
+  width: var(--map-rail-btn);
+  height: var(--map-rail-btn);
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
 }
 
 .map-fab-report {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
   border: none;
   background: #1d4ed8;
   color: #fff;
-  font-size: 1.75rem;
+  font-size: 1.65rem;
   line-height: 1;
   box-shadow: 0 4px 14px rgba(29, 78, 216, 0.45);
-  cursor: pointer;
 }
 
 .map-fab-zones {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
   border: 1px solid #cbd5e1;
   background: #fff;
   color: #475569;
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
-  cursor: pointer;
 }
 
 .map-fab-locate {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
   border: none;
   background: #fff;
   color: #1d4ed8;
-  font-size: 1.25rem;
+  font-size: 1.2rem;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
-  cursor: pointer;
 }
 
 
@@ -1631,14 +1641,16 @@ button.danger {
     gap: 0.25rem;
   }
 
-  .map-overlay-right .lang-switcher {
+  .map-overlay-right .lang-switcher,
+  .map-overlay-right .map-crisis-switcher {
     align-self: flex-end;
     width: max-content;
     max-width: 100%;
     flex-shrink: 0;
   }
 
-  .map-overlay-right .lang-switcher span.muted {
+  .map-overlay-right .lang-switcher span.muted,
+  .map-overlay-right .map-crisis-switcher span.muted {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -1646,7 +1658,8 @@ button.danger {
     clip: rect(0, 0, 0, 0);
   }
 
-  .map-overlay-right .lang-switcher select {
+  .map-overlay-right .lang-switcher select,
+  .map-overlay-right .map-crisis-switcher select {
     max-width: 6.5rem;
     font-size: 0.75rem;
   }
@@ -1673,14 +1686,9 @@ button.danger {
     max-height: calc(100dvh - 3.75rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   }
 
-  .map-page .leaflet-bottom.leaflet-right .leaflet-control-zoom {
-    margin-bottom: calc(11.5rem + env(safe-area-inset-bottom, 0px));
-    margin-right: 0.15rem;
-  }
-
   .placement-bar {
     left: 0.5rem;
-    right: 4.9rem;
+    right: calc(var(--map-rail-right) + var(--map-rail-btn) + 0.65rem);
     transform: none;
     width: auto;
     max-width: none;

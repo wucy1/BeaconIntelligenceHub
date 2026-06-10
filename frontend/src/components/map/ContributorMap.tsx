@@ -9,7 +9,6 @@ import {
   MapContainer,
   Marker,
   Popup,
-  ZoomControl,
   useMap,
   useMapEvents,
 } from 'react-leaflet';
@@ -193,6 +192,30 @@ function FitBoundsOnce({
   return null;
 }
 
+function MapRailZoom() {
+  const map = useMap();
+  return (
+    <div className="map-rail-zoom" aria-label="Zoom">
+      <button
+        type="button"
+        className="map-rail-zoom-in"
+        aria-label="Zoom in"
+        onClick={() => map.zoomIn()}
+      >
+        +
+      </button>
+      <button
+        type="button"
+        className="map-rail-zoom-out"
+        aria-label="Zoom out"
+        onClick={() => map.zoomOut()}
+      >
+        −
+      </button>
+    </div>
+  );
+}
+
 function FitLatLngBoundsOnce({
   bounds,
   tick,
@@ -365,7 +388,7 @@ export function ContributorMap({
       scrollWheelZoom
       zoomControl={false}
     >
-      <ZoomControl position="bottomright" />
+      <MapRailZoom />
       <CachedOsmTileLayer offlineZoomLimits={offlineZoomLimits} />
       {downloadPreview && (
         <DownloadPreviewLayer
