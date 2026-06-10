@@ -619,6 +619,14 @@ export function MapPage() {
   const hasPlacement = Boolean(placement.pin || placement.buildingId);
   const showPlacementBar = mapMode === 'new' && hasPlacement && !sheetOpen;
 
+  const onSelectCrisis = useCallback(
+    (id: string) => {
+      setZoneFitTick(0);
+      selectCrisis(id);
+    },
+    [selectCrisis],
+  );
+
   const crisisLabel = useCallback(
     (c: { name: Record<string, string>; slug: string }) => {
       const n = c.name;
@@ -928,7 +936,7 @@ export function MapPage() {
               id="map-crisis-select"
               className="map-crisis-select"
               value={crisisId}
-              onChange={(e) => selectCrisis(e.target.value)}
+              onChange={(e) => onSelectCrisis(e.target.value)}
             >
               {publicCrises.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -1036,35 +1044,35 @@ export function MapPage() {
         />
       )}
 
-      <button
-        type="button"
-        className="map-fab-report"
-        title={t('map.startNewReport')}
-        onClick={onStartNewReport}
-      >
-        +
-      </button>
-
-      {publicZones.length > 0 && (
+      <div className="map-fab-col">
         <button
           type="button"
-          className="map-fab-zones"
-          title={t('map.crisis.showZones')}
-          aria-label={t('map.crisis.showZones')}
-          onClick={() => setZoneFitTick((n) => n + 1)}
+          className="map-fab-report"
+          title={t('map.startNewReport')}
+          onClick={onStartNewReport}
         >
-          ⊞
+          +
         </button>
-      )}
-
-      <button
-        type="button"
-        className="map-fab-locate"
-        title={t('map.locateMe')}
-        onClick={onLocateMe}
-      >
-        ◎
-      </button>
+        {publicZones.length > 0 && (
+          <button
+            type="button"
+            className="map-fab-zones"
+            title={t('map.crisis.showZones')}
+            aria-label={t('map.crisis.showZones')}
+            onClick={() => setZoneFitTick((n) => n + 1)}
+          >
+            ⊞
+          </button>
+        )}
+        <button
+          type="button"
+          className="map-fab-locate"
+          title={t('map.locateMe')}
+          onClick={onLocateMe}
+        >
+          ◎
+        </button>
+      </div>
 
       <LocationPrompt
         open={locationPromptOpen}

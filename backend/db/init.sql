@@ -75,82 +75,12 @@ ORDER BY
   r.captured_at_client DESC,
   r.received_at_server DESC;
 
--- Seed: unspecified crisis + demo footprints (reference buildings only)
--- bounds NULL = unspecified phase; admin may define bounds/window later for display only
+-- Seed: default open-reporting crisis (no demo buildings; reference areas = ops zones)
 INSERT INTO crises (id, slug, name, bounds) VALUES (
   'a0000000-0000-0000-0000-000000000001',
   'unspecified',
   '{"en": "Unspecified event (open reporting)", "zh": "未指定事件（开放回报）", "zh-Hant": "未指定事件（開放回報）"}'::jsonb,
   NULL
-);
-
-INSERT INTO buildings (id, crisis_id, external_ref, geom, name) VALUES
-(
-  'b0000000-0000-0000-0000-000000000001',
-  'a0000000-0000-0000-0000-000000000001',
-  'B1',
-  ST_Multi(ST_SetSRID(ST_GeomFromText(
-    'POLYGON((121.5593 25.0292, 121.5603 25.0292, 121.5603 25.0300, 121.5593 25.0300, 121.5593 25.0292))'
-  ), 4326)),
-  'Demo Building A'
-),
-(
-  'b0000000-0000-0000-0000-000000000002',
-  'a0000000-0000-0000-0000-000000000001',
-  'B2',
-  ST_Multi(ST_SetSRID(ST_GeomFromText(
-    'POLYGON((121.5605 25.0292, 121.5615 25.0292, 121.5615 25.0300, 121.5605 25.0300, 121.5605 25.0292))'
-  ), 4326)),
-  'Demo Building B'
-),
-(
-  'b0000000-0000-0000-0000-000000000003',
-  'a0000000-0000-0000-0000-000000000001',
-  'B3',
-  ST_Multi(ST_SetSRID(ST_GeomFromText(
-    'POLYGON((121.5595 25.0302, 121.5610 25.0302, 121.5610 25.0315, 121.5595 25.0315, 121.5595 25.0302))'
-  ), 4326)),
-  'Demo Building C'
-);
-
--- Demo report markers (「全部」模式可見的彩色圓點)
-INSERT INTO reports (
-  id, client_generated_uuid, crisis_id, building_id,
-  damage_level, infrastructure_types, infrastructure_name,
-  crisis_types, debris_clearing_required, description, description_language,
-  appendix_answers, captured_at_client, received_at_server
-) VALUES
-(
-  'c0000000-0000-0000-0000-000000000001',
-  'd0000000-0000-0000-0000-000000000001',
-  'a0000000-0000-0000-0000-000000000001',
-  'b0000000-0000-0000-0000-000000000001',
-  'partial',
-  ARRAY['residential'],
-  'Demo Building A',
-  ARRAY['earthquake'],
-  false,
-  'Demo report — partial damage on Building A',
-  'en',
-  '{"electricity_condition":"moderate","health_services":"partial","pressing_needs":["food_water"]}'::jsonb,
-  now() - interval '2 hours',
-  now() - interval '2 hours'
-),
-(
-  'c0000000-0000-0000-0000-000000000002',
-  'd0000000-0000-0000-0000-000000000002',
-  'a0000000-0000-0000-0000-000000000001',
-  'b0000000-0000-0000-0000-000000000002',
-  'complete',
-  ARRAY['commercial'],
-  'Demo Building B',
-  ARRAY['earthquake'],
-  true,
-  'Demo report — severe damage on Building B',
-  'en',
-  '{"electricity_condition":"severe","health_services":"disrupted","pressing_needs":["shelter","health"]}'::jsonb,
-  now() - interval '1 hour',
-  now() - interval '1 hour'
 );
 
 -- Phase 3a: operational zones and login users

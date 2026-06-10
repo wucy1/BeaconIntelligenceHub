@@ -203,10 +203,14 @@ function FitLatLngBoundsOnce({
   maxZoom?: number;
 }) {
   const map = useMap();
+  const boundsRef = useRef(bounds);
+  boundsRef.current = bounds;
   useEffect(() => {
-    if (!bounds || tick < 1 || !bounds.isValid()) return;
-    map.fitBounds(bounds, { padding: [32, 32], maxZoom });
-  }, [bounds, tick, maxZoom, map]);
+    if (tick < 1) return;
+    const b = boundsRef.current;
+    if (!b || !b.isValid()) return;
+    map.fitBounds(b, { padding: [32, 32], maxZoom });
+  }, [tick, maxZoom, map]);
   return null;
 }
 
