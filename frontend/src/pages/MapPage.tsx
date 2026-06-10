@@ -77,6 +77,7 @@ export function MapPage() {
     selectedId: selectedCrisisId,
     selectCrisis,
     zones: publicZones,
+    zonesLoading: publicZonesLoading,
     error: crisesError,
     loading: crisesLoading,
     reload: reloadCrises,
@@ -694,7 +695,7 @@ export function MapPage() {
     setActiveTopPanel((prev) => (prev === panel ? null : panel));
   };
 
-  const mapRailFabCount = publicZones.length > 0 ? 3 : 2;
+  const mapRailFabCount = publicZones.length > 0 || publicZonesLoading ? 3 : 2;
 
   return (
     <div className="map-page" data-map-rail-fabs={mapRailFabCount}>
@@ -714,6 +715,7 @@ export function MapPage() {
         flyTo={flyTarget}
         initialCenter={mapCenter}
         initialZoom={DEFAULT_ZOOM}
+        crisisId={crisisId}
         crisisZones={publicZones}
         zoneFitBounds={zoneFitBounds}
         zoneFitTick={zoneFitTick}

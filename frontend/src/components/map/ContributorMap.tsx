@@ -3,6 +3,7 @@ import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CircleMarker,
   GeoJSON,
@@ -57,6 +58,7 @@ type Props = {
   flyTo?: MapFlyTarget | null;
   initialCenter: [number, number];
   initialZoom: number;
+  crisisId?: string;
   crisisBounds?: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   crisisZones?: Array<{ id: string; name: string; geom: GeoJSON.Polygon }>;
   fitBoundsTick?: number;
@@ -194,7 +196,15 @@ function FitBoundsOnce({
 
 function MapRailZoom() {
   const map = useMap();
-  return (
+  const [host, setHost] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setHost(document.querySelector<HTMLElement>('.map-page'));
+  }, []);
+
+  if (!host) return null;
+
+  return createPortal(
     <div className="map-rail-zoom" aria-label="Zoom">
       <button
         type="button"
@@ -212,8 +222,39 @@ function MapRailZoom() {
       >
         −
       </button>
-    </div>
+    </div>,
+    host,
   );
+}
+
+function MapViewStabilizer({
+  crisisId,
+  zoneCount,
+}: {
+  crisisId: string;
+  zoneCount: number;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    const refresh = () => {
+      map.invalidateSize({ pan: false });
+      map.eachLayer((layer) => {
+        if (typeof (layer as L.TileLayer).redraw === 'function') {
+          (layer as L.TileLayer).redraw();
+        }
+      });
+    };
+
+    const raf = requestAnimationFrame(refresh);
+    const timer = window.setTimeout(refresh, 150);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+    };
+  }, [crisisId, zoneCount, map]);
+
+  return null;
 }
 
 function FitLatLngBoundsOnce({
@@ -319,6 +360,7 @@ export function ContributorMap({
   flyTo,
   initialCenter,
   initialZoom,
+  crisisId = '',
   crisisBounds,
   crisisZones = [],
   fitBoundsTick = 0,
@@ -389,6 +431,7 @@ export function ContributorMap({
       zoomControl={false}
     >
       <MapRailZoom />
+      {crisisId && <MapViewStabilizer crisisId={crisisId} zoneCount={crisisZones.length} />}
       <CachedOsmTileLayer offlineZoomLimits={offlineZoomLimits} />
       {downloadPreview && (
         <DownloadPreviewLayer

@@ -52,6 +52,7 @@ export function usePublicCrises() {
   const [crises, setCrises] = useState<PublicCrisis[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [zones, setZones] = useState<PublicZone[]>([]);
+  const [zonesLoading, setZonesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [needsFirstOnline, setNeedsFirstOnline] = useState(false);
@@ -122,13 +123,15 @@ export function usePublicCrises() {
   useEffect(() => {
     if (!selectedId) {
       setZones([]);
+      setZonesLoading(false);
       return;
     }
-    setZones([]);
     let cancelled = false;
+    setZonesLoading(true);
 
     const loadZones = async () => {
       if (!navigator.onLine) {
+        if (!cancelled) setZonesLoading(false);
         return;
       }
       try {
@@ -136,6 +139,8 @@ export function usePublicCrises() {
         if (!cancelled) setZones(d.items);
       } catch {
         if (!cancelled) setZones([]);
+      } finally {
+        if (!cancelled) setZonesLoading(false);
       }
     };
 
@@ -159,6 +164,7 @@ export function usePublicCrises() {
     selectedId,
     selectCrisis,
     zones,
+    zonesLoading,
     loading,
     error,
     reload,

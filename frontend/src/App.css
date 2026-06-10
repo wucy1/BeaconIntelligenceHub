@@ -198,6 +198,10 @@ select {
   z-index: 0;
 }
 
+.map-page .leaflet-container {
+  background: #d4d4d8;
+}
+
 .map-overlay-top {
   position: absolute;
   top: 0.5rem;

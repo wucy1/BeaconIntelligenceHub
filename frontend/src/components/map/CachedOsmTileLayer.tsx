@@ -49,7 +49,17 @@ const CachedLayer = L.TileLayer.extend({
     tile.setAttribute('role', 'presentation');
 
     L.DomEvent.on(tile, 'load', () => done(undefined, tile));
-    L.DomEvent.on(tile, 'error', () => done(undefined, tile));
+    L.DomEvent.on(tile, 'error', () => {
+      const { x, y } = coords;
+      const z = coords.z;
+      const allowNetwork = typeof navigator !== 'undefined' ? navigator.onLine : true;
+      window.setTimeout(() => {
+        void loadTileInto(tile, z, x, y, allowNetwork).then((ok) => {
+          if (!ok && !tile.src) tile.style.background = '#d4d4d8';
+        });
+      }, 280);
+      done(undefined, tile);
+    });
 
     const { x, y } = coords;
     const z = coords.z;
@@ -57,7 +67,7 @@ const CachedLayer = L.TileLayer.extend({
 
     void loadTileInto(tile, z, x, y, allowNetwork).then((ok) => {
       if (!ok && !tile.src) {
-        tile.style.background = '#e8e8e8';
+        tile.style.background = '#d4d4d8';
         done(undefined, tile);
       }
     });
@@ -81,6 +91,8 @@ export function CachedOsmTileLayer({ offlineZoomLimits }: Props) {
       attribution: ATTRIBUTION,
       maxZoom: 19,
       crossOrigin: true,
+      keepBuffer: 6,
+      updateWhenIdle: false,
     });
     layer.addTo(map);
 
