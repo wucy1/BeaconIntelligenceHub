@@ -43,14 +43,21 @@ export function OpsLogin() {
       <p className="muted">
         登入後進入{OPS_LABELS.console}。民眾回報請至 <Link to="/">回報地圖</Link>。
       </p>
-      <form onSubmit={onSubmit}>
-        <label className="field">
+      <form className="ops-login-form" onSubmit={onSubmit}>
+        <label className="ops-field">
           <span>Email</span>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input
+            className="ops-input"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
         </label>
-        <label className="field">
+        <label className="ops-field">
           <span>密碼</span>
           <input
+            className="ops-input"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -59,9 +66,11 @@ export function OpsLogin() {
           />
         </label>
         {err && <p className="error">{err}</p>}
-        <button type="submit" disabled={busy}>
-          {busy ? '登入中…' : '登入'}
-        </button>
+        <div className="ops-login-actions">
+          <button type="submit" disabled={busy}>
+            {busy ? '登入中…' : '登入'}
+          </button>
+        </div>
       </form>
     </section>
   );

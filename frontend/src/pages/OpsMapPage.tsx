@@ -3,17 +3,7 @@ import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  CircleMarker,
-  GeoJSON,
-  MapContainer,
-  Polygon,
-  Polyline,
-  TileLayer,
-  ZoomControl,
-  useMap,
-  useMapEvents,
-} from 'react-leaflet';
+import { CircleMarker, GeoJSON, MapContainer, TileLayer, ZoomControl, useMap } from 'react-leaflet';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 import 'leaflet/dist/leaflet.css';
@@ -41,6 +31,7 @@ import {
   setOpsSession,
   type OpsUserSession,
 } from '../ops/opsAuth';
+import { OpsPolygonEditor } from '../components/ops/OpsPolygonEditor';
 import { OPS_LABELS } from '../ops/opsLabels';
 import {
   formatArea,
@@ -65,22 +56,6 @@ const DAMAGE_COLOR: Record<string, string> = {
 
 type MapMode = 'browse' | 'draw' | 'edit';
 type PanelKey = 'zone' | 'crisis' | 'audit' | null;
-
-function PolygonDrawHandler({
-  active,
-  onAddVertex,
-}: {
-  active: boolean;
-  onAddVertex: (v: LatLng) => void;
-}) {
-  useMapEvents({
-    click(e) {
-      if (!active) return;
-      onAddVertex({ lat: e.latlng.lat, lng: e.latlng.lng });
-    },
-  });
-  return null;
-}
 
 function FlyToZone({ zone }: { zone: OpsZone | null }) {
   const map = useMap();
@@ -128,6 +103,7 @@ export function OpsMapPage() {
   const [vertices, setVertices] = useState<LatLng[]>([]);
   const [closed, setClosed] = useState(false);
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
+  const [selectedVertex, setSelectedVertex] = useState<number | null>(null);
 
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
@@ -146,10 +122,9 @@ export function OpsMapPage() {
 
   const draftPolygon = useMemo(() => verticesToPolygon(vertices), [vertices]);
   const draftAreaKm2 = useMemo(() => polygonAreaKm2(vertices), [vertices]);
-  const leafletPositions = useMemo(
-    () => vertices.map((v) => [v.lat, v.lng] as [number, number]),
-    [vertices],
-  );
+  const isEditingShape = mapMode === 'draw' || mapMode === 'edit';
+  const canSaveZone =
+    zoneName.trim().length > 0 && vertices.length >= 3 && (mapMode === 'edit' || closed);
 
   const loadZones = useCallback(async () => {
     const q = activeCrisisId ? `?crisis_id=${activeCrisisId}` : '';
@@ -244,6 +219,7 @@ export function OpsMapPage() {
     setClosed(false);
     setEditingZoneId(null);
     setZoneName('');
+    setSelectedVertex(null);
     setMapMode('browse');
   };
 
@@ -264,13 +240,21 @@ export function OpsMapPage() {
   };
 
   const startEditZone = (zone: OpsZone) => {
+    setSelectedZoneId(zone.id);
     setEditingZoneId(zone.id);
     setZoneName(zone.name);
     setVertices(polygonToVertices(zone.geom));
     setClosed(true);
+    setSelectedVertex(null);
     setMapMode('edit');
     setPanel('zone');
     setErr(null);
+  };
+
+  const removeSelectedVertex = () => {
+    if (selectedVertex == null || vertices.length <= 3) return;
+    setVertices((prev) => prev.filter((_, i) => i !== selectedVertex));
+    setSelectedVertex(null);
   };
 
   const finishDrawing = () => {
@@ -425,18 +409,23 @@ export function OpsMapPage() {
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <ZoomControl position="topleft" />
         <FlyToZone zone={flyZone} />
-        {((mapMode === 'draw' && canCreateZones) ||
-          (mapMode === 'edit' && editingZoneId && opsCanEditZone(user, zones.find((z) => z.id === editingZoneId)?.crisis_id ?? undefined))) && (
-          <PolygonDrawHandler
-            active={!closed}
-            onAddVertex={(v) => {
-              setVertices((prev) => [...prev, v]);
-              setClosed(false);
+        {isEditingShape && (mapMode === 'draw' ? canCreateZones : editingZoneId != null) && (
+          <OpsPolygonEditor
+            vertices={vertices}
+            closed={closed || mapMode === 'edit'}
+            selectedVertex={selectedVertex}
+            onVerticesChange={(next) => {
+              setVertices(next);
+              if (mapMode === 'draw') setClosed(false);
             }}
+            onSelectVertex={setSelectedVertex}
+            allowMapAdd={mapMode === 'draw' && !closed}
+            allowEdgeInsert={mapMode === 'edit' || (mapMode === 'draw' && closed)}
           />
         )}
 
         {zones.map((z) => {
+          if (editingZoneId === z.id) return null;
           const feature: GeoJSON.Feature<GeoJSON.Polygon> = {
             type: 'Feature',
             properties: { name: z.name },
@@ -453,6 +442,10 @@ export function OpsMapPage() {
                 fillOpacity: selected ? 0.2 : 0.1,
               }}
               onEachFeature={(_f, layer) => {
+                const path = layer as L.Path;
+                path.options.interactive = mapMode === 'browse';
+                layer.off('click');
+                if (mapMode !== 'browse') return;
                 layer.on('click', () => {
                   setSelectedZoneId(z.id);
                   setSelectedReportId(null);
@@ -491,20 +484,6 @@ export function OpsMapPage() {
           );
         })}
 
-        {vertices.length >= 2 && !closed && (
-          <Polyline positions={leafletPositions} pathOptions={{ color: '#1565c0', weight: 2, dashArray: '6 4' }} />
-        )}
-        {closed && draftPolygon && (
-          <Polygon positions={leafletPositions} pathOptions={{ color: '#1565c0', weight: 2, fillOpacity: 0.18 }} />
-        )}
-        {vertices.map((v, i) => (
-          <CircleMarker
-            key={`v-${i}`}
-            center={[v.lat, v.lng]}
-            radius={5}
-            pathOptions={{ color: '#1565c0', fillColor: '#fff', fillOpacity: 1, weight: 2 }}
-          />
-        ))}
       </MapContainer>
 
       <div className="ops-map-overlay-top">
@@ -598,35 +577,49 @@ export function OpsMapPage() {
           {(mapMode === 'draw' || mapMode === 'edit') ? (
             <>
               <h3>{editingZoneId ? '編輯分區' : '新增分區'}</h3>
-              <p className="muted">點擊地圖加頂點，不限範圍大小。</p>
-              <input
-                className="ops-input"
-                value={zoneName}
-                onChange={(e) => setZoneName(e.target.value)}
-                placeholder="分區名稱"
-              />
+              <p className="muted">
+                {mapMode === 'draw' && !closed && '點擊地圖新增頂點；至少 3 點後按「完成多邊形」。'}
+                {(closed || mapMode === 'edit') &&
+                  '拖曳白點移動頂點；點綠色中點或邊線附近可加邊；選取頂點後可刪除。'}
+              </p>
+              <label className="ops-field">
+                <span>分區名稱（必填）</span>
+                <input
+                  className="ops-input"
+                  value={zoneName}
+                  onChange={(e) => setZoneName(e.target.value)}
+                  placeholder="例如：北區、撤離區 A"
+                  required
+                />
+              </label>
               <p className="muted">
                 頂點 {vertices.length}
-                {draftAreaKm2 != null && closed && ` · ${formatArea(draftAreaKm2)}`}
+                {draftAreaKm2 != null && (closed || mapMode === 'edit') && ` · ${formatArea(draftAreaKm2)}`}
+                {selectedVertex != null && ` · 已選頂點 #${selectedVertex + 1}`}
               </p>
               <div className="ops-map-card-actions">
-                {!closed && (
+                {mapMode === 'draw' && !closed && (
                   <>
                     <button type="button" onClick={finishDrawing} disabled={vertices.length < 3}>
-                      完成
+                      完成多邊形
                     </button>
                     <button type="button" onClick={() => setVertices((p) => p.slice(0, -1))} disabled={!vertices.length}>
-                      復原
+                      復原上一點
                     </button>
                   </>
                 )}
-                {closed && (
-                  <button type="button" onClick={saveZone} disabled={busy || !zoneName.trim()}>
-                    儲存
+                {(mapMode === 'edit' || closed) && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={removeSelectedVertex}
+                    disabled={selectedVertex == null || vertices.length <= 3}
+                  >
+                    刪除選取頂點
                   </button>
                 )}
-                {!closed && vertices.length >= 3 && (
-                  <button type="button" onClick={saveZone} disabled={busy || !zoneName.trim()}>
+                {canSaveZone && (
+                  <button type="button" onClick={saveZone} disabled={busy}>
                     儲存
                   </button>
                 )}

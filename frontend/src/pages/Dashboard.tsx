@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { apiBase } from '../api';
 import { useI18n } from '../i18n/I18nContext';
@@ -82,8 +83,10 @@ export function Dashboard() {
 
   if (!opsHasStaffAccess(opsUser)) {
     return (
-      <section className="card">
-        <h1>{t('dashboard.title')}</h1>
+      <section className="card ops-dashboard">
+        <header className="ops-dash-header">
+          <h1>{t('dashboard.title')}</h1>
+        </header>
         <p className="muted">您的帳號尚未被指派危機或分區，請聯絡系統管理員。</p>
       </section>
     );
@@ -91,39 +94,45 @@ export function Dashboard() {
 
   if (err) {
     return (
-      <section className="card">
+      <section className="card ops-dashboard">
         <p className="error">{err}</p>
       </section>
     );
   }
-  if (!data) return <p>{t('common.loading')}</p>;
+  if (!data) return <p className="muted">{t('common.loading')}</p>;
 
   const api = apiBase();
   const activeCrisis = crises.find((c) => c.id === crisisId);
 
   return (
     <section className="card ops-dashboard">
-      <h1>{t('dashboard.title')}</h1>
-      <p className="muted">
-        {opsUser.email} · {opsRoleLabel(opsUser.role)}
-        {isAdmin && ' · 可檢視全部危機'}
-        {!isAdmin && isLead && ' · 可檢視所負責危機與分區回報'}
-        {!isAdmin && !isLead && ' · 僅可檢視指派分區內回報'}
-      </p>
+      <header className="ops-dash-header">
+        <div>
+          <h1>{t('dashboard.title')}</h1>
+          <p className="muted">
+            {opsUser.email} · {opsRoleLabel(opsUser.role)}
+            {isAdmin && ' · 可檢視全部危機'}
+            {!isAdmin && isLead && ' · 可檢視所負責危機與分區回報'}
+            {!isAdmin && !isLead && ' · 僅可檢視指派分區內回報'}
+          </p>
+        </div>
+      </header>
 
       <section className="ops-dash-banner">
         <strong>營運審核</strong>
         <p className="muted">
-          建立危機、指派人員請至 {OPS_LABELS.console}；畫分區與歸檔請至 {OPS_LABELS.map}。
-          此頁供檢視與匯出您權限範圍內的回報。
+          建立危機、指派人員請至 <Link to="/ops">{OPS_LABELS.console}</Link>；畫分區與歸檔請至{' '}
+          <Link to="/ops/map">{OPS_LABELS.map}</Link>。此頁供檢視與匯出您權限範圍內的回報。
         </p>
       </section>
 
-      {crises.length > 0 && (
-        <p>
-          <label>
-            危機{' '}
+      <section className="ops-dash-section">
+        <h2>篩選</h2>
+        {crises.length > 0 && (
+          <label className="ops-field">
+            危機
             <select
+              className="ops-input"
               value={crisisId}
               onChange={(e) => {
                 setCrisisId(e.target.value);
@@ -137,19 +146,17 @@ export function Dashboard() {
               ))}
             </select>
           </label>
-          {activeCrisis && <span className="muted" style={{ marginLeft: 8 }}>{activeCrisis.archive_status}</span>}
-        </p>
-      )}
-
-      {crises.length === 0 && (
-        <p className="muted">尚無可檢視的危機。{isAdmin ? `請至${OPS_LABELS.console}建立危機。` : '請聯絡管理員指派權限。'}</p>
-      )}
-
-      {zones.length > 0 && (
-        <p>
-          <label>
-            分區篩選{' '}
-            <select value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
+        )}
+        {activeCrisis && <p className="muted">狀態：{activeCrisis.archive_status}</p>}
+        {crises.length === 0 && (
+          <p className="muted">
+            尚無可檢視的危機。{isAdmin ? `請至${OPS_LABELS.console}建立危機。` : '請聯絡管理員指派權限。'}
+          </p>
+        )}
+        {zones.length > 0 && (
+          <label className="ops-field">
+            分區篩選
+            <select className="ops-input" value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
               <option value="">（全部可見分區）</option>
               {zones.map((z) => (
                 <option key={z.id} value={z.id}>
@@ -158,59 +165,63 @@ export function Dashboard() {
               ))}
             </select>
           </label>
-          {data.zone_scope && (
-            <span className="muted" style={{ marginLeft: 8 }}>
-              範圍：{data.zone_scope.length} 個分區
-            </span>
-          )}
-        </p>
-      )}
+        )}
+        {data.zone_scope && data.zone_scope.length > 0 && (
+          <p className="muted">可見範圍：{data.zone_scope.length} 個分區</p>
+        )}
+      </section>
 
       {crisisId && (
-        <p>
-          <a href={`${api}/v1/export?crisis_id=${crisisId}&format=csv`}>{t('dashboard.exportCsv')}</a> ·{' '}
-          <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson`}>{t('dashboard.exportGeojson')}</a>
-          {' · '}
-          <a href={`${api}/v1/export?crisis_id=${crisisId}&format=csv&latest=1`}>{t('dashboard.exportLatestCsv')}</a>
-          {' · '}
-          <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson&latest=1`}>
-            {t('dashboard.exportLatestGeojson')}
-          </a>
-        </p>
+        <section className="ops-dash-section">
+          <h2>匯出</h2>
+          <p className="ops-export-links">
+            <a href={`${api}/v1/export?crisis_id=${crisisId}&format=csv`}>{t('dashboard.exportCsv')}</a>
+            <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson`}>{t('dashboard.exportGeojson')}</a>
+            <a href={`${api}/v1/export?crisis_id=${crisisId}&format=csv&latest=1`}>{t('dashboard.exportLatestCsv')}</a>
+            <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson&latest=1`}>
+              {t('dashboard.exportLatestGeojson')}
+            </a>
+          </p>
+        </section>
       )}
 
-      <table className="table">
-        <thead>
-          <tr>
-            <th>{t('dashboard.col.time')}</th>
-            <th>{t('dashboard.col.damage')}</th>
-            <th>{t('dashboard.col.building')}</th>
-            <th>{t('dashboard.col.summary')}</th>
-            <th>審核</th>
-            <th>{t('dashboard.col.image')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.items.map((r) => (
-            <tr key={r.id}>
-              <td>{new Date(r.received_at_server).toLocaleString()}</td>
-              <td>{r.damage_level}</td>
-              <td>{r.building_id?.slice(0, 8) ?? '—'}</td>
-              <td>{r.description_preview}</td>
-              <td>
-                {r.admin_reviewed ? '✓' : '—'}
-                {r.admin_flagged ? ' ⚑' : ''}
-              </td>
-              <td>
-                <a href={`${api}/v1/reports/${r.id}?includeImageUrl=1`} target="_blank" rel="noreferrer">
-                  JSON
-                </a>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {data.items.length === 0 && <p className="muted">{t('dashboard.empty')}</p>}
+      <section className="ops-dash-section">
+        <h2>回報列表</h2>
+        <div className="ops-table-wrap">
+          <table className="table ops-table">
+            <thead>
+              <tr>
+                <th>{t('dashboard.col.time')}</th>
+                <th>{t('dashboard.col.damage')}</th>
+                <th>{t('dashboard.col.building')}</th>
+                <th>{t('dashboard.col.summary')}</th>
+                <th>審核</th>
+                <th>{t('dashboard.col.image')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((r) => (
+                <tr key={r.id}>
+                  <td>{new Date(r.received_at_server).toLocaleString()}</td>
+                  <td>{r.damage_level}</td>
+                  <td>{r.building_id?.slice(0, 8) ?? '—'}</td>
+                  <td>{r.description_preview}</td>
+                  <td>
+                    {r.admin_reviewed ? '✓' : '—'}
+                    {r.admin_flagged ? ' ⚑' : ''}
+                  </td>
+                  <td>
+                    <a href={`${api}/v1/reports/${r.id}?includeImageUrl=1`} target="_blank" rel="noreferrer">
+                      JSON
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {data.items.length === 0 && <p className="muted">{t('dashboard.empty')}</p>}
+      </section>
     </section>
   );
 }

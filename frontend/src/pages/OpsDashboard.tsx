@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 
 import { wakeApiBackend } from '../api';
@@ -17,7 +17,10 @@ import {
   opsIsCrisisLead,
   opsIsSystemAdmin,
 } from '../ops/opsAuth';
+import { OpsTabs } from '../components/ops/OpsTabs';
 import { OPS_LABELS } from '../ops/opsLabels';
+
+type OpsTabId = 'overview' | 'crises' | 'create-crisis' | 'team' | 'audit';
 
 function crisisLabel(c: OpsCrisis): string {
   return c.name['zh-Hant'] ?? c.name.zh ?? c.name.en ?? c.slug;
@@ -60,6 +63,7 @@ export function OpsDashboard() {
   const [crisisFormMsg, setCrisisFormMsg] = useState<string | null>(null);
   const [teamFormMsg, setTeamFormMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [activeTab, setActiveTab] = useState<OpsTabId>('overview');
 
   const selectedCrisis = crises.find((c) => c.id === selectedCrisisId) ?? null;
   const assignLeadCrisis = crises.find((c) => c.id === assignLeadCrisisId) ?? null;
@@ -81,17 +85,6 @@ export function OpsDashboard() {
       setApiBanner(e instanceof Error ? e.message : String(e));
     }
   }, []);
-
-  const reloadAll = useCallback(async () => {
-    setApiWaking(true);
-    setApiBanner(null);
-    await wakeApiBackend();
-    await loadCrises();
-    loadZones();
-    await loadUsers();
-    loadAudit();
-    setApiWaking(false);
-  }, [loadCrises, loadUsers, loadAudit]);
 
   const loadZones = useCallback(() => {
     opsGet<{ items: OpsZone[] }>('/v1/ops/zones')
@@ -122,6 +115,17 @@ export function OpsDashboard() {
       .then((d) => setAudit(d.items))
       .catch(() => setAudit([]));
   }, [isAdmin]);
+
+  const reloadAll = useCallback(async () => {
+    setApiWaking(true);
+    setApiBanner(null);
+    await wakeApiBackend();
+    await loadCrises();
+    loadZones();
+    await loadUsers();
+    loadAudit();
+    setApiWaking(false);
+  }, [loadCrises, loadZones, loadUsers, loadAudit]);
 
   useEffect(() => {
     void reloadAll();
@@ -157,6 +161,7 @@ export function OpsDashboard() {
       setNewCrisisSlug('');
       setNewCrisisName('');
       setCrisisFormMsg(`已建立「${crisisLabel(c)}」`);
+      setActiveTab('crises');
       await loadCrises();
       loadAudit();
     } catch (e) {
@@ -266,9 +271,8 @@ export function OpsDashboard() {
 
   const workflowSteps = isAdmin
     ? [
-        '建立危機（下方「危機管理」）',
-        '新增營運人員帳號',
-        '指派危機 Lead（負責該危機的分區與團隊）',
+        '「新增危機」分頁建立危機',
+        '「人員管理」新增帳號並指派 Lead',
         'Lead 至營運地圖畫分區',
         'Lead 指派 Coordinator 到各分區',
         '於營運地圖或儀表板審核回報；必要時執行歸檔',
@@ -276,7 +280,7 @@ export function OpsDashboard() {
     : isLeadForSelected
       ? [
           '至營運地圖為目前危機畫分區',
-          '指派 Coordinator 到各分區',
+          '「人員管理」指派 Coordinator 到各分區',
           '於營運地圖或儀表板審核回報',
           '於營運地圖執行危機歸檔（設定時間窗後預覽／執行）',
         ]
@@ -284,6 +288,21 @@ export function OpsDashboard() {
           `至${OPS_LABELS.map}或${OPS_LABELS.dashboard}查看指派分區內的回報`,
           '點選回報標記審核或加旗標',
         ];
+
+  const tabs = useMemo(() => {
+    const items: Array<{ id: OpsTabId; label: string }> = [
+      { id: 'overview', label: '總覽' },
+      { id: 'crises', label: '危機管理' },
+    ];
+    if (isAdmin) items.push({ id: 'create-crisis', label: '新增危機' });
+    if (isAdmin || canAssignCoord) items.push({ id: 'team', label: '人員管理' });
+    if (isAdmin) items.push({ id: 'audit', label: '稽核紀錄' });
+    return items;
+  }, [isAdmin, canAssignCoord]);
+
+  useEffect(() => {
+    if (!tabs.some((t) => t.id === activeTab)) setActiveTab('overview');
+  }, [tabs, activeTab]);
 
   return (
     <section className="card ops-dashboard">
@@ -315,48 +334,96 @@ export function OpsDashboard() {
         </div>
       )}
 
-      <section className="ops-dash-section ops-dash-workflow">
-        <h2>營運流程</h2>
-        <ol className="ops-workflow-steps">
-          {workflowSteps.map((step, i) => (
-            <li key={i}>{step}</li>
-          ))}
-        </ol>
-        <p className="muted ops-workflow-hint">
-          危機 → 指派 Lead → Lead 畫分區 → 指派 Coordinator → 審核回報／歸檔
-        </p>
-      </section>
+      <OpsTabs tabs={tabs} active={activeTab} onChange={(id) => setActiveTab(id as OpsTabId)} />
 
-      <section className="ops-dash-section" id="crises">
-        <h2>危機管理</h2>
-        {crises.length > 0 && (
-          <label className="ops-field">
-            目前操作危機
-            <select value={selectedCrisisId} onChange={(e) => setSelectedCrisisId(e.target.value)}>
-              {crises.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {crisisLabel(c)} ({c.archive_status})
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {isAdmin && (
+      {activeTab === 'overview' && (
+        <section className="ops-dash-section ops-dash-workflow">
+          <h2>營運流程</h2>
+          <ol className="ops-workflow-steps">
+            {workflowSteps.map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+          <p className="muted ops-workflow-hint">
+            危機 → 指派 Lead → Lead 畫分區 → 指派 Coordinator → 審核回報／歸檔
+          </p>
+          {crises.length > 0 && (
+            <p>
+              <Link to={`/ops/map?crisis_id=${selectedCrisisId}`} className="ops-dash-inline-link">
+                前往{OPS_LABELS.map} →
+              </Link>
+            </p>
+          )}
+        </section>
+      )}
+
+      {activeTab === 'crises' && (
+        <section className="ops-dash-section" id="crises">
+          <h2>危機管理</h2>
+          <p className="muted">檢視危機列表、選擇目前操作危機，並前往地圖畫分區。</p>
+          {crises.length > 0 && (
+            <label className="ops-field">
+              目前操作危機
+              <select className="ops-input" value={selectedCrisisId} onChange={(e) => setSelectedCrisisId(e.target.value)}>
+                {crises.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {crisisLabel(c)} ({c.archive_status})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <ul className="ops-crisis-list">
+            {crises.map((c) => {
+              const zoneCount = zones.filter((z) => z.crisis_id === c.id).length;
+              const leads = opsUsers.flatMap((u) =>
+                (u.crisis_lead_assignments ?? [])
+                  .filter((a) => a.crisis_id === c.id)
+                  .map(() => u.email),
+              );
+              return (
+                <li key={c.id}>
+                  <strong>{crisisLabel(c)}</strong>
+                  <span className="muted"> · {c.slug} · {zoneCount} 個分區</span>
+                  {leads.length > 0 && <span className="muted"> · Lead：{leads.join('、')}</span>}
+                  <Link to={`/ops/map?crisis_id=${c.id}`} className="ops-dash-inline-link">
+                    至{OPS_LABELS.map} →
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+          {crises.length === 0 && (
+            <p className="muted">
+              尚無危機。{isAdmin ? '請至「新增危機」分頁建立。' : '請聯絡系統管理員。'}
+            </p>
+          )}
+        </section>
+      )}
+
+      {activeTab === 'create-crisis' && isAdmin && (
+        <section className="ops-dash-section">
+          <h2>新增危機</h2>
+          <p className="muted">建立後請至「人員管理」指派危機 Lead，再由 Lead 至營運地圖畫分區。</p>
           <div className="ops-dash-form">
-            <h3>新增危機</h3>
-            <p className="muted">僅系統管理員可建立。建立後請指派危機 Lead，再由 Lead 至營運地圖畫分區。</p>
-            <input
-              className="ops-input"
-              placeholder="slug（英文，如 taipei-flood-2026）"
-              value={newCrisisSlug}
-              onChange={(e) => setNewCrisisSlug(e.target.value)}
-            />
-            <input
-              className="ops-input"
-              placeholder="顯示名稱（繁中）"
-              value={newCrisisName}
-              onChange={(e) => setNewCrisisName(e.target.value)}
-            />
+            <label className="ops-field">
+              <span>Slug（英文識別）</span>
+              <input
+                className="ops-input"
+                placeholder="taipei-flood-2026"
+                value={newCrisisSlug}
+                onChange={(e) => setNewCrisisSlug(e.target.value)}
+              />
+            </label>
+            <label className="ops-field">
+              <span>顯示名稱（繁中）</span>
+              <input
+                className="ops-input"
+                placeholder="2026 台北水患"
+                value={newCrisisName}
+                onChange={(e) => setNewCrisisName(e.target.value)}
+              />
+            </label>
             <button type="button" onClick={createCrisis} disabled={busy}>
               {busy ? '建立中…' : '建立危機'}
             </button>
@@ -364,35 +431,12 @@ export function OpsDashboard() {
               <p className={crisisFormMsg.startsWith('已建立') ? 'ops-form-ok' : 'error'}>{crisisFormMsg}</p>
             )}
           </div>
-        )}
-        <ul className="ops-crisis-list">
-          {crises.map((c) => {
-            const zoneCount = zones.filter((z) => z.crisis_id === c.id).length;
-            const leads = opsUsers.flatMap((u) =>
-              (u.crisis_lead_assignments ?? [])
-                .filter((a) => a.crisis_id === c.id)
-                .map(() => u.email),
-            );
-            return (
-              <li key={c.id}>
-                <strong>{crisisLabel(c)}</strong>
-                <span className="muted"> · {c.slug} · {zoneCount} 個分區</span>
-                {leads.length > 0 && <span className="muted"> · Lead：{leads.join('、')}</span>}
-                {selectedCrisisId === c.id && (
-                  <Link to={`/ops/map?crisis_id=${c.id}`} className="ops-dash-inline-link">
-                    至{OPS_LABELS.map}畫分區 →
-                  </Link>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-        {crises.length === 0 && <p className="muted">尚無危機。{isAdmin ? '請使用上方表單建立。' : '請聯絡系統管理員。'}</p>}
-      </section>
+        </section>
+      )}
 
-      {(isAdmin || canAssignCoord) && (
+      {activeTab === 'team' && (isAdmin || canAssignCoord) && (
         <section className="ops-dash-section" id="team">
-          <h2>團隊管理</h2>
+          <h2>人員管理</h2>
           {isAdmin && (
             <div className="ops-dash-form">
               <h3>新增營運人員</h3>
@@ -547,7 +591,7 @@ export function OpsDashboard() {
         </section>
       )}
 
-      {isAdmin && (
+      {activeTab === 'audit' && isAdmin && (
         <section className="ops-dash-section">
           <h2>稽核紀錄</h2>
           <ul className="ops-audit-list">

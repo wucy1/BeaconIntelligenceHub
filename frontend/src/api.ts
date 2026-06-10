@@ -56,7 +56,7 @@ function isTransientFetchError(e: unknown): boolean {
   return false;
 }
 
-function connectionErrorMessage(url: string): string {
+function connectionErrorMessage(): string {
   if (isLocalDevHost()) {
     return '無法連線本機 API，請確認 uvicorn 已啟動（port 8000）。';
   }
@@ -99,10 +99,10 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   }
 
   if (lastError instanceof DOMException && lastError.name === 'AbortError') {
-    throw new Error(`API 請求逾時（${DEFAULT_TIMEOUT_MS / 1000}s）。${connectionErrorMessage(url)}`);
+    throw new Error(`API 請求逾時（${DEFAULT_TIMEOUT_MS / 1000}s）。${connectionErrorMessage()}`);
   }
   if (lastError instanceof TypeError || lastError instanceof DOMException) {
-    throw new Error(`${connectionErrorMessage(url)}`);
+    throw new Error(`${connectionErrorMessage()}`);
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }

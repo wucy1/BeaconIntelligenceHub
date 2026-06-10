@@ -2149,7 +2149,7 @@ button.linkish {
 
 .ops-center-panel {
   width: 100%;
-  max-width: 720px;
+  max-width: 900px;
 }
 
 .ops-center-panel.ops-center-narrow {
@@ -2162,6 +2162,95 @@ button.linkish {
 
 .ops-login-card {
   margin: 0;
+}
+
+.ops-login-card h1 {
+  margin: 0 0 0.35rem;
+}
+
+.ops-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.ops-login-actions {
+  margin-top: 0.25rem;
+  padding-top: 0.25rem;
+}
+
+.ops-login-actions button {
+  min-width: 7rem;
+}
+
+.ops-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.75rem 0 0.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.ops-tab {
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ops-tab.active {
+  background: #1d4ed8;
+  color: #fff;
+  border-color: #1d4ed8;
+}
+
+.ops-tab:hover:not(.active) {
+  background: #e2e8f0;
+}
+
+.ops-vertex-handle {
+  background: transparent !important;
+  border: none !important;
+}
+
+.ops-vertex-handle span {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #1565c0;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.25);
+}
+
+.ops-vertex-handle.selected span {
+  width: 16px;
+  height: 16px;
+  border-color: #0d47a1;
+  background: #dbeafe;
+}
+
+.ops-export-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.ops-table-wrap {
+  overflow-x: auto;
+}
+
+.ops-table {
+  width: 100%;
+  font-size: 0.88rem;
 }
 
 /* —— Ops dashboard (/ops) —— */

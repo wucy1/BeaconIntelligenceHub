@@ -24,10 +24,14 @@ export function OpsShell({ children, narrow }: Props) {
       <header className="header ops-header">
         <strong>{OPS_LABELS.console}</strong>
         <nav className="ops-header-nav">
-          <Link to="/ops">{OPS_LABELS.console}</Link>
-          <Link to="/ops/map">{OPS_LABELS.map}</Link>
-          {user && <Link to="/dashboard">{OPS_LABELS.dashboard}</Link>}
-          <Link to="/">{OPS_LABELS.contributorMap}</Link>
+          {!narrow && (
+            <>
+              <Link to="/ops">{OPS_LABELS.console}</Link>
+              <Link to="/ops/map">{OPS_LABELS.map}</Link>
+              {user && <Link to="/dashboard">{OPS_LABELS.dashboard}</Link>}
+              <Link to="/">{OPS_LABELS.contributorMap}</Link>
+            </>
+          )}
           {user ? (
             <button type="button" className="ops-header-linkish" onClick={logout}>
               {OPS_LABELS.logout}
