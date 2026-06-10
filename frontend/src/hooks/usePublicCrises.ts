@@ -124,11 +124,11 @@ export function usePublicCrises() {
       setZones([]);
       return;
     }
+    setZones([]);
     let cancelled = false;
 
     const loadZones = async () => {
       if (!navigator.onLine) {
-        setZones([]);
         return;
       }
       try {

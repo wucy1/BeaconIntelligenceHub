@@ -137,9 +137,8 @@ export function MapPage() {
   bboxRef.current = bbox;
 
   const crisisId = selectedCrisisId;
-  const mapCenterStorageKey = crisisId
-    ? `${MAP_CENTER_STORAGE_KEY_PREFIX}:${crisisId}`
-    : `${MAP_CENTER_STORAGE_KEY_PREFIX}:default`;
+  /** 全站共用視角；切換危機時不跳地圖位置 */
+  const mapCenterStorageKey = `${MAP_CENTER_STORAGE_KEY_PREFIX}:view`;
 
   const [zoneFitTick, setZoneFitTick] = useState(0);
   const zoneFitBounds = useMemo(() => {
@@ -162,18 +161,11 @@ export function MapPage() {
       return null;
     }
   }, [mapCenterStorageKey]);
-  const zoneCenter = useMemo(() => {
-    if (!zoneFitBounds) return null;
-    const c = zoneFitBounds.getCenter();
-    return { lat: c.lat, lng: c.lng };
-  }, [zoneFitBounds]);
-
   const mapCenter = useMemo((): [number, number] => {
     if (geo.position) return [geo.position.lat, geo.position.lng];
     if (savedCenter) return [savedCenter.lat, savedCenter.lng];
-    if (zoneCenter) return [zoneCenter.lat, zoneCenter.lng];
     return DEFAULT_CENTER;
-  }, [geo.position, savedCenter, zoneCenter]);
+  }, [geo.position, savedCenter]);
   const tileCenter = useMemo(() => {
     if (viewCenter) return viewCenter;
     const fromView = centerFromBbox(bbox);
@@ -641,10 +633,6 @@ export function MapPage() {
     [locale],
   );
 
-  useEffect(() => {
-    if (publicZones.length > 0) setZoneFitTick((n) => n + 1);
-  }, [selectedCrisisId, publicZones]);
-
   if (crisesLoading) {
     return <p className="map-status">{t('common.loading')}</p>;
   }
@@ -949,7 +937,11 @@ export function MapPage() {
               ))}
             </select>
             {publicZones.length > 0 && (
-              <span className="map-zone-count">{t('map.crisis.zoneCount', { count: publicZones.length })}</span>
+              <span className="map-zone-count">
+                {t('map.crisis.zoneCount', { count: publicZones.length })}
+                {' · '}
+                {t('map.crisis.zoneHint')}
+              </span>
             )}
           </div>
           <span
@@ -1044,17 +1036,6 @@ export function MapPage() {
         />
       )}
 
-      {publicZones.length > 0 && (
-        <button
-          type="button"
-          className="map-fab-area"
-          title={t('map.crisis.showZones')}
-          onClick={() => setZoneFitTick((n) => n + 1)}
-        >
-          ⊞
-        </button>
-      )}
-
       <button
         type="button"
         className="map-fab-report"
@@ -1063,6 +1044,18 @@ export function MapPage() {
       >
         +
       </button>
+
+      {publicZones.length > 0 && (
+        <button
+          type="button"
+          className="map-fab-zones"
+          title={t('map.crisis.showZones')}
+          aria-label={t('map.crisis.showZones')}
+          onClick={() => setZoneFitTick((n) => n + 1)}
+        >
+          ⊞
+        </button>
+      )}
 
       <button
         type="button"

@@ -586,18 +586,18 @@ select {
   cursor: pointer;
 }
 
-.map-fab-area {
+.map-fab-zones {
   position: absolute;
   right: 0.75rem;
-  bottom: calc(13rem + env(safe-area-inset-bottom, 0px));
+  bottom: calc(8.25rem + env(safe-area-inset-bottom, 0px));
   z-index: 500;
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: none;
+  border: 1px solid #cbd5e1;
   background: #fff;
-  color: #334155;
-  font-size: 1.1rem;
+  color: #475569;
+  font-size: 1.15rem;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
   cursor: pointer;
 }
