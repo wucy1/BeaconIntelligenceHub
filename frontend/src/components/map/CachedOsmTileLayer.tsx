@@ -15,31 +15,16 @@ export type OfflineZoomLimits = {
   maxZoom: number;
 };
 
-async function loadTileInto(
-  img: HTMLImageElement,
-  z: number,
-  x: number,
-  y: number,
-  allowNetwork: boolean,
-): Promise<boolean> {
-  const cached = await getTileBlob(z, x, y);
-  if (cached) {
-    img.src = URL.createObjectURL(cached);
-    return true;
-  }
-  if (!allowNetwork) return false;
-
-  try {
-    const res = await fetch(osmTileUrl(z, x, y), { mode: 'cors', credentials: 'omit' });
-    if (!res.ok) return false;
-    const blob = await res.blob();
-    if (!blob.size) return false;
-    await putTileBlob(z, x, y, blob);
-    img.src = URL.createObjectURL(blob);
-    return true;
-  } catch {
-    return false;
-  }
+function cacheTileFromUrl(z: number, x: number, y: number, url: string): void {
+  void fetch(url, { mode: 'cors', credentials: 'omit' })
+    .then(async (res) => {
+      if (!res.ok) return;
+      const blob = await res.blob();
+      if (blob.size) await putTileBlob(z, x, y, blob);
+    })
+    .catch(() => {
+      /* ignore background cache failures */
+    });
 }
 
 const CachedLayer = L.TileLayer.extend({
@@ -47,30 +32,42 @@ const CachedLayer = L.TileLayer.extend({
     const tile = document.createElement('img') as HTMLImageElement;
     tile.alt = '';
     tile.setAttribute('role', 'presentation');
+    tile.crossOrigin = 'anonymous';
 
-    L.DomEvent.on(tile, 'load', () => done(undefined, tile));
-    L.DomEvent.on(tile, 'error', () => {
-      const { x, y } = coords;
-      const z = coords.z;
-      const allowNetwork = typeof navigator !== 'undefined' ? navigator.onLine : true;
-      window.setTimeout(() => {
-        void loadTileInto(tile, z, x, y, allowNetwork).then((ok) => {
-          if (!ok && !tile.src) tile.style.background = '#d4d4d8';
-        });
-      }, 280);
-      done(undefined, tile);
+    let finished = false;
+    const finish = (err?: Error) => {
+      if (finished) return;
+      finished = true;
+      done(err, tile);
+    };
+
+    L.DomEvent.on(tile, 'load', () => {
+      finish();
+      const src = tile.src;
+      if (src.startsWith('http')) {
+        const { x, y } = coords;
+        cacheTileFromUrl(coords.z, x, y, src);
+      }
     });
+    L.DomEvent.on(tile, 'error', () => finish());
 
     const { x, y } = coords;
     const z = coords.z;
-    const allowNetwork = typeof navigator !== 'undefined' ? navigator.onLine : true;
+    const online = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
-    void loadTileInto(tile, z, x, y, allowNetwork).then((ok) => {
-      if (!ok && !tile.src) {
-        tile.style.background = '#d4d4d8';
-        done(undefined, tile);
+    void (async () => {
+      const cached = await getTileBlob(z, x, y);
+      if (cached) {
+        tile.src = URL.createObjectURL(cached);
+        return;
       }
-    });
+      if (!online) {
+        tile.style.background = '#d4d4d8';
+        finish();
+        return;
+      }
+      tile.src = osmTileUrl(z, x, y);
+    })();
 
     return tile;
   },
@@ -91,8 +88,7 @@ export function CachedOsmTileLayer({ offlineZoomLimits }: Props) {
       attribution: ATTRIBUTION,
       maxZoom: 19,
       crossOrigin: true,
-      keepBuffer: 6,
-      updateWhenIdle: false,
+      keepBuffer: 4,
     });
     layer.addTo(map);
 

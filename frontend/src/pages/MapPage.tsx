@@ -91,6 +91,7 @@ export function MapPage() {
   const [mapMode, setMapMode] = useState<MapMode>('all');
   const [bbox, setBbox] = useState<string | null>(null);
   const [viewCenter, setViewCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [viewZoom, setViewZoom] = useState<number | null>(null);
   const [buildings, setBuildings] = useState<GeoJSON.FeatureCollection>({
     type: 'FeatureCollection',
     features: [],
@@ -153,22 +154,27 @@ export function MapPage() {
     return bounds.isValid() ? bounds : null;
   }, [publicZones]);
 
-  const savedCenter = useMemo((): { lat: number; lng: number } | null => {
+  const savedView = useMemo((): { lat: number; lng: number; zoom: number } | null => {
     try {
       const raw = localStorage.getItem(mapCenterStorageKey);
       if (!raw) return null;
-      const parsed = JSON.parse(raw) as { lat?: number; lng?: number };
+      const parsed = JSON.parse(raw) as { lat?: number; lng?: number; zoom?: number };
       if (typeof parsed.lat !== 'number' || typeof parsed.lng !== 'number') return null;
-      return { lat: parsed.lat, lng: parsed.lng };
+      return {
+        lat: parsed.lat,
+        lng: parsed.lng,
+        zoom: typeof parsed.zoom === 'number' ? parsed.zoom : DEFAULT_ZOOM,
+      };
     } catch {
       return null;
     }
   }, [mapCenterStorageKey]);
   const mapCenter = useMemo((): [number, number] => {
+    if (savedView) return [savedView.lat, savedView.lng];
     if (geo.position) return [geo.position.lat, geo.position.lng];
-    if (savedCenter) return [savedCenter.lat, savedCenter.lng];
     return DEFAULT_CENTER;
-  }, [geo.position, savedCenter]);
+  }, [geo.position, savedView]);
+  const mapZoom = savedView?.zoom ?? DEFAULT_ZOOM;
   const tileCenter = useMemo(() => {
     if (viewCenter) return viewCenter;
     const fromView = centerFromBbox(bbox);
@@ -496,17 +502,26 @@ export function MapPage() {
     // 新增回報流程中，禁止自動置中/放大，避免圖釘看起來「漂移」。
     if (mapMode === 'new') return;
     autoFlewToUserRef.current = true;
+    if (savedView) return;
     setFlyTarget({ lat: geo.position.lat, lng: geo.position.lng });
-  }, [geo.position, mapMode]);
+  }, [geo.position, mapMode, savedView]);
+
+  const onViewChange = useCallback((view: { lat: number; lng: number; zoom: number }) => {
+    setViewCenter({ lat: view.lat, lng: view.lng });
+    setViewZoom(view.zoom);
+  }, []);
 
   useEffect(() => {
-    if (!viewCenter) return;
+    if (!viewCenter || viewZoom == null) return;
     try {
-      localStorage.setItem(mapCenterStorageKey, JSON.stringify(viewCenter));
+      localStorage.setItem(
+        mapCenterStorageKey,
+        JSON.stringify({ lat: viewCenter.lat, lng: viewCenter.lng, zoom: viewZoom }),
+      );
     } catch {
       // ignore storage failures
     }
-  }, [viewCenter, mapCenterStorageKey]);
+  }, [viewCenter, viewZoom, mapCenterStorageKey]);
 
   const refreshPendingReports = useCallback(() => {
     void listPendingSummaries()
@@ -711,11 +726,11 @@ export function MapPage() {
         onMarkerViewDetails={onMarkerViewDetails}
         markerPopupLabels={markerPopupLabels}
         onBboxChange={setBbox}
-        onViewCenterChange={setViewCenter}
+        onViewChange={onViewChange}
         flyTo={flyTarget}
         initialCenter={mapCenter}
-        initialZoom={DEFAULT_ZOOM}
-        crisisId={crisisId}
+        initialZoom={mapZoom}
+        savedView={savedView}
         crisisZones={publicZones}
         zoneFitBounds={zoneFitBounds}
         zoneFitTick={zoneFitTick}

@@ -54,11 +54,11 @@ type Props = {
     siteDemolished: string;
   };
   onBboxChange: (bbox: string) => void;
-  onViewCenterChange?: (center: { lat: number; lng: number }) => void;
+  onViewChange?: (view: { lat: number; lng: number; zoom: number }) => void;
   flyTo?: MapFlyTarget | null;
   initialCenter: [number, number];
   initialZoom: number;
-  crisisId?: string;
+  savedView?: { lat: number; lng: number; zoom: number } | null;
   crisisBounds?: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   crisisZones?: Array<{ id: string; name: string; geom: GeoJSON.Polygon }>;
   fitBoundsTick?: number;
@@ -134,27 +134,53 @@ function BboxWatcher({ onBboxChange }: { onBboxChange: (bbox: string) => void })
   return null;
 }
 
-function CenterWatcher({
-  onViewCenterChange,
+function ViewWatcher({
+  onViewChange,
 }: {
-  onViewCenterChange?: (center: { lat: number; lng: number }) => void;
+  onViewChange?: (view: { lat: number; lng: number; zoom: number }) => void;
 }) {
   const map = useMap();
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const emit = () => {
-    if (!onViewCenterChange) return;
+    if (!onViewChange) return;
     const c = map.getCenter();
-    onViewCenterChange({ lat: c.lat, lng: c.lng });
+    onViewChange({ lat: c.lat, lng: c.lng, zoom: map.getZoom() });
+  };
+
+  const scheduleEmit = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(emit, 200);
   };
 
   useMapEvents({
-    move: emit,
-    zoom: emit,
+    moveend: scheduleEmit,
+    zoomend: scheduleEmit,
   });
 
   useEffect(() => {
     emit();
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
   }, [map]);
+
+  return null;
+}
+
+function MapViewRestore({
+  view,
+}: {
+  view: { lat: number; lng: number; zoom: number } | null | undefined;
+}) {
+  const map = useMap();
+  const appliedRef = useRef(false);
+
+  useEffect(() => {
+    if (!view || appliedRef.current) return;
+    appliedRef.current = true;
+    map.setView([view.lat, view.lng], view.zoom, { animate: false });
+  }, [view, map]);
 
   return null;
 }
@@ -225,36 +251,6 @@ function MapRailZoom() {
     </div>,
     host,
   );
-}
-
-function MapViewStabilizer({
-  crisisId,
-  zoneCount,
-}: {
-  crisisId: string;
-  zoneCount: number;
-}) {
-  const map = useMap();
-
-  useEffect(() => {
-    const refresh = () => {
-      map.invalidateSize({ pan: false });
-      map.eachLayer((layer) => {
-        if (typeof (layer as L.TileLayer).redraw === 'function') {
-          (layer as L.TileLayer).redraw();
-        }
-      });
-    };
-
-    const raf = requestAnimationFrame(refresh);
-    const timer = window.setTimeout(refresh, 150);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.clearTimeout(timer);
-    };
-  }, [crisisId, zoneCount, map]);
-
-  return null;
 }
 
 function FitLatLngBoundsOnce({
@@ -356,11 +352,11 @@ export function ContributorMap({
   onMarkerViewDetails,
   markerPopupLabels,
   onBboxChange,
-  onViewCenterChange,
+  onViewChange,
   flyTo,
   initialCenter,
   initialZoom,
-  crisisId = '',
+  savedView = null,
   crisisBounds,
   crisisZones = [],
   fitBoundsTick = 0,
@@ -431,7 +427,7 @@ export function ContributorMap({
       zoomControl={false}
     >
       <MapRailZoom />
-      {crisisId && <MapViewStabilizer crisisId={crisisId} zoneCount={crisisZones.length} />}
+      <MapViewRestore view={savedView} />
       <CachedOsmTileLayer offlineZoomLimits={offlineZoomLimits} />
       {downloadPreview && (
         <DownloadPreviewLayer
@@ -448,7 +444,7 @@ export function ContributorMap({
         />
       )}
       <BboxWatcher onBboxChange={onBboxChange} />
-      <CenterWatcher onViewCenterChange={onViewCenterChange} />
+      <ViewWatcher onViewChange={onViewChange} />
       <FlyTo target={flyTo} />
       <MapPlaceClick enabled={mapMode === 'new'} onPlace={onMapPlace} />
       {crisisZones.map((z) => {

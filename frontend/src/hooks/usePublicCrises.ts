@@ -49,11 +49,11 @@ function pickCrisisId(items: PublicCrisis[], preferred?: string): string {
 }
 
 export function usePublicCrises() {
-  const [crises, setCrises] = useState<PublicCrisis[]>([]);
-  const [selectedId, setSelectedId] = useState('');
+  const [crises, setCrises] = useState<PublicCrisis[]>(() => readCachedCrises());
+  const [selectedId, setSelectedId] = useState(() => pickCrisisId(readCachedCrises()));
   const [zones, setZones] = useState<PublicZone[]>([]);
   const [zonesLoading, setZonesLoading] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => readCachedCrises().length === 0);
   const [error, setError] = useState<string | null>(null);
   const [needsFirstOnline, setNeedsFirstOnline] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -73,12 +73,12 @@ export function usePublicCrises() {
     let cancelled = false;
 
     const loadCrises = async () => {
-      setLoading(true);
+      const cached = readCachedCrises();
+      if (cached.length === 0) setLoading(true);
       setError(null);
       setNeedsFirstOnline(false);
 
       if (!navigator.onLine) {
-        const cached = readCachedCrises();
         if (cancelled) return;
         if (cached.length > 0) {
           setCrises(cached);
