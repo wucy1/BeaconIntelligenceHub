@@ -119,21 +119,23 @@ def report_ids_active_crisis_in_bbox(
                   {hash_filter}
                   {_BBOX_INTERSECT}
                   AND (
-                    r.crisis_id = CAST(:cid AS uuid)
-                    OR EXISTS (
-                      SELECT 1 FROM report_crisis_links l
-                      WHERE l.report_id = r.id AND l.crisis_id = CAST(:cid AS uuid)
-                    )
-                  )
-                  AND (
-                    NOT EXISTS (SELECT 1 FROM zones z WHERE z.crisis_id = CAST(:cid AS uuid))
-                    OR EXISTS (
+                    EXISTS (
                       SELECT 1 FROM zones z
                       WHERE z.crisis_id = CAST(:cid AS uuid)
                         AND (
                           (r.geom IS NOT NULL AND ST_Intersects(r.geom, z.geom))
                           OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
                         )
+                    )
+                    OR (
+                      NOT EXISTS (SELECT 1 FROM zones z WHERE z.crisis_id = CAST(:cid AS uuid))
+                      AND (
+                        r.crisis_id = CAST(:cid AS uuid)
+                        OR EXISTS (
+                          SELECT 1 FROM report_crisis_links l
+                          WHERE l.report_id = r.id AND l.crisis_id = CAST(:cid AS uuid)
+                        )
+                      )
                     )
                   )
                 ORDER BY r.captured_at_client DESC

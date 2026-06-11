@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from geoalchemy2.shape import from_shape
 from shapely.geometry import shape
 from sqlalchemy import text
@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import SessionLocal, get_db
+from app.database import get_db
 from app.models import Building, Report, ReportImage
 from app.r2_storage import object_exists, r2_client, r2_enabled, upload_via_api
 from app.image_urls import thumb_url_for_report
@@ -29,30 +29,6 @@ from app.public_classify import apply_auto_classification, get_unspecified_crisi
 from app.validation import validate_report_payload
 
 router = APIRouter(prefix="/v1/reports", tags=["reports"])
-
-
-def _classify_report_after_create(
-    report_id: UUID,
-    geom_geojson: dict | None,
-    building_id: UUID | None,
-    captured_at: datetime,
-) -> None:
-    """Best-effort auto-classify after report is saved; failures do not affect the submit response."""
-    db = SessionLocal()
-    try:
-        apply_auto_classification(
-            db,
-            report_id=report_id,
-            geom_geojson=geom_geojson,
-            building_id=building_id,
-            captured_at=captured_at,
-        )
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        print(f"[BIH] auto_classify deferred failed for {report_id}: {exc}")
-    finally:
-        db.close()
 
 
 def _validate_location(payload: ReportCreate) -> None:
@@ -78,7 +54,6 @@ def _assert_owner(report: Report, x_device_id: str | None) -> None:
 @router.post("", response_model=ReportCreated, status_code=201)
 def create_report(
     payload: ReportCreate,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     x_device_id: str | None = Header(None, alias="X-Device-Id"),
 ) -> ReportCreated:
@@ -184,13 +159,18 @@ def create_report(
         err = str(getattr(exc, "orig", exc))
         raise HTTPException(status_code=500, detail=f"Report constraint error: {err}") from exc
     db.refresh(report)
-    background_tasks.add_task(
-        _classify_report_after_create,
-        report.id,
-        payload.geom,
-        payload.building_id,
-        payload.captured_at_client,
-    )
+    try:
+        apply_auto_classification(
+            db,
+            report_id=report.id,
+            geom_geojson=payload.geom,
+            building_id=payload.building_id,
+            captured_at=payload.captured_at_client,
+        )
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[BIH] auto_classify best-effort failed for {report.id}: {exc}")
     return ReportCreated(
         report_id=report.id,
         received_at_server=report.received_at_server,
