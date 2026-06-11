@@ -30,6 +30,7 @@ import { MapRailZoom } from './MapRailZoom';
 import { DownloadPreviewLayer } from './DownloadPreviewLayer';
 import { OfflineRegionLayers } from './OfflineRegionLayers';
 import type { MapRegionMeta } from '../../offline/tileCache';
+import { PREFETCH_ZOOM_MAX, PREFETCH_ZOOM_MIN } from '../../offline/tileMath';
 
 export type MapMarker = {
   id: string;
@@ -436,15 +437,20 @@ export function ContributorMap({
       scrollWheelZoom
       zoomControl={false}
     >
-      {offlineZoomLimits ? (
+      {!online ? (
         <>
           <OfflineOsmTileLayer />
-          <MapZoomLimits offlineZoomLimits={offlineZoomLimits} />
+          <MapZoomLimits
+            offlineZoomLimits={
+              offlineZoomLimits ?? {
+                minZoom: PREFETCH_ZOOM_MIN,
+                maxZoom: PREFETCH_ZOOM_MAX,
+              }
+            }
+          />
         </>
-      ) : online ? (
-        <OsmTileLayer />
       ) : (
-        <OfflineOsmTileLayer />
+        <OsmTileLayer />
       )}
       <MapRailZoom />
       {downloadPreview && (

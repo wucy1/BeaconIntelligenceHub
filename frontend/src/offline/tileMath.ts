@@ -4,8 +4,9 @@ export type TileCoord = { z: number; x: number; y: number };
 
 export const DEFAULT_BOX_SIDE_KM = 3;
 export const DEFAULT_RADIUS_KM = DEFAULT_BOX_SIDE_KM / 2;
+/** 街道／建物細節；OSM 標準瓦片最高為 z19 */
 export const PREFETCH_ZOOM_MIN = 14;
-export const PREFETCH_ZOOM_MAX = 17;
+export const PREFETCH_ZOOM_MAX = 18;
 export const TILE_CACHE_SCHEMA = 'v1';
 
 const OSM_SUBDOMAINS = ['a', 'b', 'c'] as const;

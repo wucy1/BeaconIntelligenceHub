@@ -277,7 +277,7 @@
   "map.offline.goToRegion": "Go to {{lat}}, {{lng}} ({{side}} km box)",
   "map.offline.useSavedTitle": "Offline map mode",
   "map.offline.useSavedBody": "Tap a saved area below or a blue box on the map to load cached tiles, then report.",
-  "map.offline.zoomRangeHint": "Selected area opens at z17; zoom freely — gray tiles mean not downloaded there.",
+  "map.offline.zoomRangeHint": "Downloads z14–z18 (building blocks visible; house numbers need higher zoom). Offline is capped at z18—no z19. Re-download if you pan outside the box or have older tiles.",
   "map.offline.useSavedHint": "You are offline — pick a saved area (map blue box) to start.",
   "map.offline.onlineRestored": "Connection is stable again. Switch back to online map mode for latest data.",
   "map.offline.onlineRestoredDismiss": "Got it",

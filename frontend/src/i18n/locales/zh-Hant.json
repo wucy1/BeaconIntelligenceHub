@@ -277,7 +277,7 @@
   "map.offline.goToRegion": "前往 {{lat}}, {{lng}}（{{side}} km 方框）",
   "map.offline.useSavedTitle": "離線地圖模式",
   "map.offline.useSavedBody": "請點選下方區域或地圖上的藍色方框，載入該處已下載地圖後再回報。",
-  "map.offline.zoomRangeHint": "選定區域後會以 z17 顯示；可自由縮放，超出已下載瓦片可能局部灰屏。",
+  "map.offline.zoomRangeHint": "下載 z14–z18（可辨識棟，門牌需更高級別）。離線最高 z18，無法放大至 z19；移出方框或舊版快取請重新下載。",
   "map.offline.useSavedHint": "已偵測離線：請選擇已下載區域（地圖藍色方框）開始作業。",
   "map.offline.onlineRestored": "連線已恢復穩定，建議切回連線地圖模式以取得最新資料。",
   "map.offline.onlineRestoredDismiss": "知道了",

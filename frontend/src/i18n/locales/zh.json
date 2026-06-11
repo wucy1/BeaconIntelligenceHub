@@ -221,7 +221,7 @@
   "map.offline.goToRegion": "前往 {{lat}}, {{lng}}（{{side}} km 方框）",
   "map.offline.useSavedTitle": "离线地图模式",
   "map.offline.useSavedBody": "请点选下方区域或地图上的蓝色方框，载入该处已下载地图后再回报。",
-  "map.offline.zoomRangeHint": "选定区域后会以 z17 显示；可自由缩放，超出已下载瓦片可能局部灰屏。",
+  "map.offline.zoomRangeHint": "下载 z14–z18（可辨识栋，门牌需更高级别）。离线最高 z18，无法放大至 z19；移出方框或旧版缓存请重新下载。",
   "map.offline.useSavedHint": "已检测离线：请选择已下载区域（地图蓝色方框）开始作业。",
   "map.offline.onlineRestored": "连线已恢复稳定，建议切回连线地图模式以取得最新资料。",
   "map.offline.onlineRestoredDismiss": "知道了",

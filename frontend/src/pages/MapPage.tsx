@@ -31,7 +31,12 @@ import {
 import type { MapRegionMeta } from '../offline/tileCache';
 import { useI18n } from '../i18n/I18nContext';
 import { getOpsToken } from '../ops/opsAuth';
-import { DEFAULT_BOX_SIDE_KM, DEFAULT_RADIUS_KM, PREFETCH_ZOOM_MAX } from '../offline/tileMath';
+import {
+  DEFAULT_BOX_SIDE_KM,
+  DEFAULT_RADIUS_KM,
+  PREFETCH_ZOOM_MAX,
+  PREFETCH_ZOOM_MIN,
+} from '../offline/tileMath';
 import {
   buildingFeatureById,
   centroidOfFeature,
@@ -191,6 +196,18 @@ export function MapPage() {
     return { lat: mapCenter[0], lng: mapCenter[1] };
   }, [bbox, geo.position, mapCenter]);
   const offlineTiles = useOfflineMapTiles(tileCenter);
+
+  /** 離線時鎖在已下載的縮放級，避免放大到無瓦片的灰屏 */
+  const offlineZoomLimits = useMemo(() => {
+    if (online) return null;
+    const active = activeRegionId
+      ? offlineTiles.regions.find((r) => r.id === activeRegionId)
+      : offlineTiles.regions[0];
+    return {
+      minZoom: active?.zMin ?? PREFETCH_ZOOM_MIN,
+      maxZoom: Math.min(active?.zMax ?? PREFETCH_ZOOM_MAX, PREFETCH_ZOOM_MAX),
+    };
+  }, [online, activeRegionId, offlineTiles.regions]);
 
   /** 中心紅框：永遠顯示，由圖層直接跟隨 map.getCenter()，不經 React state */
   const downloadPreview = useMemo(
@@ -833,7 +850,7 @@ export function MapPage() {
         onMapPlace={onMapPlace}
         onReportPinMove={onReportPinMove}
         online={online}
-        offlineZoomLimits={null}
+        offlineZoomLimits={offlineZoomLimits}
         savedRegions={offlineTiles.regions}
         activeSavedRegionId={activeRegionId}
         onSavedRegionSelect={(id) => {
@@ -961,6 +978,9 @@ export function MapPage() {
               )}
               <p className="map-offline-download-meta map-offline-legend-hint">
                 {t('map.offline.previewBoxHint')}
+              </p>
+              <p className="map-offline-download-meta map-offline-legend-hint">
+                {t('map.offline.zoomRangeHint')}
               </p>
               <p className="map-offline-download-meta">
                 {offlineTiles.coverage

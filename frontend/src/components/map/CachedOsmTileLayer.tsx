@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { TileLayer, useMap } from 'react-leaflet';
 
 import { getTileBlob, putTileBlob } from '../../offline/tileCache';
-import { osmTileUrl } from '../../offline/tileMath';
+import { osmTileUrl, PREFETCH_ZOOM_MAX } from '../../offline/tileMath';
 
 const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>';
 export const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -85,7 +85,7 @@ export function OfflineOsmTileLayer() {
   useEffect(() => {
     const layer = new (CachedLayer as unknown as typeof L.TileLayer)('', {
       attribution: ATTRIBUTION,
-      maxZoom: 19,
+      maxZoom: PREFETCH_ZOOM_MAX,
       keepBuffer: 4,
       crossOrigin: true,
     });
@@ -107,9 +107,14 @@ export function MapZoomLimits({
   const map = useMap();
 
   useEffect(() => {
-    map.setMinZoom(offlineZoomLimits.minZoom);
-    map.setMaxZoom(offlineZoomLimits.maxZoom);
+    const { minZoom, maxZoom } = offlineZoomLimits;
+    map.setMinZoom(minZoom);
+    map.setMaxZoom(maxZoom);
     map.setMaxBounds(undefined);
+
+    const z = map.getZoom();
+    if (z > maxZoom) map.setZoom(maxZoom);
+    else if (z < minZoom) map.setZoom(minZoom);
 
     return () => {
       map.setMinZoom(DEFAULT_MIN_ZOOM);
