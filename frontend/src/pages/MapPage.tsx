@@ -74,8 +74,11 @@ export function MapPage() {
   const [reportWindowMonths, setReportWindowMonths] = useState<number | null>(null);
   const {
     crises: publicCrises,
-    selectedId: selectedCrisisId,
-    selectCrisis,
+    scope: mapScope,
+    scopeCrisisId,
+    selectScope,
+    unspecifiedCrisis,
+    activeCrises,
     zones: publicZones,
     error: crisesError,
     loading: crisesLoading,
@@ -139,9 +142,9 @@ export function MapPage() {
 
   bboxRef.current = bbox;
 
-  const crisisId = selectedCrisisId;
-  const crisisIdRef = useRef(crisisId);
-  crisisIdRef.current = crisisId;
+  const reportCrisisId = unspecifiedCrisis?.id ?? '';
+  const scopeRef = useRef(mapScope);
+  scopeRef.current = mapScope;
   const buildingsCacheRef = useRef<Record<string, GeoJSON.FeatureCollection>>({});
   const markersCacheRef = useRef<Record<string, MapMarker[]>>({});
   /** 全站共用視角；切換危機時不跳地圖位置 */
@@ -300,26 +303,64 @@ export function MapPage() {
     [geo],
   );
 
+  const buildingsCacheKey = useMemo(() => {
+    if (mapScope === 'all') return `all:${activeCrises.map((c) => c.id).join(',')}`;
+    if (mapScope === 'unspecified') return 'unspecified';
+    return mapScope;
+  }, [mapScope, activeCrises]);
+
   useEffect(() => {
-    if (!online || !crisisId || !bbox) return;
-    const requestedCrisisId = crisisId;
+    if (!online || !bbox || publicCrises.length === 0) return;
+    const requestedScope = mapScope;
     const requestedBbox = bbox;
     const timer = setTimeout(() => {
       const q = encodeURIComponent(requestedBbox);
       setBuildingsError(null);
-      apiGet<GeoJSON.FeatureCollection>(`/v1/crises/${requestedCrisisId}/buildings?bbox=${q}`)
+      const loadBuildings = async (): Promise<GeoJSON.FeatureCollection> => {
+        if (requestedScope === 'unspecified') {
+          return { type: 'FeatureCollection', features: [] };
+        }
+        const crisisIds =
+          requestedScope === 'all'
+            ? activeCrises.map((c) => c.id)
+            : [requestedScope];
+        if (crisisIds.length === 0) {
+          return { type: 'FeatureCollection', features: [] };
+        }
+        const collections = await Promise.all(
+          crisisIds.map((id) =>
+            apiGet<GeoJSON.FeatureCollection>(`/v1/crises/${id}/buildings?bbox=${q}`),
+          ),
+        );
+        const seen = new Set<string>();
+        const features: GeoJSON.Feature[] = [];
+        for (let i = 0; i < collections.length; i++) {
+          const cid = crisisIds[i];
+          for (const f of collections[i].features) {
+            const bid = (f.properties?.building_id as string) ?? '';
+            if (bid && seen.has(bid)) continue;
+            if (bid) seen.add(bid);
+            features.push({
+              ...f,
+              properties: { ...f.properties, crisis_id: cid },
+            });
+          }
+        }
+        return { type: 'FeatureCollection', features };
+      };
+      void loadBuildings()
         .then((fc) => {
-          if (bboxRef.current !== requestedBbox || crisisIdRef.current !== requestedCrisisId) return;
-          buildingsCacheRef.current[requestedCrisisId] = fc;
+          if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+          buildingsCacheRef.current[buildingsCacheKey] = fc;
           setBuildings(fc);
         })
         .catch((e: Error) => {
-          if (bboxRef.current !== requestedBbox || crisisIdRef.current !== requestedCrisisId) return;
+          if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
           setBuildingsError(e.message);
         });
     }, 350);
     return () => clearTimeout(timer);
-  }, [online, crisisId, bbox, refreshKey]);
+  }, [online, mapScope, bbox, refreshKey, publicCrises.length, activeCrises, buildingsCacheKey]);
 
   useEffect(() => {
     if (!online || !bbox || mapMode === 'new') {
@@ -327,23 +368,27 @@ export function MapPage() {
       return;
     }
     const requestedBbox = bbox;
-    const requestedCrisisId = crisisId;
+    const requestedScope = mapScope;
     const timer = setTimeout(() => {
+      const scopeParam =
+        requestedScope === 'all' || requestedScope === 'unspecified'
+          ? `scope=${requestedScope}`
+          : `scope=crisis&crisis_id=${encodeURIComponent(requestedScope)}`;
       apiGet<{ items: MapMarker[] }>(
-        `/v1/public/markers?bbox=${encodeURIComponent(requestedBbox)}&mode=${mapMode}&crisis_id=${encodeURIComponent(requestedCrisisId)}`,
+        `/v1/public/markers?bbox=${encodeURIComponent(requestedBbox)}&mode=${mapMode}&${scopeParam}`,
       )
         .then((r) => {
-          if (bboxRef.current !== requestedBbox || crisisIdRef.current !== requestedCrisisId) return;
-          markersCacheRef.current[`${requestedCrisisId}:${mapMode}`] = r.items;
+          if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+          markersCacheRef.current[`${requestedScope}:${mapMode}`] = r.items;
           setMarkers(filterMarkersInBbox(r.items, requestedBbox));
         })
         .catch(() => {
-          if (bboxRef.current !== requestedBbox || crisisIdRef.current !== requestedCrisisId) return;
+          if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
           setMarkers([]);
         });
     }, 350);
     return () => clearTimeout(timer);
-  }, [online, bbox, mapMode, crisisId, refreshKey]);
+  }, [online, bbox, mapMode, mapScope, refreshKey]);
 
   const showOthers = mapMode === 'all';
 
@@ -656,18 +701,20 @@ export function MapPage() {
   const hasPlacement = Boolean(placement.pin || placement.buildingId);
   const showPlacementBar = mapMode === 'new' && hasPlacement && !sheetOpen;
 
-  const onSelectCrisis = useCallback(
-    (id: string) => {
+  const onSelectScope = useCallback(
+    (next: string) => {
       setZoneFitTick(0);
-      const cachedBuildings = buildingsCacheRef.current[id];
+      const scopeKey =
+        next === 'all' ? `all:${activeCrises.map((c) => c.id).join(',')}` : next;
+      const cachedBuildings = buildingsCacheRef.current[scopeKey];
       if (cachedBuildings) setBuildings(cachedBuildings);
-      const cachedMarkers = markersCacheRef.current[`${id}:${mapMode}`];
+      const cachedMarkers = markersCacheRef.current[`${next}:${mapMode}`];
       if (cachedMarkers && bboxRef.current) {
         setMarkers(filterMarkersInBbox(cachedMarkers, bboxRef.current));
       }
-      selectCrisis(id);
+      selectScope(next);
     },
-    [selectCrisis, mapMode],
+    [selectScope, mapMode, activeCrises],
   );
 
   const crisisLabel = useCallback(
@@ -684,7 +731,7 @@ export function MapPage() {
     [locale],
   );
 
-  if (!crisisId) {
+  if (publicCrises.length === 0) {
     if (crisesLoading) {
       return <p className="map-status">{t('common.loading')}</p>;
     }
@@ -720,8 +767,8 @@ export function MapPage() {
       </section>
     );
   }
-  const contributionPanelOpen = activeTopPanel === 'contribution' && Boolean(crisisId);
-  const contributionFetchable = online && mapMode !== 'new' && Boolean(crisisId);
+  const contributionPanelOpen = activeTopPanel === 'contribution' && publicCrises.length > 0;
+  const contributionFetchable = online && mapMode !== 'new' && publicCrises.length > 0;
   const connectionLampClass = online
     ? 'map-connection-lamp online'
     : 'map-connection-lamp offline';
@@ -729,7 +776,7 @@ export function MapPage() {
     t(`map.offline.queueStatus.${status}` as const);
 
   const toggleTopPanel = (panel: Exclude<TopPanelKey, null>) => {
-    if (panel === 'contribution' && !crisisId) return;
+    if (panel === 'contribution' && publicCrises.length === 0) return;
     setActiveTopPanel((prev) => (prev === panel ? null : panel));
   };
 
@@ -786,7 +833,8 @@ export function MapPage() {
           {activeTopPanel === 'contribution' && (
             <>
               <ContributionStrip
-                crisisId={crisisId}
+                scope={mapScope}
+                crisisId={scopeCrisisId}
                 visible={contributionPanelOpen}
                 fetchable={contributionFetchable}
                 refreshKey={refreshKey}
@@ -987,18 +1035,26 @@ export function MapPage() {
         </div>
         <div className="map-overlay-right">
           <label className="lang-switcher map-crisis-switcher">
-            <span className="muted">{t('map.crisis.select')}</span>
+            <span className="muted">{t('map.scope.select')}</span>
             <select
               id="map-crisis-select"
-              value={crisisId}
-              onChange={(e) => onSelectCrisis(e.target.value)}
-              aria-label={t('map.crisis.select')}
+              value={mapScope}
+              onChange={(e) => onSelectScope(e.target.value)}
+              aria-label={t('map.scope.select')}
             >
-              {publicCrises.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {crisisLabel(c)}
-                </option>
-              ))}
+              <optgroup label={t('map.scope.groupMerged')}>
+                <option value="all">{t('map.scope.all')}</option>
+                <option value="unspecified">{t('map.scope.unspecified')}</option>
+              </optgroup>
+              {activeCrises.length > 0 && (
+                <optgroup label={t('map.scope.groupActive')}>
+                  {activeCrises.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {crisisLabel(c)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </label>
           <LanguageSwitcher />
@@ -1007,7 +1063,7 @@ export function MapPage() {
               type="button"
               className={activeTopPanel === 'contribution' ? 'map-overlay-tab active' : 'map-overlay-tab'}
               onClick={() => toggleTopPanel('contribution')}
-              disabled={!crisisId}
+              disabled={publicCrises.length === 0}
             >
               {t('contribution.summaryCollapsed')}
             </button>
@@ -1140,7 +1196,7 @@ export function MapPage() {
       <ReportSheet
         key={reportSheetKey}
         open={sheetOpen}
-        crisisId={crisisId}
+        crisisId={reportCrisisId}
         mode={sheetMode}
         reportId={editReportId}
         buildingId={placement.buildingId}

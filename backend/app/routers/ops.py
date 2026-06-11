@@ -12,7 +12,13 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.archive_logic import report_ids_for_archive
+from app.archive_logic import (
+    count_linked_in_scope,
+    report_ids_for_archive,
+    report_ids_to_unlink,
+)
+
+_ARCHIVE_UNLINK_LIMIT = 50_000
 from app.database import get_db
 from app.ops_reports_query import (
     report_ids_all_scoped,
@@ -562,7 +568,7 @@ def ops_archive_preview(
         zone_rows = db.query(Zone.id).filter(Zone.crisis_id == crisis_id).all()
         zone_ids = [row[0] for row in zone_rows] if zone_rows else list(principal.zone_ids)
     win_start, win_end = _archive_window(crisis, body)
-    ids = report_ids_for_archive(
+    to_link = report_ids_for_archive(
         db,
         crisis_id,
         zone_ids,
@@ -571,12 +577,24 @@ def ops_archive_preview(
         body.limit,
         exclude_already_linked=True,
     )
-    linked = db.query(ReportCrisisLink).filter(ReportCrisisLink.crisis_id == crisis_id).count()
+    to_unlink = report_ids_to_unlink(
+        db,
+        crisis_id,
+        zone_ids,
+        win_start,
+        win_end,
+        _ARCHIVE_UNLINK_LIMIT,
+    )
+    linked_in_scope = count_linked_in_scope(db, crisis_id, zone_ids, win_start, win_end)
+    total_linked = db.query(ReportCrisisLink).filter(ReportCrisisLink.crisis_id == crisis_id).count()
     return {
         "crisis_id": str(crisis_id),
-        "matched_count": len(ids),
-        "sample_report_ids": [str(i) for i in ids[:20]],
-        "already_linked_count": linked,
+        "matched_count": len(to_link),
+        "unlinked_count": len(to_unlink),
+        "linked_in_scope_count": linked_in_scope,
+        "sample_report_ids": [str(i) for i in to_link[:20]],
+        "sample_unlink_report_ids": [str(i) for i in to_unlink[:20]],
+        "already_linked_count": total_linked,
         "archive_window_start": win_start.isoformat() if win_start else None,
         "archive_window_end": win_end.isoformat() if win_end else None,
         "zone_ids": [str(z) for z in zone_ids] if zone_ids else None,
@@ -602,7 +620,7 @@ def ops_archive_run(
         zone_rows = db.query(Zone.id).filter(Zone.crisis_id == crisis_id).all()
         zone_ids = [row[0] for row in zone_rows] if zone_rows else list(principal.zone_ids)
     win_start, win_end = _archive_window(crisis, body)
-    ids = report_ids_for_archive(
+    to_link = report_ids_for_archive(
         db,
         crisis_id,
         zone_ids,
@@ -611,8 +629,26 @@ def ops_archive_run(
         body.limit,
         exclude_already_linked=True,
     )
+    to_unlink = report_ids_to_unlink(
+        db,
+        crisis_id,
+        zone_ids,
+        win_start,
+        win_end,
+        _ARCHIVE_UNLINK_LIMIT,
+    )
+    removed = 0
+    if to_unlink:
+        removed = (
+            db.query(ReportCrisisLink)
+            .filter(
+                ReportCrisisLink.crisis_id == crisis_id,
+                ReportCrisisLink.report_id.in_(to_unlink),
+            )
+            .delete(synchronize_session=False)
+        )
     created = 0
-    for rid in ids:
+    for rid in to_link:
         db.add(
             ReportCrisisLink(
                 report_id=rid,
@@ -630,10 +666,21 @@ def ops_archive_run(
         action="crisis.archive_run",
         entity_type="crisis",
         entity_id=crisis_id,
-        detail={"linked_count": created, "zone_ids": [str(z) for z in zone_ids] if zone_ids else None},
+        detail={
+            "linked_count": created,
+            "unlinked_count": removed,
+            "zone_ids": [str(z) for z in zone_ids] if zone_ids else None,
+            "archive_window_start": win_start.isoformat() if win_start else None,
+            "archive_window_end": win_end.isoformat() if win_end else None,
+        },
     )
     db.commit()
-    return {"ok": True, "linked_count": created, "crisis_id": str(crisis_id)}
+    return {
+        "ok": True,
+        "linked_count": created,
+        "unlinked_count": removed,
+        "crisis_id": str(crisis_id),
+    }
 
 
 @router.get("/audit-log")

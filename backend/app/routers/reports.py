@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import Building, Crisis, Report, ReportImage
+from app.models import Building, Report, ReportImage
 from app.r2_storage import object_exists, r2_client, r2_enabled
 from app.image_urls import thumb_url_for_report
 from app.reporter import device_id_header, reporter_hash_from_device
@@ -24,6 +24,7 @@ from app.schemas import (
 )
 from app.storage import safe_join
 from app.duplicate import find_possible_duplicate
+from app.public_classify import apply_auto_classification, get_unspecified_crisis, resolve_active_crisis_for_report
 from app.validation import validate_report_payload
 
 router = APIRouter(prefix="/v1/reports", tags=["reports"])
@@ -64,10 +65,11 @@ def create_report(
         payload.infrastructure_name,
     )
 
+    unspecified = get_unspecified_crisis(db)
     existing = (
         db.query(Report)
         .filter(
-            Report.crisis_id == payload.crisis_id,
+            Report.crisis_id == unspecified.id,
             Report.client_generated_uuid == payload.client_generated_uuid,
         )
         .first()
@@ -79,18 +81,23 @@ def create_report(
             possible_duplicate=False,
         )
 
-    crisis = db.query(Crisis).filter(Crisis.id == payload.crisis_id).first()
-    if not crisis:
-        raise HTTPException(status_code=404, detail="Crisis not found")
+    matched = resolve_active_crisis_for_report(
+        db,
+        geom_geojson=payload.geom,
+        building_id=payload.building_id,
+        captured_at=payload.captured_at_client,
+    )
+    storage_crisis_id = unspecified.id
 
     if payload.building_id:
+        building_crisis_id = matched.id if matched else unspecified.id
         b = (
             db.query(Building)
-            .filter(Building.id == payload.building_id, Building.crisis_id == payload.crisis_id)
+            .filter(Building.id == payload.building_id, Building.crisis_id == building_crisis_id)
             .first()
         )
         if not b:
-            raise HTTPException(status_code=404, detail="Building not found for this crisis")
+            raise HTTPException(status_code=404, detail="Building not found for resolved crisis")
 
     if r2_enabled(settings):
         client = r2_client(settings)
@@ -119,14 +126,14 @@ def create_report(
     reporter_hash = reporter_hash_from_device(did) if did else None
     prior_dup = find_possible_duplicate(
         db,
-        crisis_id=payload.crisis_id,
+        crisis_id=storage_crisis_id,
         building_id=payload.building_id,
         reporter_hash=reporter_hash,
         before=now,
     )
     report = Report(
         client_generated_uuid=payload.client_generated_uuid,
-        crisis_id=payload.crisis_id,
+        crisis_id=storage_crisis_id,
         building_id=payload.building_id,
         geom=geom_col,
         textual_location=payload.textual_location,
@@ -154,6 +161,13 @@ def create_report(
         checksum_sha256=payload.image.checksumSha256,
     )
     db.add(ri)
+    apply_auto_classification(
+        db,
+        report_id=report.id,
+        geom_geojson=payload.geom,
+        building_id=payload.building_id,
+        captured_at=payload.captured_at_client,
+    )
     db.commit()
     db.refresh(report)
     return ReportCreated(

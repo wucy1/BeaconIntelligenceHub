@@ -79,3 +79,66 @@ def report_ids_for_archive(
         params,
     ).scalars().all()
     return list(rows)
+
+
+def _in_scope_condition(
+    captured_from: datetime | None,
+    captured_to: datetime | None,
+    zone_ids: list[UUID] | None,
+) -> tuple[str, dict]:
+    time_filter, time_params = _time_clause(captured_from, captured_to)
+    zone_filter, zone_params = _zone_clause(zone_ids)
+    return f"(TRUE{time_filter}{zone_filter})", {**time_params, **zone_params}
+
+
+def report_ids_to_unlink(
+    db: Session,
+    crisis_id: UUID,
+    zone_ids: list[UUID] | None,
+    captured_from: datetime | None,
+    captured_to: datetime | None,
+    limit: int,
+) -> list[UUID]:
+    """Linked to this crisis but outside the current archive time/zone scope."""
+    in_scope, scope_params = _in_scope_condition(captured_from, captured_to, zone_ids)
+    params = {"cid": str(crisis_id), "lim": limit, **scope_params}
+    rows = db.execute(
+        text(
+            f"""
+            SELECT l.report_id
+            FROM report_crisis_links l
+            INNER JOIN reports r ON r.id = l.report_id
+            WHERE l.crisis_id = CAST(:cid AS uuid)
+              AND NOT {in_scope}
+            ORDER BY r.captured_at_client DESC
+            LIMIT :lim
+            """
+        ),
+        params,
+    ).scalars().all()
+    return list(rows)
+
+
+def count_linked_in_scope(
+    db: Session,
+    crisis_id: UUID,
+    zone_ids: list[UUID] | None,
+    captured_from: datetime | None,
+    captured_to: datetime | None,
+) -> int:
+    in_scope, scope_params = _in_scope_condition(captured_from, captured_to, zone_ids)
+    params = {"cid": str(crisis_id), **scope_params}
+    return int(
+        db.execute(
+            text(
+                f"""
+                SELECT COUNT(*)
+                FROM report_crisis_links l
+                INNER JOIN reports r ON r.id = l.report_id
+                WHERE l.crisis_id = CAST(:cid AS uuid)
+                  AND {in_scope}
+                """
+            ),
+            params,
+        ).scalar_one()
+    )

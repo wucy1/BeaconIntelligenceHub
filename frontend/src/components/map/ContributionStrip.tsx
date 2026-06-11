@@ -12,7 +12,8 @@ type Contribution = {
 };
 
 type Props = {
-  crisisId: string;
+  scope: string;
+  crisisId?: string | null;
   /** 面板已開啟 */
   visible: boolean;
   /** 可呼叫 API（連線且非新增模式） */
@@ -22,7 +23,8 @@ type Props = {
 };
 
 export function ContributionStrip({
-  crisisId,
+  scope,
+  crisisId = null,
   visible,
   fetchable = true,
   refreshKey = 0,
@@ -34,14 +36,18 @@ export function ContributionStrip({
   const detailsRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
-    if (!visible || !crisisId || !fetchable) {
+    if (!visible || !fetchable) {
       if (!visible) setStats(null);
       return;
     }
-    apiGet<Contribution>('/v1/public/my-contribution')
+    const scopeParam =
+      scope === 'all' || scope === 'unspecified'
+        ? `scope=${scope}`
+        : `scope=crisis&crisis_id=${encodeURIComponent(scope)}`;
+    apiGet<Contribution>(`/v1/public/my-contribution?${scopeParam}`)
       .then(setStats)
       .catch(() => setStats(null));
-  }, [visible, fetchable, crisisId, refreshKey]);
+  }, [visible, fetchable, scope, crisisId, refreshKey]);
 
   useEffect(() => {
     if (detailsRef.current) {

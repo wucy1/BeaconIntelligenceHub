@@ -109,11 +109,21 @@ export type OpsReport = {
 export type ArchivePreview = {
   crisis_id: string;
   matched_count: number;
+  unlinked_count: number;
+  linked_in_scope_count: number;
   sample_report_ids: string[];
+  sample_unlink_report_ids: string[];
   already_linked_count: number;
   archive_window_start: string | null;
   archive_window_end: string | null;
   zone_ids: string[] | null;
+};
+
+export type ArchiveRunResult = {
+  ok: boolean;
+  linked_count: number;
+  unlinked_count: number;
+  crisis_id: string;
 };
 
 export type OpsUserRecord = {

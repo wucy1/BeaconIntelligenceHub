@@ -1814,7 +1814,7 @@ button.danger {
   border-top: none;
 }
 
-/* —— Ops map-first (Phase 3) —— */
+/* —— Ops map-first —— */
 .ops-map-page .leaflet-top.leaflet-left {
   display: none;
 }
@@ -2008,21 +2008,96 @@ button.danger {
   min-width: 0;
 }
 
-.ops-map-report-count {
+.ops-map-report-count-wrap {
+  position: relative;
+  flex-direction: row;
+  align-items: center;
   justify-content: center;
+  gap: 0.35rem;
+}
+
+.ops-map-report-count {
   font-weight: 600;
   white-space: nowrap;
   font-size: 0.72rem;
   line-height: 1.25;
 }
 
-.ops-map-view-rules {
-  width: 100%;
+.ops-map-help-btn {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid #94a3b8;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ops-map-help-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.ops-map-help-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.4rem);
+  z-index: 800;
+  width: min(18rem, 70vw);
+  padding: 0.65rem 0.75rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.ops-map-help-popover-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.ops-map-help-popover p {
   margin: 0;
-  padding: 0 0.15rem;
-  font-size: 0.68rem;
-  line-height: 1.35;
-  text-align: center;
+  color: #475569;
+}
+
+.ops-archive-window-block {
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.65rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.ops-archive-window-label {
+  margin: 0 0 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.ops-archive-window-range {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.ops-archive-window-zone,
+.ops-archive-window-note {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
 }
 
 .ops-user-menu-dropdown {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiGet } from '../api';
 
@@ -13,9 +13,15 @@ export type PublicZone = {
   id: string;
   name: string;
   geom: GeoJSON.Polygon;
+  crisis_id?: string;
+  crisis_slug?: string;
+  crisis_name?: Record<string, string>;
+  color?: string;
 };
 
-const SELECT_KEY = 'bih-selected-crisis-id';
+export type MapScope = 'all' | 'unspecified' | string;
+
+const SELECT_KEY = 'bih-map-scope';
 const CRISES_CACHE_KEY = 'bih-public-crises';
 const ZONES_CACHE_KEY = 'bih-public-zones';
 
@@ -57,23 +63,35 @@ function writeCachedCrises(items: PublicCrisis[]): void {
   }
 }
 
-function pickCrisisId(items: PublicCrisis[], preferred?: string): string {
+function zonesCacheKey(scope: MapScope): string {
+  return scope;
+}
+
+function pickScope(items: PublicCrisis[], preferred?: MapScope): MapScope {
+  if (preferred === 'all' || preferred === 'unspecified') return preferred;
   if (preferred && items.some((c) => c.id === preferred)) return preferred;
   try {
     const saved = sessionStorage.getItem(SELECT_KEY);
+    if (saved === 'all' || saved === 'unspecified') return saved;
     if (saved && items.some((c) => c.id === saved)) return saved;
   } catch {
     /* ignore */
   }
-  return items[0]?.id ?? '';
+  return 'all';
+}
+
+function zonesUrl(scope: MapScope): string {
+  if (scope === 'all') return '/v1/public/zones?scope=all';
+  if (scope === 'unspecified') return '/v1/public/zones?scope=unspecified';
+  return `/v1/public/zones?scope=crisis&crisis_id=${encodeURIComponent(scope)}`;
 }
 
 export function usePublicCrises() {
   const [crises, setCrises] = useState<PublicCrisis[]>(() => readCachedCrises());
-  const [selectedId, setSelectedId] = useState(() => pickCrisisId(readCachedCrises()));
+  const [scope, setScope] = useState<MapScope>(() => pickScope(readCachedCrises()));
   const [zones, setZones] = useState<PublicZone[]>(() => {
-    const id = pickCrisisId(readCachedCrises());
-    return id ? (readZonesCache()[id] ?? []) : [];
+    const s = pickScope(readCachedCrises());
+    return readZonesCache()[zonesCacheKey(s)] ?? [];
   });
   const [zonesLoading, setZonesLoading] = useState(false);
   const [loading, setLoading] = useState(() => readCachedCrises().length === 0);
@@ -84,14 +102,26 @@ export function usePublicCrises() {
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
-  const selectCrisis = useCallback((id: string) => {
-    setSelectedId(id);
+  const selectScope = useCallback((next: MapScope) => {
+    setScope(next);
     try {
-      sessionStorage.setItem(SELECT_KEY, id);
+      sessionStorage.setItem(SELECT_KEY, next);
     } catch {
       /* ignore */
     }
   }, []);
+
+  const unspecifiedCrisis = useMemo(
+    () => crises.find((c) => c.slug === 'unspecified') ?? null,
+    [crises],
+  );
+
+  const activeCrises = useMemo(
+    () => crises.filter((c) => c.slug !== 'unspecified' && c.archive_status === 'active'),
+    [crises],
+  );
+
+  const scopeCrisisId = scope !== 'all' && scope !== 'unspecified' ? scope : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -106,10 +136,10 @@ export function usePublicCrises() {
         if (cancelled) return;
         if (cached.length > 0) {
           setCrises(cached);
-          setSelectedId((prev) => pickCrisisId(cached, prev));
+          setScope((prev) => pickScope(cached, prev));
         } else {
           setCrises([]);
-          setSelectedId('');
+          setScope('all');
           setNeedsFirstOnline(true);
         }
         setLoading(false);
@@ -121,14 +151,14 @@ export function usePublicCrises() {
         if (cancelled) return;
         setCrises(d.items);
         writeCachedCrises(d.items);
-        setSelectedId((prev) => pickCrisisId(d.items, prev));
+        setScope((prev) => pickScope(d.items, prev));
         setError(null);
       } catch (e) {
         if (cancelled) return;
-        const cached = readCachedCrises();
-        if (cached.length > 0) {
-          setCrises(cached);
-          setSelectedId((prev) => pickCrisisId(cached, prev));
+        const fallback = readCachedCrises();
+        if (fallback.length > 0) {
+          setCrises(fallback);
+          setScope((prev) => pickScope(fallback, prev));
         } else {
           setCrises([]);
           setError(e instanceof Error ? e.message : String(e));
@@ -145,13 +175,9 @@ export function usePublicCrises() {
   }, [reloadKey]);
 
   useEffect(() => {
-    if (!selectedId) {
-      setZones([]);
-      setZonesLoading(false);
-      return;
-    }
     let cancelled = false;
-    const cachedZones = zonesCacheRef.current[selectedId];
+    const key = zonesCacheKey(scope);
+    const cachedZones = zonesCacheRef.current[key];
     if (cachedZones) {
       setZones(cachedZones);
       setZonesLoading(false);
@@ -165,9 +191,9 @@ export function usePublicCrises() {
         return;
       }
       try {
-        const d = await apiGet<{ items: PublicZone[] }>(`/v1/public/zones?crisis_id=${selectedId}`);
+        const d = await apiGet<{ items: PublicZone[] }>(zonesUrl(scope));
         if (cancelled) return;
-        zonesCacheRef.current[selectedId] = d.items;
+        zonesCacheRef.current[key] = d.items;
         writeZonesCache(zonesCacheRef.current);
         setZones(d.items);
       } catch {
@@ -181,7 +207,7 @@ export function usePublicCrises() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [scope]);
 
   useEffect(() => {
     const onOnline = () => reload();
@@ -189,18 +215,25 @@ export function usePublicCrises() {
     return () => globalThis.window.removeEventListener('online', onOnline);
   }, [reload]);
 
-  const selected = crises.find((c) => c.id === selectedId) ?? null;
+  const selectedCrisis = scopeCrisisId ? crises.find((c) => c.id === scopeCrisisId) ?? null : null;
 
   return {
     crises,
-    selected,
-    selectedId,
-    selectCrisis,
+    scope,
+    scopeCrisisId,
+    selectScope,
+    unspecifiedCrisis,
+    activeCrises,
+    selectedCrisis,
     zones,
     zonesLoading,
     loading,
     error,
     reload,
     needsFirstOnline,
+    /** @deprecated use scope / scopeCrisisId */
+    selectedId: scopeCrisisId ?? unspecifiedCrisis?.id ?? '',
+    /** @deprecated use selectScope */
+    selectCrisis: selectScope,
   };
 }

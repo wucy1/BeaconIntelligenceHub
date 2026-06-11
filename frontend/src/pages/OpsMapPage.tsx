@@ -2,7 +2,7 @@ import L from 'leaflet';
 import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { isManageableCrisis } from '../ops/crisisUtils';
 import { CircleMarker, GeoJSON, MapContainer, useMap } from 'react-leaflet';
@@ -17,6 +17,7 @@ import {
   opsPatch,
   opsPost,
   type ArchivePreview,
+  type ArchiveRunResult,
   type AuditEntry,
   type OpsCrisis,
   type OpsReport,
@@ -60,6 +61,18 @@ const DAMAGE_COLOR: Record<string, string> = {
   complete: '#dc2626',
 };
 
+function formatPanelTime(value: string): string {
+  if (!value) return '—';
+  const iso = fromDatetimeLocalValue(value);
+  if (!iso) return value;
+  return new Date(iso).toLocaleString();
+}
+
+function formatIsoTime(value: string | null | undefined): string {
+  if (!value) return '—';
+  return new Date(value).toLocaleString();
+}
+
 type MapMode = 'browse' | 'draw' | 'edit';
 type PanelKey = 'zone' | 'crisis' | 'audit' | null;
 
@@ -99,6 +112,8 @@ export function OpsMapPage() {
   const [reports, setReports] = useState<OpsReport[]>([]);
   const [crisisLinkedCount, setCrisisLinkedCount] = useState(0);
   const [crisisCandidateCount, setCrisisCandidateCount] = useState(0);
+  const [viewHelpOpen, setViewHelpOpen] = useState(false);
+  const viewHelpRef = useRef<HTMLDivElement>(null);
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [preview, setPreview] = useState<ArchivePreview | null>(null);
@@ -140,6 +155,19 @@ export function OpsMapPage() {
   const isEditingShape = mapMode === 'draw' || mapMode === 'edit';
   const canSaveZone =
     zoneName.trim().length > 0 && vertices.length >= 3 && (mapMode === 'edit' || closed);
+
+  const archiveZoneLabel = selectedZone
+    ? (zones.find((z) => z.id === selectedZoneId)?.name ?? selectedZoneId ?? '—')
+    : t('ops.map.allZones');
+
+  useEffect(() => {
+    if (!viewHelpOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!viewHelpRef.current?.contains(e.target as Node)) setViewHelpOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [viewHelpOpen]);
 
   const loadZones = useCallback(async () => {
     const q = activeCrisisId ? `?crisis_id=${activeCrisisId}` : '';
@@ -440,7 +468,7 @@ export function OpsMapPage() {
   };
 
   const runArchive = async () => {
-    if (!activeCrisisId || !window.confirm('執行批次歸檔？將建立 report_crisis_links。')) return;
+    if (!activeCrisisId || !window.confirm(t('ops.map.archiveConfirm'))) return;
     setBusy(true);
     try {
       const from = fromDatetimeLocalValue(filterFrom);
@@ -451,15 +479,18 @@ export function OpsMapPage() {
         captured_from: from || null,
         captured_to: to || null,
       };
-      const r = await opsPost<{ linked_count: number }>(`/v1/ops/crises/${activeCrisisId}/archive-run`, body);
+      const r = await opsPost<ArchiveRunResult>(`/v1/ops/crises/${activeCrisisId}/archive-run`, body);
       setPreview(null);
       loadCrises();
+      loadReports();
       loadAudit();
       setErr(null);
+      const noChange = r.linked_count === 0 && r.unlinked_count === 0;
       alert(
         t('ops.map.archiveDone', {
           linked: r.linked_count,
-          hint: r.linked_count === 0 ? t('ops.map.archiveDoneZeroHint') : '',
+          unlinked: r.unlinked_count,
+          hint: noChange ? t('ops.map.archiveDoneZeroHint') : '',
         }),
       );
     } catch (e) {
@@ -605,7 +636,7 @@ export function OpsMapPage() {
         )}
         {isAdmin && (
           <button type="button" className={`ops-map-fab ${panel === 'audit' ? 'active' : ''}`} onClick={() => togglePanel('audit')}>
-            稽核
+            {t('ops.tab.audit')}
           </button>
         )}
       </div>
@@ -681,21 +712,38 @@ export function OpsMapPage() {
             <span className="ops-map-view-label">{t('ops.map.timeTo')}</span>
             <input type="datetime-local" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
           </label>
-          <span className="ops-map-chip ops-map-view-field ops-map-report-count">
-            {reportView === 'crisis'
-              ? t('ops.map.reportCountCrisis', {
-                  total: reports.length,
-                  linked: crisisLinkedCount,
-                  candidate: crisisCandidateCount,
-                })
-              : t('ops.map.reportCount', { count: reports.length })}
-          </span>
+          <div ref={viewHelpRef} className="ops-map-chip ops-map-view-field ops-map-report-count-wrap">
+            <span className="ops-map-report-count">
+              {reportView === 'crisis'
+                ? t('ops.map.reportCountCrisis', {
+                    total: reports.length,
+                    linked: crisisLinkedCount,
+                    candidate: crisisCandidateCount,
+                  })
+                : t('ops.map.reportCount', { count: reports.length })}
+            </span>
+            <button
+              type="button"
+              className="ops-map-help-btn"
+              aria-expanded={viewHelpOpen}
+              aria-label={t('ops.map.viewHelp.button')}
+              onClick={() => setViewHelpOpen((v) => !v)}
+            >
+              ?
+            </button>
+            {viewHelpOpen && (
+              <div className="ops-map-help-popover" role="dialog" aria-labelledby="ops-map-view-help-title">
+                <header className="ops-map-help-popover-header">
+                  <strong id="ops-map-view-help-title">{t('ops.map.viewHelp.title')}</strong>
+                  <button type="button" className="icon-btn" onClick={() => setViewHelpOpen(false)} aria-label={t('common.cancel')}>
+                    ×
+                  </button>
+                </header>
+                <p>{t(`ops.map.viewHelp.${reportView}`)}</p>
+              </div>
+            )}
+          </div>
         </div>
-        <p className="ops-map-view-rules muted">
-          {reportView === 'crisis' && t('ops.map.viewRules.crisis')}
-          {reportView === 'unspecified' && t('ops.map.viewRules.unspecified')}
-          {reportView === 'all' && t('ops.map.viewRules.all')}
-        </p>
         {selectedZone && (
           <button type="button" className="ops-map-chip ops-map-btn secondary" onClick={clearZoneSelection}>
             {t('ops.map.clearZone')}
@@ -808,6 +856,19 @@ export function OpsMapPage() {
               {crisisName(activeCrisis.name, activeCrisis.slug)} · {activeCrisis.archive_status}
             </p>
           )}
+          <div className="ops-archive-window-block">
+            <p className="ops-archive-window-label">{t('ops.map.archiveWindow')}</p>
+            <p className="ops-archive-window-range">
+              {t('ops.map.archiveWindowRange', {
+                from: formatPanelTime(filterFrom),
+                to: formatPanelTime(filterTo),
+              })}
+            </p>
+            <p className="muted ops-archive-window-zone">
+              {t('ops.map.archiveWindowZone', { zone: archiveZoneLabel })}
+            </p>
+            <p className="muted ops-archive-window-note">{t('ops.map.archiveWindowNote')}</p>
+          </div>
           <div className="ops-map-card-actions">
             <button type="button" onClick={runArchivePreview} disabled={busy}>
               {t('ops.map.archivePreview')}
@@ -818,15 +879,33 @@ export function OpsMapPage() {
           </div>
           {preview && (
             <div className="ops-preview-box">
-              <strong>預覽（3c）</strong>
+              <strong>{t('ops.map.archivePreviewTitle')}</strong>
+              <p className="ops-archive-window-range">
+                {t('ops.map.archiveWindowRange', {
+                  from: formatIsoTime(preview.archive_window_start),
+                  to: formatIsoTime(preview.archive_window_end),
+                })}
+              </p>
               <p>
                 {t('ops.map.archivePreviewCounts', {
                   matched: preview.matched_count,
-                  linked: preview.already_linked_count,
+                  unlinked: preview.unlinked_count,
+                  kept: preview.linked_in_scope_count,
                 })}
               </p>
               {preview.sample_report_ids.length > 0 && (
-                <p className="muted">範例：{preview.sample_report_ids.slice(0, 5).join(', ')}</p>
+                <p className="muted">
+                  {t('ops.map.archivePreviewSampleAdd', {
+                    ids: preview.sample_report_ids.slice(0, 5).join(', '),
+                  })}
+                </p>
+              )}
+              {preview.sample_unlink_report_ids.length > 0 && (
+                <p className="muted">
+                  {t('ops.map.archivePreviewSampleRemove', {
+                    ids: preview.sample_unlink_report_ids.slice(0, 5).join(', '),
+                  })}
+                </p>
               )}
             </div>
           )}
@@ -838,7 +917,7 @@ export function OpsMapPage() {
           <button type="button" className="ops-map-card-close" onClick={() => setPanel(null)}>
             ×
           </button>
-          <h3>稽核紀錄（3c）</h3>
+          <h3>{t('ops.tab.audit')}</h3>
           <ul className="ops-audit-list">
             {audit.map((a) => (
               <li key={a.id}>

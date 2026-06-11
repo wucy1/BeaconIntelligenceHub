@@ -11,7 +11,7 @@ const ZONE_STYLE: L.PathOptions = {
   interactive: false,
 };
 
-type Zone = { id: string; name: string; geom: GeoJSON.Polygon };
+type Zone = { id: string; name: string; geom: GeoJSON.Polygon; color?: string };
 
 type Props = {
   zones: Zone[];
@@ -37,13 +37,20 @@ export function CrisisZonesLayer({ zones }: Props) {
       type: 'FeatureCollection',
       features: zones.map((z) => ({
         type: 'Feature',
-        properties: { name: z.name, zoneId: z.id },
+        properties: { name: z.name, zoneId: z.id, color: z.color },
         geometry: z.geom,
       })),
     };
 
     const layer = L.geoJSON(collection, {
-      style: ZONE_STYLE,
+      style: (feature) => {
+        const color = (feature?.properties?.color as string | undefined) ?? ZONE_STYLE.color;
+        return {
+          ...ZONE_STYLE,
+          color,
+          fillColor: color,
+        };
+      },
       interactive: false,
     });
     layer.addTo(map);
