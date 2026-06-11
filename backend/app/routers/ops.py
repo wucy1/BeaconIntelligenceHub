@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.archive_logic import report_ids_for_archive
 from app.database import get_db
+from app.org_settings import get_org_settings
 from app.models import (
     Crisis,
     CrisisLeadAssignment,
@@ -891,6 +892,67 @@ def unassign_user_zone(
         db.delete(row)
         db.commit()
     return {"ok": True}
+
+
+class OrgSettingsPatchBody(BaseModel):
+    default_public_report_months: int | None = Field(None, ge=1, le=24)
+    default_ops_view_months: int | None = Field(None, ge=1, le=24)
+    show_demo_cold_start_hint: bool | None = None
+
+
+@router.get("/settings")
+def ops_get_settings(
+    principal: OpsPrincipal = Depends(require_system_admin()),
+    db: Session = Depends(get_db),
+) -> dict:
+    org = get_org_settings(db)
+    return {
+        "default_public_report_months": org.default_public_report_months,
+        "default_ops_view_months": org.default_ops_view_months,
+        "show_demo_cold_start_hint": org.show_demo_cold_start_hint,
+    }
+
+
+@router.patch("/settings")
+def ops_patch_settings(
+    body: OrgSettingsPatchBody,
+    principal: OpsPrincipal = Depends(require_system_admin()),
+    db: Session = Depends(get_db),
+) -> dict:
+    org = get_org_settings(db)
+    public_months = body.default_public_report_months or org.default_public_report_months
+    ops_months = body.default_ops_view_months or org.default_ops_view_months
+    demo_hint = org.show_demo_cold_start_hint if body.show_demo_cold_start_hint is None else body.show_demo_cold_start_hint
+    db.execute(
+        text(
+            """
+            UPDATE org_settings
+            SET default_public_report_months = :pub,
+                default_ops_view_months = :ops,
+                show_demo_cold_start_hint = :hint,
+                updated_at = now()
+            """
+        ),
+        {"pub": public_months, "ops": ops_months, "hint": demo_hint},
+    )
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="settings.update",
+        entity_type="org_settings",
+        entity_id=None,
+        detail={
+            "default_public_report_months": public_months,
+            "default_ops_view_months": ops_months,
+            "show_demo_cold_start_hint": demo_hint,
+        },
+    )
+    db.commit()
+    return {
+        "default_public_report_months": public_months,
+        "default_ops_view_months": ops_months,
+        "show_demo_cold_start_hint": demo_hint,
+    }
 
 
 @router.post("/bootstrap-admin")

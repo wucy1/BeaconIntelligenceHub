@@ -2,12 +2,13 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from sqlalchemy import text
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
 from app.image_urls import thumb_url_for_report
+from app.org_settings import effective_capture_window, get_org_settings
 from app.models import Crisis, Report, ReportImage, Zone
 from app.duplicate import find_possible_duplicate
 from app.reporter import device_id_header, reporter_hash_from_device
@@ -30,10 +31,15 @@ def _active_crisis(db: Session) -> Crisis:
 
 @router.get("/crises")
 def public_crises(db: Session = Depends(get_db)) -> dict:
-    """Ongoing crises for contributor map (excludes archived)."""
+    """Contributor map crises: unspecified + active only (no draft/archived)."""
     rows = (
         db.query(Crisis)
-        .filter(Crisis.archive_status != "archived")
+        .filter(
+            or_(
+                Crisis.slug == "unspecified",
+                Crisis.archive_status == "active",
+            )
+        )
         .order_by(Crisis.created_at.desc())
         .all()
     )
@@ -79,9 +85,18 @@ def _resolve_crisis(db: Session, crisis_id: UUID | None) -> Crisis:
     return _active_crisis(db)
 
 
+@router.get("/settings")
+def public_settings(db: Session = Depends(get_db)) -> dict:
+    org = get_org_settings(db)
+    return {
+        "default_public_report_months": org.default_public_report_months,
+    }
+
+
 @router.get("/active-window")
 def active_window(db: Session = Depends(get_db)) -> dict:
     c = _active_crisis(db)
+    org = get_org_settings(db)
     bounds = db.execute(
         text(
             """
@@ -106,6 +121,7 @@ def active_window(db: Session = Depends(get_db)) -> dict:
         "reporting_phase": "defined" if has_bounds else "unspecified",
         "starts_at": None,
         "ends_at": None,
+        "default_report_months": org.default_public_report_months,
         "is_open": True,
         "server_time": now.isoformat(),
     }
@@ -118,24 +134,56 @@ def _parse_bbox(bbox: str) -> tuple[float, float, float, float]:
     return tuple(map(float, parts))  # type: ignore[return-value]
 
 
-def _report_ids_in_bbox(
+_BBOX_INTERSECT = """
+  AND (
+    (r.geom IS NOT NULL AND ST_Intersects(
+      r.geom,
+      ST_MakeEnvelope(:minx, :miny, :maxx, :maxy, 4326)
+    ))
+    OR (b.geom IS NOT NULL AND ST_Intersects(
+      b.geom,
+      ST_MakeEnvelope(:minx, :miny, :maxx, :maxy, 4326)
+    ))
+  )
+"""
+
+_ACTIVE_CRISIS_EXCLUSION = """
+  AND NOT EXISTS (
+    SELECT 1 FROM zones z
+    JOIN crises c ON c.id = z.crisis_id
+    WHERE c.archive_status = 'active'
+      AND (
+        (r.geom IS NOT NULL AND ST_Intersects(r.geom, z.geom))
+        OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
+      )
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM report_crisis_links l
+    JOIN crises c ON c.id = l.crisis_id
+    WHERE l.report_id = r.id AND c.archive_status = 'active'
+  )
+"""
+
+
+def _report_ids_unspecified_in_bbox(
     db: Session,
-    crisis_id: UUID,
     min_lng: float,
     min_lat: float,
     max_lng: float,
     max_lat: float,
+    captured_from: datetime,
+    captured_to: datetime,
     limit: int,
     reporter_hash: str | None = None,
 ) -> list[UUID]:
-    """Reports visible in map viewport: point geom or building footprint intersects bbox."""
     hash_filter = "AND r.reporter_hash = :hash" if reporter_hash else ""
     params: dict = {
-        "cid": str(crisis_id),
         "minx": min_lng,
         "miny": min_lat,
         "maxx": max_lng,
         "maxy": max_lat,
+        "from": captured_from,
+        "to": captured_to,
         "lim": limit,
     }
     if reporter_hash:
@@ -146,17 +194,72 @@ def _report_ids_in_bbox(
                 f"""
                 SELECT r.id FROM reports r
                 LEFT JOIN buildings b ON b.id = r.building_id
-                WHERE r.crisis_id = CAST(:cid AS uuid)
+                WHERE r.captured_at_client >= :from
+                  AND r.captured_at_client <= :to
                   {hash_filter}
+                  {_BBOX_INTERSECT}
+                  {_ACTIVE_CRISIS_EXCLUSION}
+                ORDER BY r.captured_at_client DESC
+                LIMIT :lim
+                """
+            ),
+            params,
+        ).scalars().all()
+    )
+
+
+def _report_ids_active_crisis_in_bbox(
+    db: Session,
+    crisis_id: UUID,
+    min_lng: float,
+    min_lat: float,
+    max_lng: float,
+    max_lat: float,
+    captured_from: datetime,
+    captured_to: datetime,
+    limit: int,
+    reporter_hash: str | None = None,
+) -> list[UUID]:
+    hash_filter = "AND r.reporter_hash = :hash" if reporter_hash else ""
+    params: dict = {
+        "cid": str(crisis_id),
+        "minx": min_lng,
+        "miny": min_lat,
+        "maxx": max_lng,
+        "maxy": max_lat,
+        "from": captured_from,
+        "to": captured_to,
+        "lim": limit,
+    }
+    if reporter_hash:
+        params["hash"] = reporter_hash
+    return list(
+        db.execute(
+            text(
+                f"""
+                SELECT r.id FROM reports r
+                LEFT JOIN buildings b ON b.id = r.building_id
+                WHERE r.captured_at_client >= :from
+                  AND r.captured_at_client <= :to
+                  {hash_filter}
+                  {_BBOX_INTERSECT}
                   AND (
-                    (r.geom IS NOT NULL AND ST_Intersects(
-                      r.geom,
-                      ST_MakeEnvelope(:minx, :miny, :maxx, :maxy, 4326)
-                    ))
-                    OR (b.geom IS NOT NULL AND ST_Intersects(
-                      b.geom,
-                      ST_MakeEnvelope(:minx, :miny, :maxx, :maxy, 4326)
-                    ))
+                    r.crisis_id = CAST(:cid AS uuid)
+                    OR EXISTS (
+                      SELECT 1 FROM report_crisis_links l
+                      WHERE l.report_id = r.id AND l.crisis_id = CAST(:cid AS uuid)
+                    )
+                  )
+                  AND (
+                    NOT EXISTS (SELECT 1 FROM zones z WHERE z.crisis_id = CAST(:cid AS uuid))
+                    OR EXISTS (
+                      SELECT 1 FROM zones z
+                      WHERE z.crisis_id = CAST(:cid AS uuid)
+                        AND (
+                          (r.geom IS NOT NULL AND ST_Intersects(r.geom, z.geom))
+                          OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
+                        )
+                    )
                   )
                 ORDER BY r.captured_at_client DESC
                 LIMIT :lim
@@ -246,28 +349,37 @@ def public_markers(
     min_lng, min_lat, max_lng, max_lat = _parse_bbox(bbox)
 
     crisis = _resolve_crisis(db, crisis_id)
+    if crisis.slug != "unspecified" and crisis.archive_status != "active":
+        return {"items": [], "crisis_id": str(crisis.id)}
+
+    org = get_org_settings(db)
+    captured_from, captured_to = effective_capture_window(
+        months=org.default_public_report_months,
+        event_start=crisis.archive_window_start,
+        event_end=crisis.archive_window_end,
+    )
+
     reporter_hash = None
     did = device_id_header(x_device_id)
     if did:
         reporter_hash = reporter_hash_from_device(did)
 
-    if mode == "mine":
-        if not reporter_hash:
-            return {"items": []}
-        ids = _report_ids_in_bbox(
-            db,
-            crisis.id,
-            min_lng,
-            min_lat,
-            max_lng,
-            max_lat,
-            limit,
-            reporter_hash=reporter_hash,
-        )
+    bbox_args = (min_lng, min_lat, max_lng, max_lat, captured_from, captured_to, limit)
+
+    if crisis.slug == "unspecified":
+        if mode == "mine":
+            if not reporter_hash:
+                return {"items": [], "crisis_id": str(crisis.id)}
+            ids = _report_ids_unspecified_in_bbox(db, *bbox_args, reporter_hash=reporter_hash)
+        else:
+            ids = _report_ids_unspecified_in_bbox(db, *bbox_args)
     else:
-        ids = _report_ids_in_bbox(
-            db, crisis.id, min_lng, min_lat, max_lng, max_lat, limit
-        )
+        if mode == "mine":
+            if not reporter_hash:
+                return {"items": [], "crisis_id": str(crisis.id)}
+            ids = _report_ids_active_crisis_in_bbox(db, crisis.id, *bbox_args, reporter_hash=reporter_hash)
+        else:
+            ids = _report_ids_active_crisis_in_bbox(db, crisis.id, *bbox_args)
 
     rows = db.query(Report).filter(Report.id.in_(list(ids))).all() if ids else []
     if rows and ids:
