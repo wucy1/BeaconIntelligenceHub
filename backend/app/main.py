@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.config import settings
 from app.db_url import is_placeholder_database_url
@@ -72,9 +72,18 @@ async def database_unavailable(_request: Request, exc: OperationalError) -> JSON
     return _db_error_response(exc)
 
 
-@app.exception_handler(SQLAlchemyError)
-async def sqlalchemy_unavailable(_request: Request, exc: SQLAlchemyError) -> JSONResponse:
-    return _db_error_response(exc)
+@app.exception_handler(IntegrityError)
+async def data_integrity_error(_request: Request, exc: IntegrityError) -> JSONResponse:
+    orig = getattr(exc, "orig", exc)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Data constraint violation",
+            "error": str(orig),
+            "hint": "若為 link_source 檢查失敗，請在 Neon SQL Editor 執行 migration 013_auto_classify_link_source.sql。",
+        },
+    )
+
 
 origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
