@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPutRaw, sha256Hex } from '../api';
+import { apiGet, apiPost, apiPutRaw, ensureApiReady, sha256Hex } from '../api';
 import { UNSPECIFIED_CRISIS_ID } from '../constants/crisis';
 import { openOfflineDb } from './openDb';
 
@@ -98,8 +98,10 @@ export async function clearFailedReports(): Promise<number> {
 
 async function syncOne(item: PendingReport): Promise<void> {
   await updateStatus(item.id, 'syncing');
+  const crisisId = presignCrisisId(item.crisisId);
+  const payload = { ...item.payload, crisis_id: UNSPECIFIED_CRISIS_ID };
   const file = new File([item.fileBlob], 'photo.jpg', { type: item.mimeType });
-  await submitReportOnline(item.crisisId, item.payload, file);
+  await submitReportOnline(crisisId, payload, file);
   await removeReport(item.id);
 }
 
@@ -145,6 +147,7 @@ export async function submitReportOnline(
   payload: Record<string, unknown>,
   file: File,
 ): Promise<SubmitReportResult> {
+  await ensureApiReady();
   const checksum = await sha256Hex(file);
   const uploadCrisisId = presignCrisisId(crisisId);
   let presign: { putUrl: string; objectKey: string };

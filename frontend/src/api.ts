@@ -110,11 +110,35 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
 /** 喚醒 Render 後端（進入營運台時可先呼叫） */
 export async function wakeApiBackend(): Promise<boolean> {
   try {
-    const res = await apiFetch('/health');
+    await apiFetch('/health');
+    const res = await apiFetch('/health/ready');
     return res.ok;
   } catch {
     return false;
   }
+}
+
+/** 提交回報／同步佇列前：等待 API + Neon 就緒（冷啟動可能需 1–2 分鐘） */
+export async function ensureApiReady(timeoutMs = 120_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    attempt += 1;
+    try {
+      await apiFetch('/health');
+      const res = await apiFetch('/health/ready');
+      if (res.ok) {
+        const body = (await res.json()) as { ok?: boolean };
+        if (body.ok) return;
+      }
+    } catch {
+      /* retry */
+    }
+    await sleep(Math.min(2500 * attempt, 10_000));
+  }
+  throw new Error(
+    '後端尚在喚醒中（Render + Neon 常需 1–2 分鐘）。請稍後再按「立即同步」或「重新連線」。',
+  );
 }
 
 export function formatApiError(status: number, text: string): string {
