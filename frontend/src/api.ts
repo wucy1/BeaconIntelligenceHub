@@ -196,11 +196,14 @@ function resolveUploadPutUrl(url: string): string {
   try {
     const u = new URL(url);
     if (u.pathname.startsWith('/v1/uploads/receive/')) {
-      return `${API_BASE}${u.pathname}`;
+      const apiRoot = resolveApiBase('/v1/uploads/receive/x');
+      if (apiRoot) return `${apiRoot.replace(/\/$/, '')}${u.pathname}`;
+      return u.href;
     }
   } catch {
     if (url.startsWith('/v1/uploads/receive/')) {
-      return `${API_BASE}${url}`;
+      const apiRoot = resolveApiBase(url);
+      return apiRoot ? `${apiRoot.replace(/\/$/, '')}${url}` : url;
     }
   }
   return url;

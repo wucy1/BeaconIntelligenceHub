@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from geoalchemy2.shape import from_shape
 from shapely.geometry import shape
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -167,8 +168,22 @@ def create_report(
         geom_geojson=payload.geom,
         building_id=payload.building_id,
         captured_at=payload.captured_at_client,
+        matched=matched,
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        err = str(getattr(exc, "orig", exc))
+        if "link_source" in err or "auto_classify" in err:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "自動歸類寫入失敗：請在 Neon SQL Editor 執行 "
+                    "backend/db/migrations/013_auto_classify_link_source.sql"
+                ),
+            ) from exc
+        raise HTTPException(status_code=500, detail=f"Report constraint error: {err}") from exc
     db.refresh(report)
     return ReportCreated(
         report_id=report.id,

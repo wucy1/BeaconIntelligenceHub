@@ -94,12 +94,6 @@ def resolve_active_crisis_for_report(
         )
         if captured_at < captured_from or captured_at > captured_to:
             continue
-        zone_count = db.execute(
-            text("SELECT COUNT(*) FROM zones WHERE crisis_id = CAST(:cid AS uuid)"),
-            {"cid": str(crisis.id)},
-        ).scalar_one()
-        if int(zone_count) == 0:
-            continue
         if _intersects_crisis_zones(
             db,
             crisis.id,
@@ -117,15 +111,17 @@ def apply_auto_classification(
     geom_geojson: dict | None,
     building_id: UUID | None,
     captured_at: datetime,
+    matched: Crisis | None = None,
 ) -> Crisis | None:
     """Create auto_classify link when report matches an active crisis; always returns unspecified bucket."""
     unspecified = get_unspecified_crisis(db)
-    matched = resolve_active_crisis_for_report(
-        db,
-        geom_geojson=geom_geojson,
-        building_id=building_id,
-        captured_at=captured_at,
-    )
+    if matched is None:
+        matched = resolve_active_crisis_for_report(
+            db,
+            geom_geojson=geom_geojson,
+            building_id=building_id,
+            captured_at=captured_at,
+        )
     if not matched:
         return unspecified
     existing = (
