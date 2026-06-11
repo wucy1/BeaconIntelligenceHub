@@ -3,12 +3,14 @@ import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import { isManageableCrisis } from '../ops/crisisUtils';
 import { CircleMarker, GeoJSON, MapContainer, useMap } from 'react-leaflet';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 import 'leaflet/dist/leaflet.css';
 
-import { wakeApiBackend } from '../api';
+import { apiGet, wakeApiBackend } from '../api';
 import {
   opsDelete,
   opsGet,
@@ -93,8 +95,6 @@ export function OpsMapPage() {
   const hasZoneDrawRole =
     isAdmin || ((user?.crisis_lead_assignments?.length ?? 0) > 0);
   const [activeCrisisId, setActiveCrisisId] = useState<string>(crisisFromUrl);
-  const canCreateZones = activeCrisisId ? opsCanCreateZones(user, activeCrisisId) : false;
-  const canArchive = activeCrisisId ? opsCanRunArchive(user, activeCrisisId) : false;
   const [zones, setZones] = useState<OpsZone[]>([]);
   const [reports, setReports] = useState<OpsReport[]>([]);
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
@@ -121,11 +121,17 @@ export function OpsMapPage() {
   const [flyZone, setFlyZone] = useState<OpsZone | null>(null);
   const [flyPoint, setFlyPoint] = useState<[number, number] | null>(null);
   const [zonesRevision, setZonesRevision] = useState(0);
+  const [defaultOpsMonths, setDefaultOpsMonths] = useState(2);
 
   const selectedZone = zones.find((z) => z.id === selectedZoneId) ?? null;
   const canEditSelectedZone = selectedZone ? opsCanEditZone(user, selectedZone.crisis_id ?? undefined) : false;
   const selectedReport = reports.find((r) => r.id === selectedReportId) ?? null;
   const activeCrisis = crises.find((c) => c.id === activeCrisisId) ?? null;
+  const manageableCrises = useMemo(() => crises.filter(isManageableCrisis), [crises]);
+  const canCreateZones =
+    activeCrisisId && isManageableCrisis(activeCrisis) ? opsCanCreateZones(user, activeCrisisId) : false;
+  const canArchive =
+    activeCrisisId && isManageableCrisis(activeCrisis) ? opsCanRunArchive(user, activeCrisisId) : false;
 
   const draftPolygon = useMemo(() => verticesToPolygon(vertices), [vertices]);
   const draftAreaKm2 = useMemo(() => polygonAreaKm2(vertices), [vertices]);
@@ -149,8 +155,9 @@ export function OpsMapPage() {
         setCrises(d.items);
         setActiveCrisisId((prev) => {
           if (prev && d.items.some((c) => c.id === prev)) return prev;
-          if (crisisFromUrl && d.items.some((c) => c.id === crisisFromUrl)) return crisisFromUrl;
-          return d.items[0]?.id ?? '';
+          const manageable = d.items.filter(isManageableCrisis);
+          if (crisisFromUrl && manageable.some((c) => c.id === crisisFromUrl)) return crisisFromUrl;
+          return manageable[0]?.id ?? d.items[0]?.id ?? '';
         });
       })
       .catch(() => setCrises([]));
@@ -175,6 +182,14 @@ export function OpsMapPage() {
       .then((d) => setReports(d.items))
       .catch(() => setReports([]));
   }, [selectedZoneId, filterFrom, filterTo, reportView, activeCrisisId]);
+
+  useEffect(() => {
+    apiGet<{ default_ops_view_months?: number }>('/v1/public/settings')
+      .then((s) => {
+        if (s.default_ops_view_months) setDefaultOpsMonths(s.default_ops_view_months);
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     void wakeApiBackend();
@@ -227,9 +242,22 @@ export function OpsMapPage() {
 
   useEffect(() => {
     if (!activeCrisis) return;
-    setFilterFrom(toDatetimeLocalValue(activeCrisis.archive_window_start));
-    setFilterTo(toDatetimeLocalValue(activeCrisis.archive_window_end));
-  }, [activeCrisis?.id, activeCrisis?.archive_window_start, activeCrisis?.archive_window_end]);
+    if (activeCrisis.archive_window_start || activeCrisis.archive_window_end) {
+      setFilterFrom(toDatetimeLocalValue(activeCrisis.archive_window_start));
+      setFilterTo(toDatetimeLocalValue(activeCrisis.archive_window_end));
+      return;
+    }
+    const end = new Date();
+    const start = new Date(end);
+    start.setMonth(start.getMonth() - defaultOpsMonths);
+    setFilterFrom(toDatetimeLocalValue(start.toISOString()));
+    setFilterTo(toDatetimeLocalValue(end.toISOString()));
+  }, [
+    activeCrisis?.id,
+    activeCrisis?.archive_window_start,
+    activeCrisis?.archive_window_end,
+    defaultOpsMonths,
+  ]);
 
   const clearZoneSelection = useCallback(() => {
     setSelectedZoneId(null);
@@ -525,7 +553,7 @@ export function OpsMapPage() {
 
       <div className="ops-map-overlay-top">
         <div className="ops-map-top-left">
-          <BihLogo to="/ops" size={28} />
+          <BihLogo to="/ops" large />
           <Link to="/ops" className="ops-map-chip ops-map-link">
             {t('ops.nav.console')}
           </Link>
@@ -562,72 +590,80 @@ export function OpsMapPage() {
       </div>
 
       <div className="ops-map-view-panel">
-        <span className="ops-map-view-label">{t('ops.map.viewPanel')}</span>
-        <select
-          className="ops-map-chip"
-          value={reportView}
-          onChange={(e) => setReportView(e.target.value as 'crisis' | 'unspecified' | 'all')}
-          aria-label={t('dashboard.viewMode')}
-        >
-          <option value="crisis">{t('dashboard.view.crisis')}</option>
-          <option value="unspecified">{t('dashboard.view.unspecified')}</option>
-          <option value="all">{t('dashboard.view.all')}</option>
-        </select>
-        {crises.length > 0 && reportView === 'crisis' ? (
-          <label className="ops-map-chip ops-map-crisis-select">
-            {t('ops.map.crisis')}
-            <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
-              {crises.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {crisisName(c.name, c.slug)}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <span className="ops-map-chip muted">
-            {t('ops.map.noCrisis')}{' '}
-            <Link to="/ops">{t('ops.nav.console')}</Link>
-          </span>
-        )}
-        <label className="ops-map-chip">
-          {t('ops.map.timeFrom')}
-          <input type="datetime-local" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} />
-        </label>
-        <label className="ops-map-chip">
-          {t('ops.map.timeTo')}
-          <input type="datetime-local" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
-        </label>
-        {zones.length > 0 && (
-          <label className="ops-map-chip">
-            {t('ops.map.zone')}
+        <div className="ops-map-view-row">
+          <label className="ops-map-chip ops-map-view-field">
+            <span className="ops-map-view-label">{t('ops.map.viewPanel')}</span>
             <select
-              value={selectedZoneId ?? ''}
-              onChange={(e) => {
-                const id = e.target.value || null;
-                setSelectedZoneId(id);
-                if (!id) {
-                  setPanel((p) => (p === 'zone' ? null : p));
-                  return;
-                }
-                const z = zones.find((x) => x.id === id);
-                if (z) {
-                  setPanel('zone');
-                  setFlyZone(z);
-                  setTimeout(() => setFlyZone(null), 100);
-                }
-              }}
+              value={reportView}
+              onChange={(e) => setReportView(e.target.value as 'crisis' | 'unspecified' | 'all')}
+              aria-label={t('dashboard.viewMode')}
             >
-              <option value="">{t('ops.map.allZones')}</option>
-              {zones.map((z) => (
-                <option key={z.id} value={z.id}>
-                  {z.name}
-                </option>
-              ))}
+              <option value="crisis">{t('dashboard.view.crisis')}</option>
+              <option value="unspecified">{t('dashboard.view.unspecified')}</option>
+              <option value="all">{t('dashboard.view.all')}</option>
             </select>
           </label>
-        )}
-        <span className="ops-map-chip muted">{t('ops.map.reportCount', { count: reports.length })}</span>
+          {reportView === 'crisis' && manageableCrises.length > 0 ? (
+            <label className="ops-map-chip ops-map-crisis-select ops-map-view-field">
+              <span className="ops-map-view-label">{t('ops.map.crisis')}</span>
+              <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
+                {manageableCrises.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {crisisName(c.name, c.slug)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <span className="ops-map-chip muted ops-map-view-field">
+              {reportView !== 'crisis' ? t(`dashboard.viewHint.${reportView}`) : t('ops.map.noCrisis')}
+            </span>
+          )}
+          {zones.length > 0 && reportView === 'crisis' ? (
+            <label className="ops-map-chip ops-map-view-field">
+              <span className="ops-map-view-label">{t('ops.map.zone')}</span>
+              <select
+                value={selectedZoneId ?? ''}
+                onChange={(e) => {
+                  const id = e.target.value || null;
+                  setSelectedZoneId(id);
+                  if (!id) {
+                    setPanel((p) => (p === 'zone' ? null : p));
+                    return;
+                  }
+                  const z = zones.find((x) => x.id === id);
+                  if (z) {
+                    setPanel('zone');
+                    setFlyZone(z);
+                    setTimeout(() => setFlyZone(null), 100);
+                  }
+                }}
+              >
+                <option value="">{t('ops.map.allZones')}</option>
+                {zones.map((z) => (
+                  <option key={z.id} value={z.id}>
+                    {z.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <span className="ops-map-chip muted ops-map-view-field">—</span>
+          )}
+        </div>
+        <div className="ops-map-view-row">
+          <label className="ops-map-chip ops-map-view-field">
+            <span className="ops-map-view-label">{t('ops.map.timeFrom')}</span>
+            <input type="datetime-local" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} />
+          </label>
+          <label className="ops-map-chip ops-map-view-field">
+            <span className="ops-map-view-label">{t('ops.map.timeTo')}</span>
+            <input type="datetime-local" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
+          </label>
+          <span className="ops-map-chip ops-map-view-field ops-map-report-count">
+            {t('ops.map.reportCount', { count: reports.length })}
+          </span>
+        </div>
         {selectedZone && (
           <button type="button" className="ops-map-chip ops-map-btn secondary" onClick={clearZoneSelection}>
             {t('ops.map.clearZone')}

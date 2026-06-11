@@ -90,6 +90,7 @@ def public_settings(db: Session = Depends(get_db)) -> dict:
     org = get_org_settings(db)
     return {
         "default_public_report_months": org.default_public_report_months,
+        "default_ops_view_months": org.default_ops_view_months,
         "show_demo_cold_start_hint": org.show_demo_cold_start_hint,
     }
 

@@ -967,6 +967,7 @@ export function MapPage() {
               markerCount={markers.length}
               mode={mapMode}
               embedded
+              reportWindowMonths={reportWindowMonths}
             />
           )}
         </section>
@@ -985,11 +986,6 @@ export function MapPage() {
           </span>
         </div>
         <div className="map-overlay-right">
-          {reportWindowMonths != null && (
-            <span className="muted map-window-hint" title={t('map.window.hintTitle')}>
-              {t('map.window.recentMonths', { months: reportWindowMonths })}
-            </span>
-          )}
           <label className="lang-switcher map-crisis-switcher">
             <span className="muted">{t('map.crisis.select')}</span>
             <select

@@ -2,34 +2,21 @@ import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 
 type Props = {
-  /** 圖示高度（px） */
-  size?: number;
-  /** 顯示 BIH 字樣 */
-  showWordmark?: boolean;
   /** 點擊導向（預設 /ops） */
   to?: string;
   className?: string;
   style?: CSSProperties;
+  /** 地圖浮層等較大字級 */
+  large?: boolean;
 };
 
-export function BihLogo({
-  size = 32,
-  showWordmark = true,
-  to = '/ops',
-  className,
-  style,
-}: Props) {
+export function BihLogo({ to = '/ops', className, style, large }: Props) {
   const content = (
-    <span className={`bih-logo${className ? ` ${className}` : ''}`} style={style}>
-      <img
-        src="/bih-logo.svg"
-        alt=""
-        width={size}
-        height={size}
-        className="bih-logo-mark"
-        aria-hidden
-      />
-      {showWordmark && <span className="bih-logo-wordmark">BIH</span>}
+    <span
+      className={`bih-logo bih-logo-text-only${large ? ' bih-logo-large' : ''}${className ? ` ${className}` : ''}`}
+      style={style}
+    >
+      <span className="bih-logo-wordmark">BIH</span>
     </span>
   );
 

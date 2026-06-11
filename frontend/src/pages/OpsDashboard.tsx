@@ -21,6 +21,7 @@ import {
   opsIsCrisisLead,
   opsIsSystemAdmin,
 } from '../ops/opsAuth';
+import { isManageableCrisis, isUnspecifiedCrisis } from '../ops/crisisUtils';
 import { readOpsCrisesCache, readOpsZonesCache, writeOpsCrisesCache, writeOpsZonesCache } from '../ops/opsCache';
 import { isOpsDemoHosting, setOpsDemoHostingHint } from '../ops/opsHosting';
 import { OpsTabs } from '../components/ops/OpsTabs';
@@ -75,7 +76,9 @@ export function OpsDashboard() {
   const [apiBanner, setApiBanner] = useState<string | null>(null);
   const [apiWaking, setApiWaking] = useState(false);
   const [crisisFormMsg, setCrisisFormMsg] = useState<string | null>(null);
-  const [teamFormMsg, setTeamFormMsg] = useState<string | null>(null);
+  const [userFormMsg, setUserFormMsg] = useState<string | null>(null);
+  const [leadFormMsg, setLeadFormMsg] = useState<string | null>(null);
+  const [coordFormMsg, setCoordFormMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [activeTab, setActiveTab] = useState<OpsTabId>('overview');
 
@@ -270,11 +273,11 @@ export function OpsDashboard() {
 
   const createUser = async () => {
     if (!newUserEmail.trim() || newUserPassword.length < 8) {
-      setTeamFormMsg('請填 email 與至少 8 字元密碼');
+      setUserFormMsg(t('ops.team.needUserFields'));
       return;
     }
     setBusy(true);
-    setTeamFormMsg(null);
+    setUserFormMsg(null);
     try {
       const created = await opsPost<OpsUserRecord>('/v1/ops/users', {
         email: newUserEmail.trim().toLowerCase(),
@@ -286,11 +289,11 @@ export function OpsDashboard() {
       setNewUserPassword('');
       setNewUserName('');
       setOpsUsers((prev) => (prev.some((u) => u.id === created.id) ? prev : [...prev, created]));
-      setTeamFormMsg(`已建立帳號 ${created.email}`);
+      setUserFormMsg(t('ops.team.userCreated', { email: created.email }));
       await loadUsers();
       loadAudit();
     } catch (e) {
-      setTeamFormMsg(e instanceof Error ? e.message : String(e));
+      setUserFormMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -298,21 +301,21 @@ export function OpsDashboard() {
 
   const assignCrisisLead = async () => {
     if (!assignLeadUserId || !assignLeadCrisisId) {
-      setTeamFormMsg('請選擇危機與營運人員');
+      setLeadFormMsg(t('ops.team.pickLead'));
       return;
     }
     setBusy(true);
-    setTeamFormMsg(null);
+    setLeadFormMsg(null);
     const leadEmail = opsUsers.find((u) => u.id === assignLeadUserId)?.email;
     const crisisTitle = assignLeadCrisis ? crisisName(assignLeadCrisis.name, assignLeadCrisis.slug) : '';
     try {
       await opsPost(`/v1/ops/users/${assignLeadUserId}/crises/${assignLeadCrisisId}`, {});
       setAssignLeadUserId('');
-      setTeamFormMsg(`已指派 ${leadEmail ?? '人員'} 為「${crisisTitle}」Lead`);
+      setLeadFormMsg(t('ops.team.leadAssigned', { email: leadEmail ?? '', crisis: crisisTitle }));
       await loadUsers();
       loadAudit();
     } catch (e) {
-      setTeamFormMsg(e instanceof Error ? e.message : String(e));
+      setLeadFormMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -320,20 +323,20 @@ export function OpsDashboard() {
 
   const assignZoneToUser = async () => {
     if (!assignUserId || !assignZoneId) {
-      setTeamFormMsg('請選擇人員與分區');
+      setCoordFormMsg(t('ops.team.pickCoord'));
       return;
     }
     setBusy(true);
-    setTeamFormMsg(null);
+    setCoordFormMsg(null);
     try {
       await opsPost(`/v1/ops/users/${assignUserId}/zones/${assignZoneId}`, {
         assignment_role: 'coordinator',
       });
-      setTeamFormMsg('已指派 Coordinator');
+      setCoordFormMsg(t('ops.team.coordAssigned'));
       await loadUsers();
       loadAudit();
     } catch (e) {
-      setTeamFormMsg(e instanceof Error ? e.message : String(e));
+      setCoordFormMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -346,7 +349,7 @@ export function OpsDashboard() {
       await loadUsers();
       loadAudit();
     } catch (e) {
-      setTeamFormMsg(e instanceof Error ? e.message : String(e));
+      setLeadFormMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -359,11 +362,13 @@ export function OpsDashboard() {
       await loadUsers();
       loadAudit();
     } catch (e) {
-      setTeamFormMsg(e instanceof Error ? e.message : String(e));
+      setCoordFormMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
   };
+
+  const manageableCrises = useMemo(() => crises.filter(isManageableCrisis), [crises]);
 
   const workflowSteps = isAdmin
     ? [
@@ -460,68 +465,89 @@ export function OpsDashboard() {
         <section className="ops-dash-section" id="crises">
           <h2>{t('ops.crises.title')}</h2>
           <p className="muted">{t('ops.crises.hint')}</p>
-          {crises.length > 0 && (
-            <label className="ops-field">
-              {t('ops.crises.select')}
-              <select className="ops-input" value={selectedCrisisId} onChange={(e) => setSelectedCrisisId(e.target.value)}>
-                {crises.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {crisisName(c.name, c.slug)} ({c.archive_status})
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <ul className="ops-crisis-list">
-            {crises.map((c) => {
-              const zoneCount = zones.filter((z) => z.crisis_id === c.id).length;
-              const leads = opsUsers.flatMap((u) =>
-                (u.crisis_lead_assignments ?? [])
-                  .filter((a) => a.crisis_id === c.id)
-                  .map(() => u.email),
-              );
-              return (
-                <li key={c.id}>
-                  <strong>{crisisName(c.name, c.slug)}</strong>
-                  <span className="muted">
-                    {' '}
-                    · {c.slug} · {t('ops.crises.zones', { count: zoneCount })}
-                  </span>
-                  {leads.length > 0 && (
-                    <span className="muted"> · {t('ops.crises.lead', { names: leads.join('、') })}</span>
-                  )}
-                  <Link to={`/ops/map?crisis_id=${c.id}`} className="ops-dash-inline-link">
-                    {t('ops.crises.toMap')}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-          {crises.length === 0 && (
-            <p className="muted">
-              {t('ops.crises.empty')}
-              {isAdmin ? t('ops.crises.emptyAdmin') : t('ops.crises.emptyStaff')}
-            </p>
-          )}
-          {selectedCrisis && canEditSelectedCrisis && (
-            <div className="ops-dash-form ops-crisis-edit-block">
-              <h3>{t('ops.crisis.editTitle')}</h3>
-              <CrisisMetaFields
-                value={editCrisisMeta}
-                onChange={setEditCrisisMeta}
-                labels={crisisMetaLabels}
-                disabled={busy}
-              />
-              <button type="button" onClick={() => void saveSelectedCrisisMeta()} disabled={busy}>
-                {busy ? t('ops.crisis.saving') : t('ops.crisis.save')}
-              </button>
-              {crisisEditMsg && (
-                <p className={crisisEditMsg === t('ops.crisis.saved') ? 'ops-form-ok' : 'error'}>
-                  {crisisEditMsg}
-                </p>
-              )}
-            </div>
-          )}
+
+          <div className="ops-crisis-active-panel card">
+            <h3>{t('ops.crises.activePanel')}</h3>
+            {crises.length > 0 ? (
+              <label className="ops-field">
+                {t('ops.crises.select')}
+                <select className="ops-input" value={selectedCrisisId} onChange={(e) => setSelectedCrisisId(e.target.value)}>
+                  {crises.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {crisisName(c.name, c.slug)}
+                      {isUnspecifiedCrisis(c) ? ` (${t('ops.crises.system')})` : ` (${c.archive_status})`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <p className="muted">
+                {t('ops.crises.empty')}
+                {isAdmin ? t('ops.crises.emptyAdmin') : t('ops.crises.emptyStaff')}
+              </p>
+            )}
+            {selectedCrisis && isUnspecifiedCrisis(selectedCrisis) && (
+              <p className="muted ops-crisis-system-note">{t('ops.crises.unspecifiedNote')}</p>
+            )}
+            {selectedCrisis && isManageableCrisis(selectedCrisis) && canEditSelectedCrisis && (
+              <>
+                <CrisisMetaFields
+                  value={editCrisisMeta}
+                  onChange={setEditCrisisMeta}
+                  labels={crisisMetaLabels}
+                  disabled={busy}
+                />
+                <button type="button" onClick={() => void saveSelectedCrisisMeta()} disabled={busy}>
+                  {busy ? t('ops.crisis.saving') : t('ops.crisis.save')}
+                </button>
+                {crisisEditMsg && (
+                  <p className={crisisEditMsg === t('ops.crisis.saved') ? 'ops-form-ok' : 'error'}>
+                    {crisisEditMsg}
+                  </p>
+                )}
+              </>
+            )}
+            {selectedCrisis && isManageableCrisis(selectedCrisis) && (
+              <p>
+                <Link to={`/ops/map?crisis_id=${selectedCrisisId}`} className="ops-dash-inline-link">
+                  {t('ops.crises.toMap')}
+                </Link>
+              </p>
+            )}
+          </div>
+
+          <div className="ops-crisis-list-panel">
+            <h3>{t('ops.crises.listPanel')}</h3>
+            <ul className="ops-crisis-list">
+              {crises.map((c) => {
+                const zoneCount = zones.filter((z) => z.crisis_id === c.id).length;
+                const leads = opsUsers.flatMap((u) =>
+                  (u.crisis_lead_assignments ?? [])
+                    .filter((a) => a.crisis_id === c.id)
+                    .map(() => u.email),
+                );
+                return (
+                  <li key={c.id}>
+                    <strong>{crisisName(c.name, c.slug)}</strong>
+                    <span className="muted">
+                      {' '}
+                      · {c.slug}
+                      {isUnspecifiedCrisis(c) ? ` · ${t('ops.crises.system')}` : ` · ${c.archive_status}`}
+                      {!isUnspecifiedCrisis(c) && ` · ${t('ops.crises.zones', { count: zoneCount })}`}
+                    </span>
+                    {leads.length > 0 && (
+                      <span className="muted"> · {t('ops.crises.lead', { names: leads.join('、') })}</span>
+                    )}
+                    {isManageableCrisis(c) && (
+                      <Link to={`/ops/map?crisis_id=${c.id}`} className="ops-dash-inline-link">
+                        {t('ops.crises.toMap')}
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </section>
       )}
 
@@ -594,8 +620,8 @@ export function OpsDashboard() {
               <button type="button" onClick={createUser} disabled={busy}>
                 {busy ? '建立中…' : '建立帳號'}
               </button>
-              {teamFormMsg && (
-                <p className={teamFormMsg.startsWith('已建立') ? 'ops-form-ok' : 'error'}>{teamFormMsg}</p>
+              {userFormMsg && (
+                <p className={userFormMsg.includes('@') ? 'ops-form-ok' : 'error'}>{userFormMsg}</p>
               )}
             </div>
           )}
@@ -611,7 +637,7 @@ export function OpsDashboard() {
                   onChange={(e) => setAssignLeadCrisisId(e.target.value)}
                 >
                   <option value="">選擇危機</option>
-                  {crises.map((c) => (
+                  {manageableCrises.map((c) => (
                     <option key={c.id} value={c.id}>
                       {crisisName(c.name, c.slug)}
                     </option>
@@ -632,6 +658,9 @@ export function OpsDashboard() {
               <button type="button" onClick={assignCrisisLead} disabled={busy || !assignLeadCrisisId || !assignLeadUserId}>
                 設為此危機 Lead
               </button>
+              {leadFormMsg && (
+                <p className={leadFormMsg.includes('請') ? 'error' : 'ops-form-ok'}>{leadFormMsg}</p>
+              )}
             </div>
           )}
           {canAssignCoord && (
@@ -649,7 +678,7 @@ export function OpsDashboard() {
                       setAssignZoneId('');
                     }}
                   >
-                    {crises.map((c) => (
+                    {manageableCrises.map((c) => (
                       <option key={c.id} value={c.id}>
                         {crisisName(c.name, c.slug)}
                       </option>
@@ -679,6 +708,11 @@ export function OpsDashboard() {
               <button type="button" onClick={assignZoneToUser} disabled={busy || crisisZones.length === 0}>
                 指派 Coordinator
               </button>
+              {coordFormMsg && (
+                <p className={coordFormMsg === t('ops.team.coordAssigned') ? 'ops-form-ok' : 'error'}>
+                  {coordFormMsg}
+                </p>
+              )}
               {crisisZones.length === 0 && (
                 <p className="muted">
                   {t('ops.team.noZones')}<Link to={`/ops/map?crisis_id=${coordCrisisId}`}>{t('ops.team.drawZonesLink')}</Link>
@@ -708,7 +742,7 @@ export function OpsDashboard() {
                     <ul>
                       {u.zone_assignments.map((a) => (
                         <li key={`${u.id}-${a.zone_id}`}>
-                          {a.zone_name ?? a.zone_id.slice(0, 8)} — coordinator
+                          {a.crisis_slug ?? t('ops.team.unknownCrisis')} — {a.zone_name ?? a.zone_id.slice(0, 8)} — coordinator
                           <button type="button" className="linkish" onClick={() => unassignZone(u.id, a.zone_id)}>
                             移除
                           </button>

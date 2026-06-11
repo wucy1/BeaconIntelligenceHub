@@ -19,9 +19,17 @@ type Props = {
   markerCount: number;
   mode: string;
   embedded?: boolean;
+  /** 滾動顯示月數（併入圖例） */
+  reportWindowMonths?: number | null;
 };
 
-export function MapLegend({ buildingCount, markerCount, mode, embedded = false }: Props) {
+export function MapLegend({
+  buildingCount,
+  markerCount,
+  mode,
+  embedded = false,
+  reportWindowMonths = null,
+}: Props) {
   const { t } = useI18n();
   const preferCollapsed = usePreferCollapsedChrome();
   const detailsRef = useRef<HTMLDetailsElement>(null);
@@ -43,8 +51,15 @@ export function MapLegend({ buildingCount, markerCount, mode, embedded = false }
             <span className="map-legend-swatch building" />
             <span>{t('map.legend.buildings', { count: buildingCount })}</span>
           </div>
-          {buildingCount > 0 && (
+          {buildingCount > 0 ? (
             <p className="map-legend-footnote muted">{t('map.legend.footprintNote')}</p>
+          ) : (
+            <p className="map-legend-footnote muted">{t('map.legend.noBuildingsHint')}</p>
+          )}
+          {reportWindowMonths != null && mode !== 'new' && (
+            <div className="map-legend-row">
+              <span>{t('map.window.recentMonths', { months: reportWindowMonths })}</span>
+            </div>
           )}
           {mode !== 'new' && (
             <div className="map-legend-row">
@@ -80,8 +95,15 @@ export function MapLegend({ buildingCount, markerCount, mode, embedded = false }
           <span className="map-legend-swatch building" />
           <span>{t('map.legend.buildings', { count: buildingCount })}</span>
         </div>
-        {buildingCount > 0 && (
+        {buildingCount > 0 ? (
           <p className="map-legend-footnote muted">{t('map.legend.footprintNote')}</p>
+        ) : (
+          <p className="map-legend-footnote muted">{t('map.legend.noBuildingsHint')}</p>
+        )}
+        {reportWindowMonths != null && mode !== 'new' && (
+          <div className="map-legend-row">
+            <span>{t('map.window.recentMonths', { months: reportWindowMonths })}</span>
+          </div>
         )}
         {mode !== 'new' && (
           <div className="map-legend-row">

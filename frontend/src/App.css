@@ -1917,11 +1917,15 @@ button.danger {
   color: #1d4ed8;
 }
 
+.ops-map-top-right {
+  z-index: 750;
+}
+
 .ops-map-fab-col {
   position: absolute;
   right: 0.5rem;
   top: 5.5rem;
-  z-index: 600;
+  z-index: 500;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -1961,12 +1965,10 @@ button.danger {
   transform: translateX(-50%);
   z-index: 600;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  max-width: min(calc(100% - 5rem), 52rem);
-  padding: 0.35rem 0.5rem;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-width: min(calc(100% - 1rem), 56rem);
+  padding: 0.4rem 0.55rem;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid #e2e8f0;
   border-radius: 12px;
@@ -1974,12 +1976,116 @@ button.danger {
   pointer-events: auto;
 }
 
+.ops-map-view-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.ops-map-view-field {
+  flex: 1 1 0;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+}
+
 .ops-map-view-label {
-  font-size: 0.72rem;
+  font-size: 0.65rem;
   font-weight: 700;
   color: #475569;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.ops-map-view-field select,
+.ops-map-view-field input {
+  width: 100%;
+  min-width: 0;
+}
+
+.ops-map-report-count {
+  justify-content: center;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ops-user-menu-dropdown {
+  z-index: 900;
+}
+
+.ops-crisis-active-panel {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.ops-crisis-list-panel {
+  margin-top: 0.5rem;
+}
+
+.ops-crisis-list-panel .ops-crisis-list {
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.ops-dash-view-tabs {
+  margin-bottom: 1rem;
+}
+
+.ops-dash-crisis-field {
+  margin-top: 0.25rem;
+}
+
+.ops-review-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.ops-review-modal {
+  max-width: 32rem;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.ops-review-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ops-review-modal-image img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.ops-review-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.ops-review-dl dt {
+  font-weight: 600;
+  color: #475569;
+}
+
+.ops-bar-fill.secondary {
+  background: #7c3aed;
 }
 
 .ops-map-view-panel input[type='datetime-local'],
@@ -2197,19 +2303,21 @@ button.linkish {
   gap: 0.5rem;
 }
 
-.bih-logo-mark {
-  display: block;
-  flex-shrink: 0;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
-}
-
-.bih-logo-wordmark {
+.bih-logo-text-only .bih-logo-wordmark {
   font-weight: 800;
   font-size: 1.05rem;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: #0f172a;
   line-height: 1;
+}
+
+.bih-logo-large .bih-logo-wordmark {
+  font-size: 1rem;
+  padding: 0.35rem 0.65rem;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
 }
 
 .ops-header {

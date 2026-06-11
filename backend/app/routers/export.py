@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.image_urls import thumb_url_for_report
 from app.models import Report
 
 router = APIRouter(prefix="/v1/export", tags=["export"])
@@ -104,10 +105,12 @@ def export_data(
                 "captured_at_client",
                 "received_at_server",
                 "textual_location",
+                "image_url",
             ]
         )
         for r in rows:
             lon, lat = _coords(db, r.id, r)
+            img = thumb_url_for_report(db, r.id) or ""
             w.writerow(
                 [
                     str(r.id),
@@ -125,6 +128,7 @@ def export_data(
                     r.captured_at_client.isoformat(),
                     r.received_at_server.isoformat(),
                     r.textual_location or "",
+                    img,
                 ]
             )
         data = buf.getvalue().encode("utf-8")
@@ -161,6 +165,7 @@ def export_data(
                     "captured_at_client": r.captured_at_client.isoformat(),
                     "received_at_server": r.received_at_server.isoformat(),
                     "is_latest_per_building": latest_only,
+                    "image_url": thumb_url_for_report(db, r.id),
                 },
             }
         )

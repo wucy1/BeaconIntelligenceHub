@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { apiBase, apiGet } from '../api';
+import { apiBase } from '../api';
+import { DashboardReviewModal } from '../components/ops/DashboardReviewModal';
 import { useI18n } from '../i18n/I18nContext';
+import { isManageableCrisis } from '../ops/crisisUtils';
 import { opsGet, opsPatch, opsPost, type OpsCrisis, type OpsZone } from '../ops/opsApi';
 import {
   getOpsUser,
@@ -22,19 +24,15 @@ type ReportSummary = {
   description_preview: string;
   admin_reviewed?: boolean;
   admin_flagged?: boolean;
+  debris_clearing_required?: boolean;
+  crisis_types?: string[];
+  infrastructure_types?: string[];
 };
 
 type ListResp = { items: ReportSummary[]; nextCursor?: string | null; zone_scope?: string[] | null };
 
 type ReviewFilter = 'all' | 'pending' | 'flagged' | 'reviewed';
 type ReportView = 'crisis' | 'unspecified' | 'all';
-
-type AnalyticsSummary = {
-  total_reports: number;
-  latest_building_count: number;
-  damage_counts: Record<string, number>;
-  timeline: Array<{ day: string; count: number }>;
-};
 
 export function Dashboard() {
   const { t, crisisName } = useI18n();
@@ -48,11 +46,13 @@ export function Dashboard() {
   const [zoneId, setZoneId] = useState('');
   const [reportView, setReportView] = useState<ReportView>('crisis');
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('pending');
-  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
+  const [reviewId, setReviewId] = useState<string | null>(null);
+
+  const manageableCrises = useMemo(() => crises.filter(isManageableCrisis), [crises]);
 
   const loadReports = useCallback(async () => {
     if (reportView === 'crisis' && !crisisId) {
@@ -76,34 +76,50 @@ export function Dashboard() {
     opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises')
       .then((d) => {
         setCrises(d.items);
-        setCrisisId((prev) => (prev && d.items.some((c) => c.id === prev) ? prev : d.items[0]?.id ?? ''));
+        const manageable = d.items.filter(isManageableCrisis);
+        setCrisisId((prev) =>
+          prev && manageable.some((c) => c.id === prev) ? prev : manageable[0]?.id ?? '',
+        );
       })
       .catch(() => setCrises([]));
   }, []);
 
   useEffect(() => {
-    if (!crisisId) {
+    if (!crisisId || reportView !== 'crisis') {
       setZones([]);
       return;
     }
     opsGet<{ items: OpsZone[] }>(`/v1/ops/zones?crisis_id=${crisisId}`)
       .then((d) => setZones(d.items))
       .catch(() => setZones([]));
-  }, [crisisId]);
+  }, [crisisId, reportView]);
 
   useEffect(() => {
     void loadReports();
   }, [loadReports]);
 
-  useEffect(() => {
-    if (!crisisId) {
-      setAnalytics(null);
-      return;
+  const listStats = useMemo(() => {
+    if (!data) return null;
+    const items = data.items;
+    const damage_counts: Record<string, number> = {};
+    const crisis_type_counts: Record<string, number> = {};
+    let debris = 0;
+    for (const r of items) {
+      damage_counts[r.damage_level] = (damage_counts[r.damage_level] ?? 0) + 1;
+      if (r.debris_clearing_required) debris += 1;
+      for (const ct of r.crisis_types ?? []) {
+        crisis_type_counts[ct] = (crisis_type_counts[ct] ?? 0) + 1;
+      }
     }
-    apiGet<AnalyticsSummary>(`/v1/analytics/summary?crisis_id=${crisisId}`)
-      .then(setAnalytics)
-      .catch(() => setAnalytics(null));
-  }, [crisisId]);
+    return {
+      total: items.length,
+      pending: items.filter((r) => !r.admin_reviewed).length,
+      flagged: items.filter((r) => r.admin_flagged).length,
+      debris,
+      damage_counts,
+      crisis_type_counts,
+    };
+  }, [data]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -152,6 +168,10 @@ export function Dashboard() {
     });
   }, [data, reviewFilter]);
 
+  const reviewRow = reviewId ? data?.items.find((r) => r.id === reviewId) : null;
+  const damageMax = Math.max(1, ...Object.values(listStats?.damage_counts ?? {}));
+  const crisisTypeMax = Math.max(1, ...Object.values(listStats?.crisis_type_counts ?? {}));
+
   if (!opsHasStaffAccess(opsUser)) {
     return (
       <section className="card ops-dashboard">
@@ -173,9 +193,7 @@ export function Dashboard() {
   if (!data) return <p className="muted">{t('common.loading')}</p>;
 
   const api = apiBase();
-  const activeCrisis = crises.find((c) => c.id === crisisId);
-  const damageMax = Math.max(1, ...Object.values(analytics?.damage_counts ?? {}));
-  const timelineMax = Math.max(1, ...(analytics?.timeline ?? []).map((x) => x.count));
+  const activeCrisis = manageableCrises.find((c) => c.id === crisisId);
 
   return (
     <section className="card ops-dashboard">
@@ -199,11 +217,12 @@ export function Dashboard() {
             map: t('ops.nav.map'),
           })}
         </p>
+        <p className="muted">{t('dashboard.archiveScopeHint')}</p>
       </section>
 
       <section className="ops-dash-section">
         <h2>{t('dashboard.filterTitle')}</h2>
-        <div className="ops-review-tabs">
+        <div className="ops-review-tabs ops-dash-view-tabs">
           {(['crisis', 'unspecified', 'all'] as const).map((v) => (
             <button
               key={v}
@@ -215,8 +234,8 @@ export function Dashboard() {
             </button>
           ))}
         </div>
-        {crises.length > 0 && reportView === 'crisis' && (
-          <label className="ops-field">
+        {manageableCrises.length > 0 && reportView === 'crisis' && (
+          <label className="ops-field ops-dash-crisis-field">
             {t('dashboard.crisisFilter')}
             <select
               className="ops-input"
@@ -226,7 +245,7 @@ export function Dashboard() {
                 setZoneId('');
               }}
             >
-              {crises.map((c) => (
+              {manageableCrises.map((c) => (
                 <option key={c.id} value={c.id}>
                   {crisisName(c.name, c.slug)}
                 </option>
@@ -242,7 +261,7 @@ export function Dashboard() {
         {reportView !== 'crisis' && (
           <p className="muted">{t(`dashboard.viewHint.${reportView}`)}</p>
         )}
-        {zones.length > 0 && (
+        {zones.length > 0 && reportView === 'crisis' && (
           <label className="ops-field">
             {t('dashboard.zoneFilter')}
             <select className="ops-input" value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
@@ -267,28 +286,34 @@ export function Dashboard() {
             </button>
           ))}
         </div>
+        <p className="muted ops-review-hint">{t('dashboard.reviewVsFlagHint')}</p>
       </section>
 
-      {analytics && crisisId && (
+      {listStats && (
         <section className="ops-dash-section ops-analytics-section">
           <h2>{t('dashboard.analytics')}</h2>
+          <p className="muted">{t('dashboard.analyticsListHint')}</p>
           <div className="ops-analytics-stats">
             <div className="ops-stat-card">
               <span className="ops-stat-label">{t('dashboard.totalReports')}</span>
-              <strong>{analytics.total_reports}</strong>
-            </div>
-            <div className="ops-stat-card">
-              <span className="ops-stat-label">{t('dashboard.latestBuildings')}</span>
-              <strong>{analytics.latest_building_count}</strong>
+              <strong>{listStats.total}</strong>
             </div>
             <div className="ops-stat-card">
               <span className="ops-stat-label">{t('dashboard.pendingCount')}</span>
-              <strong>{data.items.filter((r) => !r.admin_reviewed).length}</strong>
+              <strong>{listStats.pending}</strong>
+            </div>
+            <div className="ops-stat-card">
+              <span className="ops-stat-label">{t('dashboard.flaggedCount')}</span>
+              <strong>{listStats.flagged}</strong>
+            </div>
+            <div className="ops-stat-card">
+              <span className="ops-stat-label">{t('dashboard.debrisCount')}</span>
+              <strong>{listStats.debris}</strong>
             </div>
           </div>
           <h3 className="ops-analytics-sub">{t('dashboard.damageCounts')}</h3>
           <div className="ops-bar-chart">
-            {Object.entries(analytics.damage_counts).map(([level, count]) => (
+            {Object.entries(listStats.damage_counts).map(([level, count]) => (
               <div key={level} className="ops-bar-row">
                 <span>{level}</span>
                 <div className="ops-bar-track">
@@ -297,17 +322,21 @@ export function Dashboard() {
                 <span>{count}</span>
               </div>
             ))}
+            {Object.keys(listStats.damage_counts).length === 0 && (
+              <p className="muted">{t('dashboard.emptyFilter')}</p>
+            )}
           </div>
-          {analytics.timeline.length > 0 && (
+          {Object.keys(listStats.crisis_type_counts).length > 0 && (
             <>
-              <h3 className="ops-analytics-sub">{t('dashboard.timeline')}</h3>
-              <div className="ops-timeline-chart">
-                {analytics.timeline.slice(-14).map((pt) => (
-                  <div key={pt.day} className="ops-timeline-col" title={`${pt.day}: ${pt.count}`}>
-                    <div
-                      className="ops-timeline-bar"
-                      style={{ height: `${(pt.count / timelineMax) * 100}%` }}
-                    />
+              <h3 className="ops-analytics-sub">{t('dashboard.crisisTypeCounts')}</h3>
+              <div className="ops-bar-chart">
+                {Object.entries(listStats.crisis_type_counts).map(([type, count]) => (
+                  <div key={type} className="ops-bar-row">
+                    <span>{type}</span>
+                    <div className="ops-bar-track">
+                      <div className="ops-bar-fill secondary" style={{ width: `${(count / crisisTypeMax) * 100}%` }} />
+                    </div>
+                    <span>{count}</span>
                   </div>
                 ))}
               </div>
@@ -319,6 +348,7 @@ export function Dashboard() {
       {crisisId && reportView === 'crisis' && (
         <section className="ops-dash-section">
           <h2>{t('dashboard.exportTitle')}</h2>
+          <p className="muted">{t('dashboard.exportImageHint')}</p>
           <p className="ops-export-links">
             <a href={`${api}/v1/export?crisis_id=${crisisId}&format=csv`}>{t('dashboard.exportCsv')}</a>
             <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson`}>{t('dashboard.exportGeojson')}</a>
@@ -373,52 +403,53 @@ export function Dashboard() {
                   mapQ.set('lng', String(r.geom.coordinates[0]));
                 }
                 return (
-                <tr key={r.id}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(r.id)}
-                      onChange={() => toggleSelect(r.id)}
-                      aria-label={t('dashboard.col.select')}
-                    />
-                  </td>
-                  <td>{new Date(r.received_at_server).toLocaleString()}</td>
-                  <td>{r.damage_level}</td>
-                  <td>{r.building_id?.slice(0, 8) ?? '—'}</td>
-                  <td>{r.description_preview}</td>
-                  <td>
-                    {r.admin_reviewed ? '✓' : '—'}
-                    {r.admin_flagged ? ' ⚑' : ''}
-                  </td>
-                  <td className="ops-table-actions">
-                    <button
-                      type="button"
-                      className="small"
-                      disabled={busyId === r.id}
-                      onClick={() => void patchReport(r.id, !r.admin_reviewed, undefined)}
-                    >
-                      {r.admin_reviewed ? t('dashboard.unreview') : t('dashboard.markReviewed')}
-                    </button>
-                    <button
-                      type="button"
-                      className="small secondary"
-                      disabled={busyId === r.id}
-                      onClick={() => void patchReport(r.id, undefined, !r.admin_flagged)}
-                    >
-                      {r.admin_flagged ? t('dashboard.unflag') : t('dashboard.flag')}
-                    </button>
-                    <Link to={`/ops/map?${mapQ}`} className="ops-dash-inline-link">
-                      {t('dashboard.openOnMap')}
-                    </Link>
-                  </td>
-                </tr>
-              );
+                  <tr key={r.id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(r.id)}
+                        onChange={() => toggleSelect(r.id)}
+                        aria-label={t('dashboard.col.select')}
+                      />
+                    </td>
+                    <td>{new Date(r.received_at_server).toLocaleString()}</td>
+                    <td>{r.damage_level}</td>
+                    <td>{r.building_id?.slice(0, 8) ?? '—'}</td>
+                    <td>
+                      <button type="button" className="linkish" onClick={() => setReviewId(r.id)}>
+                        {r.description_preview}
+                      </button>
+                    </td>
+                    <td>
+                      {r.admin_reviewed ? '✓' : '—'}
+                      {r.admin_flagged ? ' ⚑' : ''}
+                    </td>
+                    <td className="ops-table-actions">
+                      <button type="button" className="small" onClick={() => setReviewId(r.id)}>
+                        {t('dashboard.openReview')}
+                      </button>
+                      <Link to={`/ops/map?${mapQ}`} className="ops-dash-inline-link">
+                        {t('dashboard.openOnMap')}
+                      </Link>
+                    </td>
+                  </tr>
+                );
               })}
             </tbody>
           </table>
         </div>
         {filteredItems.length === 0 && <p className="muted">{t('dashboard.emptyFilter')}</p>}
       </section>
+
+      <DashboardReviewModal
+        reportId={reviewId}
+        reviewed={reviewRow?.admin_reviewed}
+        flagged={reviewRow?.admin_flagged}
+        busy={busyId === reviewId}
+        onClose={() => setReviewId(null)}
+        onReviewed={(v) => reviewId && void patchReport(reviewId, v, undefined)}
+        onFlagged={(v) => reviewId && void patchReport(reviewId, undefined, v)}
+      />
     </section>
   );
 }

@@ -83,6 +83,7 @@ export type OpsCrisis = {
   id: string;
   slug: string;
   name: Record<string, string>;
+  is_system?: boolean;
   archive_status: 'draft' | 'active' | 'archived';
   archive_window_start: string | null;
   archive_window_end: string | null;
@@ -123,6 +124,9 @@ export type OpsUserRecord = {
   zone_assignments: Array<{
     zone_id: string;
     zone_name?: string;
+    crisis_id?: string | null;
+    crisis_slug?: string | null;
+    crisis_name?: Record<string, string> | null;
     assignment_role: 'lead' | 'coordinator';
   }>;
   crisis_lead_assignments: Array<{

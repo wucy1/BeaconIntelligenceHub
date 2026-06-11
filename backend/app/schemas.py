@@ -91,6 +91,9 @@ class ReportListResponse(BaseModel):
 class OpsReportSummary(ReportSummary):
     admin_reviewed: bool = False
     admin_flagged: bool = False
+    debris_clearing_required: bool = False
+    crisis_types: list[str] = []
+    infrastructure_types: list[str] = []
 
 
 class ReportUpdate(BaseModel):

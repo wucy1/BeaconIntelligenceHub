@@ -134,11 +134,16 @@ def _polygon_from_geojson(geojson: dict[str, Any]):
     return from_shape(g, srid=4326)
 
 
+def _is_system_unspecified(crisis: Crisis) -> bool:
+    return crisis.slug == "unspecified"
+
+
 def _crisis_out(c: Crisis) -> dict:
     return {
         "id": str(c.id),
         "slug": c.slug,
         "name": c.name,
+        "is_system": _is_system_unspecified(c),
         "archive_status": c.archive_status,
         "archive_window_start": c.archive_window_start.isoformat() if c.archive_window_start else None,
         "archive_window_end": c.archive_window_end.isoformat() if c.archive_window_end else None,
@@ -165,8 +170,9 @@ def _zone_out(db: Session, zone: Zone) -> dict:
 
 def _zone_assignments_payload(db: Session, user_id: UUID) -> list[dict]:
     rows = (
-        db.query(UserZoneAssignment, Zone.name)
+        db.query(UserZoneAssignment, Zone.name, Zone.crisis_id, Crisis.slug, Crisis.name)
         .join(Zone, Zone.id == UserZoneAssignment.zone_id)
+        .outerjoin(Crisis, Crisis.id == Zone.crisis_id)
         .filter(UserZoneAssignment.user_id == user_id)
         .all()
     )
@@ -174,9 +180,12 @@ def _zone_assignments_payload(db: Session, user_id: UUID) -> list[dict]:
         {
             "zone_id": str(a.zone_id),
             "zone_name": name,
+            "crisis_id": str(cid) if cid else None,
+            "crisis_slug": slug,
+            "crisis_name": cname,
             "assignment_role": a.assignment_role or "coordinator",
         }
-        for a, name in rows
+        for a, name, cid, slug, cname in rows
     ]
 
 
@@ -350,6 +359,8 @@ def create_zone(
     crisis = db.query(Crisis).filter(Crisis.id == body.crisis_id).first()
     if not crisis:
         raise HTTPException(status_code=404, detail="crisis_id not found")
+    if _is_system_unspecified(crisis):
+        raise HTTPException(status_code=422, detail="Cannot create zones on system unspecified crisis")
     if body.parent_zone_id:
         parent = db.query(Zone).filter(Zone.id == body.parent_zone_id).first()
         if not parent:
@@ -504,6 +515,8 @@ def ops_patch_crisis(
         raise HTTPException(status_code=404, detail="Crisis not found")
     if not principal.can_manage_crisis(crisis_id):
         raise HTTPException(status_code=403, detail="Cannot manage this crisis")
+    if _is_system_unspecified(crisis):
+        raise HTTPException(status_code=422, detail="System unspecified crisis cannot be edited")
     if body.slug is not None:
         crisis.slug = body.slug.strip()
     if body.name is not None:
@@ -539,6 +552,8 @@ def ops_archive_preview(
     crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
     if not crisis:
         raise HTTPException(status_code=404, detail="Crisis not found")
+    if _is_system_unspecified(crisis):
+        raise HTTPException(status_code=422, detail="System unspecified crisis cannot be archived")
     if not principal.can_run_archive(crisis_id):
         raise HTTPException(status_code=403, detail="Cannot archive this crisis")
     zone_ids = body.zone_ids
@@ -577,6 +592,8 @@ def ops_archive_run(
     crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
     if not crisis:
         raise HTTPException(status_code=404, detail="Crisis not found")
+    if _is_system_unspecified(crisis):
+        raise HTTPException(status_code=422, detail="System unspecified crisis cannot be archived")
     if not principal.can_run_archive(crisis_id):
         raise HTTPException(status_code=403, detail="Cannot archive this crisis")
     zone_ids = body.zone_ids
@@ -701,6 +718,9 @@ def ops_list_reports(
             description_preview=r.description[:120] + ("…" if len(r.description) > 120 else ""),
             admin_reviewed=bool(r.admin_reviewed),
             admin_flagged=bool(r.admin_flagged),
+            debris_clearing_required=bool(r.debris_clearing_required),
+            crisis_types=list(r.crisis_types or []),
+            infrastructure_types=list(r.infrastructure_types or []),
         )
         for r in rows
     ]
@@ -896,6 +916,8 @@ def assign_crisis_lead(
     crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
     if not crisis:
         raise HTTPException(status_code=404, detail="Crisis not found")
+    if _is_system_unspecified(crisis):
+        raise HTTPException(status_code=422, detail="Cannot assign lead to system unspecified crisis")
     existing = (
         db.query(CrisisLeadAssignment)
         .filter(CrisisLeadAssignment.user_id == user_id, CrisisLeadAssignment.crisis_id == crisis_id)
