@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
+import { BihLogo } from './BihLogo';
 import { OfflineBanner } from './OfflineBanner';
 import { clearOpsSession, getOpsUser } from '../ops/opsAuth';
 import { OPS_LABELS } from '../ops/opsLabels';
@@ -22,7 +23,7 @@ export function OpsShell({ children, narrow }: Props) {
   return (
     <div className="layout ops-layout">
       <header className="header ops-header">
-        <strong>{OPS_LABELS.console}</strong>
+        <BihLogo to={user ? '/ops' : '/ops/login'} />
         <nav className="ops-header-nav">
           {!narrow && (
             <>

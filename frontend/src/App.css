@@ -2150,9 +2150,43 @@ button.linkish {
   padding: 1rem;
 }
 
+.bih-logo-link {
+  display: inline-flex;
+  text-decoration: none;
+  color: inherit;
+  border-radius: 8px;
+}
+
+.bih-logo-link:hover .bih-logo-wordmark {
+  color: #1d4ed8;
+}
+
+.bih-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bih-logo-mark {
+  display: block;
+  flex-shrink: 0;
+}
+
+.bih-logo-wordmark {
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  color: #0f172a;
+  line-height: 1;
+}
+
 .ops-header {
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.ops-header .bih-logo-link {
+  margin-right: 0.25rem;
 }
 
 .ops-header-nav {
