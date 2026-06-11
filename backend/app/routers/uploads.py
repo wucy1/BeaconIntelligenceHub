@@ -1,5 +1,6 @@
 import secrets
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
@@ -20,6 +21,18 @@ router = APIRouter(prefix="/v1/uploads", tags=["uploads"])
 
 # Dev-only in-memory upload sessions (Phase 1). Replace with signed JWT or Redis for production.
 _tokens: dict[str, dict] = {}
+_r2_put_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="r2-put")
+R2_PUT_TIMEOUT_SEC = 20
+
+
+def _put_object_to_r2(object_key: str, body: bytes, mime: str) -> None:
+    client = r2_client(settings)
+    client.put_object(
+        Bucket=settings.r2_bucket,
+        Key=object_key,
+        Body=body,
+        ContentType=mime,
+    )
 
 
 @router.get("/presign", response_model=PresignResponse)
@@ -83,13 +96,16 @@ async def receive_upload(token: str, request: Request) -> Response:
 
     if r2_enabled(settings):
         try:
-            client = r2_client(settings)
-            client.put_object(
-                Bucket=settings.r2_bucket,
-                Key=meta["object_key"],
-                Body=body,
-                ContentType=meta["mime"],
-            )
+            fut = _r2_put_executor.submit(_put_object_to_r2, meta["object_key"], body, meta["mime"])
+            fut.result(timeout=R2_PUT_TIMEOUT_SEC)
+        except FuturesTimeoutError as exc:
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    "R2 upload timed out from API host. "
+                    "Set UPLOAD_VIA_API=false and enable R2 bucket CORS for direct browser upload."
+                ),
+            ) from exc
         except ClientError as exc:
             raise HTTPException(status_code=502, detail=f"R2 upload failed: {exc}") from exc
     else:

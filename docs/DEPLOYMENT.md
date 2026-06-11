@@ -230,10 +230,12 @@ flyctl secrets set `
   R2_ACCESS_KEY_ID="..." `
   R2_SECRET_ACCESS_KEY="..." `
   R2_BUCKET="bih" `
-  UPLOAD_VIA_API="true"
+  UPLOAD_VIA_API="false"
 ```
 
 R2 bucket CORS 需允許 `https://beacon.cila.workers.dev`（PUT/GET）。
+
+> **Render 建議 `UPLOAD_VIA_API=false`：** 瀏覽器直傳 R2 較快；`true` 時圖片先打到 API 再轉寫 R2，Render→R2 跨區常逾時，會導致回報與離線同步失敗。僅在尚未設定 R2 CORS 時暫用 `true`。
 
 ### 步驟 4：驗證 API
 

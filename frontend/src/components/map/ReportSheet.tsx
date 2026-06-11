@@ -235,15 +235,7 @@ export function ReportSheet({
       onClose();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      const transientOnlineFailure =
-        mode === 'create' &&
-        file &&
-        (msg.includes('無法連線') ||
-          msg.includes('逾時') ||
-          msg.includes('503') ||
-          msg.includes('502') ||
-          msg.includes('504'));
-      if (mode === 'create' && file && (!navigator.onLine || transientOnlineFailure)) {
+      if (mode === 'create' && file && !navigator.onLine) {
         try {
           const clientUuid = crypto.randomUUID();
           const uploadId = crisisId || UNSPECIFIED_CRISIS_ID;

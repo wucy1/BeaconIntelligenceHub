@@ -3,6 +3,8 @@ import { getDeviceId } from './utils/deviceId';
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 const API_FALLBACK_BASE = import.meta.env.VITE_API_FALLBACK ?? 'https://beaconintelligencehub.onrender.com';
 const DEFAULT_TIMEOUT_MS = 45_000;
+const SUBMIT_TIMEOUT_MS = 90_000;
+const WAKE_PROBE_TIMEOUT_MS = 25_000;
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
 const PROD_RETRY_ATTEMPTS = 4;
 const RETRY_DELAY_MS = 2000;
@@ -66,9 +68,9 @@ function connectionErrorMessage(): string {
   );
 }
 
-async function fetchOnce(url: string, init?: RequestInit): Promise<Response> {
+async function fetchOnce(url: string, init?: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
@@ -77,15 +79,20 @@ async function fetchOnce(url: string, init?: RequestInit): Promise<Response> {
 }
 
 /** 帶自動重試的 fetch（Render 冷啟動／503 時重試） */
-export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+export async function apiFetch(
+  path: string,
+  init?: RequestInit,
+  opts?: { timeoutMs?: number; maxAttempts?: number },
+): Promise<Response> {
   const url = apiUrl(path);
-  const maxAttempts = isLocalDevHost() ? 1 : PROD_RETRY_ATTEMPTS;
+  const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxAttempts = opts?.maxAttempts ?? (isLocalDevHost() ? 1 : PROD_RETRY_ATTEMPTS);
   let lastError: unknown;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) await sleep(RETRY_DELAY_MS * attempt);
     try {
-      const res = await fetchOnce(url, init);
+      const res = await fetchOnce(url, init, timeoutMs);
       if (RETRYABLE_STATUS.has(res.status) && attempt < maxAttempts - 1) {
         await res.text().catch(() => undefined);
         continue;
@@ -99,7 +106,7 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   }
 
   if (lastError instanceof DOMException && lastError.name === 'AbortError') {
-    throw new Error(`API 請求逾時（${DEFAULT_TIMEOUT_MS / 1000}s）。${connectionErrorMessage()}`);
+    throw new Error(`API 請求逾時（${timeoutMs / 1000}s）。${connectionErrorMessage()}`);
   }
   if (lastError instanceof TypeError || lastError instanceof DOMException) {
     throw new Error(`${connectionErrorMessage()}`);
@@ -109,32 +116,41 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
 
 /** 喚醒 Render 後端（進入營運台時可先呼叫） */
 export async function wakeApiBackend(): Promise<boolean> {
+  return probeApiReady();
+}
+
+function wakeProbeBase(): string {
+  return (resolveApiBase('/health/ready') || API_FALLBACK_BASE).replace(/\/$/, '');
+}
+
+async function probeApiReady(): Promise<boolean> {
+  const base = wakeProbeBase();
+  if (!base) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WAKE_PROBE_TIMEOUT_MS);
   try {
-    await apiFetch('/health');
-    const res = await apiFetch('/health/ready');
-    return res.ok;
+    const res = await fetch(`${base}/health/ready`, {
+      headers: deviceHeaders(),
+      signal: controller.signal,
+    });
+    if (!res.ok) return false;
+    const body = (await res.json()) as { ok?: boolean };
+    return body.ok === true;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 /** 提交回報／同步佇列前：等待 API + Neon 就緒（冷啟動可能需 1–2 分鐘） */
-export async function ensureApiReady(timeoutMs = 120_000): Promise<void> {
+export async function ensureApiReady(timeoutMs = 90_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  let attempt = 0;
+  let delay = 2000;
   while (Date.now() < deadline) {
-    attempt += 1;
-    try {
-      await apiFetch('/health');
-      const res = await apiFetch('/health/ready');
-      if (res.ok) {
-        const body = (await res.json()) as { ok?: boolean };
-        if (body.ok) return;
-      }
-    } catch {
-      /* retry */
-    }
-    await sleep(Math.min(2500 * attempt, 10_000));
+    if (await probeApiReady()) return;
+    await sleep(delay);
+    delay = Math.min(delay + 1000, 8000);
   }
   throw new Error(
     '後端尚在喚醒中（Render + Neon 常需 1–2 分鐘）。請稍後再按「立即同步」或「重新連線」。',
@@ -178,8 +194,12 @@ async function parseJson<T>(res: Response): Promise<T> {
   }
 }
 
-async function fetchApi(path: string, init?: RequestInit): Promise<Response> {
-  return apiFetch(path, init);
+async function fetchApi(
+  path: string,
+  init?: RequestInit,
+  opts?: { timeoutMs?: number; maxAttempts?: number },
+): Promise<Response> {
+  return apiFetch(path, init, opts);
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
@@ -187,14 +207,20 @@ export async function apiGet<T>(path: string): Promise<T> {
   return parseJson<T>(res);
 }
 
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetchApi(path, {
-    method: 'POST',
-    headers: deviceHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(body),
-  });
+export async function apiPost<T>(path: string, body: unknown, opts?: { timeoutMs?: number }): Promise<T> {
+  const res = await fetchApi(
+    path,
+    {
+      method: 'POST',
+      headers: deviceHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+    },
+    opts,
+  );
   return parseJson<T>(res);
 }
+
+export { SUBMIT_TIMEOUT_MS };
 
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   const res = await fetchApi(path, {
@@ -233,19 +259,29 @@ function resolveUploadPutUrl(url: string): string {
   return url;
 }
 
-export async function apiPutRaw(url: string, body: Blob, contentType: string): Promise<void> {
+export async function apiPutRaw(
+  url: string,
+  body: Blob,
+  contentType: string,
+  opts?: { timeoutMs?: number },
+): Promise<void> {
   const target = resolveUploadPutUrl(url);
+  const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxAttempts = isLocalDevHost() ? 1 : PROD_RETRY_ATTEMPTS;
   let lastError: unknown;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) await sleep(RETRY_DELAY_MS * attempt);
     try {
-      const res = await fetchOnce(target, {
-        method: 'PUT',
-        headers: { 'Content-Type': contentType },
-        body,
-      });
+      const res = await fetchOnce(
+        target,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': contentType },
+          body,
+        },
+        timeoutMs,
+      );
       if (RETRYABLE_STATUS.has(res.status) && attempt < maxAttempts - 1) {
         await res.text().catch(() => undefined);
         continue;
@@ -264,7 +300,7 @@ export async function apiPutRaw(url: string, body: Blob, contentType: string): P
   }
 
   if (lastError instanceof DOMException && lastError.name === 'AbortError') {
-    throw new Error(`圖片上傳逾時（${DEFAULT_TIMEOUT_MS / 1000}s）。${connectionErrorMessage()}`);
+    throw new Error(`圖片上傳逾時（${timeoutMs / 1000}s）。${connectionErrorMessage()}`);
   }
   if (lastError instanceof TypeError) {
     if (url.includes('r2.cloudflarestorage.com')) {

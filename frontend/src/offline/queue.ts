@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPutRaw, ensureApiReady, sha256Hex } from '../api';
+import { apiGet, apiPost, apiPutRaw, ensureApiReady, sha256Hex, SUBMIT_TIMEOUT_MS } from '../api';
 import { UNSPECIFIED_CRISIS_ID } from '../constants/crisis';
 import { openOfflineDb } from './openDb';
 
@@ -160,24 +160,28 @@ export async function submitReportOnline(
     throw new Error(`取得上傳授權失敗：${msg}`);
   }
   try {
-    await apiPutRaw(presign.putUrl, file, file.type || 'image/jpeg');
+    await apiPutRaw(presign.putUrl, file, file.type || 'image/jpeg', { timeoutMs: SUBMIT_TIMEOUT_MS });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(`上傳圖片失敗：${msg}`);
   }
   const dims = await readImageDims(file);
   try {
-    const created = await apiPost<{ possible_duplicate?: boolean }>('/v1/reports', {
-      ...payload,
-      crisis_id: UNSPECIFIED_CRISIS_ID,
-      image: {
-        objectKey: presign.objectKey,
-        mimeType: file.type || 'image/jpeg',
-        width: dims?.w,
-        height: dims?.h,
-        checksumSha256: checksum,
+    const created = await apiPost<{ possible_duplicate?: boolean }>(
+      '/v1/reports',
+      {
+        ...payload,
+        crisis_id: UNSPECIFIED_CRISIS_ID,
+        image: {
+          objectKey: presign.objectKey,
+          mimeType: file.type || 'image/jpeg',
+          width: dims?.w,
+          height: dims?.h,
+          checksumSha256: checksum,
+        },
       },
-    });
+      { timeoutMs: SUBMIT_TIMEOUT_MS },
+    );
     return { possible_duplicate: Boolean(created.possible_duplicate) };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
