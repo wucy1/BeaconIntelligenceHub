@@ -2189,6 +2189,11 @@ button.linkish {
   margin-right: 0.25rem;
 }
 
+.ops-cold-start-detail {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+}
+
 .ops-header-nav {
   display: flex;
   flex-wrap: wrap;

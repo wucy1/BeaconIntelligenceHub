@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 
 import { wakeApiBackend } from '../api';
+import { useI18n } from '../i18n/I18nContext';
 import {
   opsDelete,
   opsGet,
@@ -17,18 +18,16 @@ import {
   opsIsCrisisLead,
   opsIsSystemAdmin,
 } from '../ops/opsAuth';
+import { readOpsCrisesCache, readOpsZonesCache, writeOpsCrisesCache, writeOpsZonesCache } from '../ops/opsCache';
+import { isOpsDemoHosting } from '../ops/opsHosting';
 import { OpsTabs } from '../components/ops/OpsTabs';
 import { OPS_LABELS } from '../ops/opsLabels';
 
 type OpsTabId = 'overview' | 'crises' | 'create-crisis' | 'team' | 'audit';
 
-function crisisLabel(c: OpsCrisis): string {
-  return c.name['zh-Hant'] ?? c.name.zh ?? c.name.en ?? c.slug;
-}
-
-function roleLabel(role: string): string {
-  if (role === 'system_admin') return '系統管理員';
-  return '營運人員';
+function roleLabel(role: string, t: (key: string) => string): string {
+  if (role === 'system_admin') return t('ops.role.systemAdmin');
+  return t('ops.role.coordinator');
 }
 
 function pickCrisisId(prev: string, items: OpsCrisis[]): string {
@@ -37,11 +36,13 @@ function pickCrisisId(prev: string, items: OpsCrisis[]): string {
 }
 
 export function OpsDashboard() {
+  const { t, crisisName } = useI18n();
   const user = getOpsUser();
   const isAdmin = opsIsSystemAdmin(user);
+  const demoHosting = isOpsDemoHosting();
 
-  const [crises, setCrises] = useState<OpsCrisis[]>([]);
-  const [zones, setZones] = useState<OpsZone[]>([]);
+  const [crises, setCrises] = useState<OpsCrisis[]>(() => readOpsCrisesCache() ?? []);
+  const [zones, setZones] = useState<OpsZone[]>(() => readOpsZonesCache() ?? []);
   const [opsUsers, setOpsUsers] = useState<OpsUserRecord[]>([]);
   const [assignableUsers, setAssignableUsers] = useState<Array<{ id: string; email: string }>>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
@@ -76,20 +77,34 @@ export function OpsDashboard() {
     try {
       const d = await opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises');
       setCrises(d.items);
+      writeOpsCrisesCache(d.items);
       setSelectedCrisisId((prev) => pickCrisisId(prev, d.items));
       setAssignLeadCrisisId((prev) => pickCrisisId(prev, d.items));
       setAssignCoordCrisisId((prev) => pickCrisisId(prev, d.items));
       setApiBanner(null);
     } catch (e) {
-      setCrises([]);
+      const cached = readOpsCrisesCache();
+      if (cached?.length) {
+        setCrises(cached);
+        setSelectedCrisisId((prev) => pickCrisisId(prev, cached));
+      } else {
+        setCrises([]);
+      }
       setApiBanner(e instanceof Error ? e.message : String(e));
     }
   }, []);
 
   const loadZones = useCallback(() => {
     opsGet<{ items: OpsZone[] }>('/v1/ops/zones')
-      .then((d) => setZones(d.items))
-      .catch(() => setZones([]));
+      .then((d) => {
+        setZones(d.items);
+        writeOpsZonesCache(d.items);
+      })
+      .catch(() => {
+        const cached = readOpsZonesCache();
+        if (cached) setZones(cached);
+        else setZones([]);
+      });
   }, []);
 
   const loadUsers = useCallback(async () => {
@@ -116,10 +131,15 @@ export function OpsDashboard() {
       .catch(() => setAudit([]));
   }, [isAdmin]);
 
-  const reloadAll = useCallback(async () => {
-    setApiWaking(true);
+  const reloadAll = useCallback(async (opts?: { background?: boolean }) => {
+    const hasCache = Boolean(readOpsCrisesCache()?.length);
+    if (!opts?.background) {
+      setApiWaking(!hasCache);
+    }
     setApiBanner(null);
-    await wakeApiBackend();
+    if (!hasCache) {
+      await wakeApiBackend();
+    }
     await loadCrises();
     loadZones();
     await loadUsers();
@@ -128,7 +148,8 @@ export function OpsDashboard() {
   }, [loadCrises, loadZones, loadUsers, loadAudit]);
 
   useEffect(() => {
-    void reloadAll();
+    const hasCache = Boolean(readOpsCrisesCache()?.length);
+    void reloadAll({ background: hasCache });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -160,7 +181,7 @@ export function OpsDashboard() {
       setSelectedCrisisId(c.id);
       setNewCrisisSlug('');
       setNewCrisisName('');
-      setCrisisFormMsg(`已建立「${crisisLabel(c)}」`);
+      setCrisisFormMsg(`已建立「${crisisName(c.name, c.slug)}」`);
       setActiveTab('crises');
       await loadCrises();
       loadAudit();
@@ -208,11 +229,11 @@ export function OpsDashboard() {
     setBusy(true);
     setTeamFormMsg(null);
     const leadEmail = opsUsers.find((u) => u.id === assignLeadUserId)?.email;
-    const crisisName = assignLeadCrisis ? crisisLabel(assignLeadCrisis) : '';
+    const crisisTitle = assignLeadCrisis ? crisisName(assignLeadCrisis.name, assignLeadCrisis.slug) : '';
     try {
       await opsPost(`/v1/ops/users/${assignLeadUserId}/crises/${assignLeadCrisisId}`, {});
       setAssignLeadUserId('');
-      setTeamFormMsg(`已指派 ${leadEmail ?? '人員'} 為「${crisisName}」Lead`);
+      setTeamFormMsg(`已指派 ${leadEmail ?? '人員'} 為「${crisisTitle}」Lead`);
       await loadUsers();
       loadAudit();
     } catch (e) {
@@ -291,14 +312,14 @@ export function OpsDashboard() {
 
   const tabs = useMemo(() => {
     const items: Array<{ id: OpsTabId; label: string }> = [
-      { id: 'overview', label: '總覽' },
-      { id: 'crises', label: '危機管理' },
+      { id: 'overview', label: t('ops.tab.overview') },
+      { id: 'crises', label: t('ops.tab.crises') },
     ];
-    if (isAdmin) items.push({ id: 'create-crisis', label: '新增危機' });
-    if (isAdmin || canAssignCoord) items.push({ id: 'team', label: '人員管理' });
-    if (isAdmin) items.push({ id: 'audit', label: '稽核紀錄' });
+    if (isAdmin) items.push({ id: 'create-crisis', label: t('ops.tab.createCrisis') });
+    if (isAdmin || canAssignCoord) items.push({ id: 'team', label: t('ops.tab.team') });
+    if (isAdmin) items.push({ id: 'audit', label: t('ops.tab.audit') });
     return items;
-  }, [isAdmin, canAssignCoord]);
+  }, [isAdmin, canAssignCoord, t]);
 
   useEffect(() => {
     if (!tabs.some((t) => t.id === activeTab)) setActiveTab('overview');
@@ -308,11 +329,11 @@ export function OpsDashboard() {
     <section className="card ops-dashboard">
       <header className="ops-dash-header">
         <div>
-          <h1>{OPS_LABELS.console}</h1>
+          <h1>{t('ops.console.title')}</h1>
           <p className="muted">
-            {user.email} · {roleLabel(user.role)}
+            {user.email} · {roleLabel(user.role, t)}
             {user.crisis_lead_assignments && user.crisis_lead_assignments.length > 0 && (
-              <> · 危機 Lead ×{user.crisis_lead_assignments.length}</>
+              <> · {t('ops.console.leadCount', { count: user.crisis_lead_assignments.length })}</>
             )}
           </p>
         </div>
@@ -321,13 +342,21 @@ export function OpsDashboard() {
       {(apiWaking || apiBanner) && (
         <div className={`ops-api-banner${apiBanner ? ' ops-api-banner-error' : ''}`}>
           {apiWaking && !apiBanner && (
-            <p>後端喚醒中，請稍候…（Render 免費方案冷啟動可能需 30–60 秒）</p>
+            <>
+              <p>{t('ops.coldStart.waking')}</p>
+              {demoHosting && (
+                <p className="muted ops-cold-start-detail">{t('ops.coldStart.demoHint')}</p>
+              )}
+            </>
           )}
           {apiBanner && (
             <>
               <p>{apiBanner}</p>
+              {demoHosting && (
+                <p className="muted ops-cold-start-detail">{t('ops.coldStart.demoDetail')}</p>
+              )}
               <button type="button" className="secondary" onClick={() => void reloadAll()} disabled={apiWaking}>
-                重新連線
+                {t('ops.coldStart.reconnect')}
               </button>
             </>
           )}
@@ -338,19 +367,17 @@ export function OpsDashboard() {
 
       {activeTab === 'overview' && (
         <section className="ops-dash-section ops-dash-workflow">
-          <h2>營運流程</h2>
+          <h2>{t('ops.workflow.title')}</h2>
           <ol className="ops-workflow-steps">
             {workflowSteps.map((step, i) => (
               <li key={i}>{step}</li>
             ))}
           </ol>
-          <p className="muted ops-workflow-hint">
-            危機 → 指派 Lead → Lead 畫分區 → 指派 Coordinator → 審核回報／歸檔
-          </p>
+          <p className="muted ops-workflow-hint">{t('ops.workflow.hint')}</p>
           {crises.length > 0 && (
             <p>
               <Link to={`/ops/map?crisis_id=${selectedCrisisId}`} className="ops-dash-inline-link">
-                前往{OPS_LABELS.map} →
+                {t('ops.workflow.goMap')}
               </Link>
             </p>
           )}
@@ -359,15 +386,15 @@ export function OpsDashboard() {
 
       {activeTab === 'crises' && (
         <section className="ops-dash-section" id="crises">
-          <h2>危機管理</h2>
-          <p className="muted">檢視危機列表、選擇目前操作危機，並前往地圖畫分區。</p>
+          <h2>{t('ops.crises.title')}</h2>
+          <p className="muted">{t('ops.crises.hint')}</p>
           {crises.length > 0 && (
             <label className="ops-field">
-              目前操作危機
+              {t('ops.crises.select')}
               <select className="ops-input" value={selectedCrisisId} onChange={(e) => setSelectedCrisisId(e.target.value)}>
                 {crises.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {crisisLabel(c)} ({c.archive_status})
+                    {crisisName(c.name, c.slug)} ({c.archive_status})
                   </option>
                 ))}
               </select>
@@ -383,11 +410,16 @@ export function OpsDashboard() {
               );
               return (
                 <li key={c.id}>
-                  <strong>{crisisLabel(c)}</strong>
-                  <span className="muted"> · {c.slug} · {zoneCount} 個分區</span>
-                  {leads.length > 0 && <span className="muted"> · Lead：{leads.join('、')}</span>}
+                  <strong>{crisisName(c.name, c.slug)}</strong>
+                  <span className="muted">
+                    {' '}
+                    · {c.slug} · {t('ops.crises.zones', { count: zoneCount })}
+                  </span>
+                  {leads.length > 0 && (
+                    <span className="muted"> · {t('ops.crises.lead', { names: leads.join('、') })}</span>
+                  )}
                   <Link to={`/ops/map?crisis_id=${c.id}`} className="ops-dash-inline-link">
-                    至{OPS_LABELS.map} →
+                    {t('ops.crises.toMap')}
                   </Link>
                 </li>
               );
@@ -395,7 +427,8 @@ export function OpsDashboard() {
           </ul>
           {crises.length === 0 && (
             <p className="muted">
-              尚無危機。{isAdmin ? '請至「新增危機」分頁建立。' : '請聯絡系統管理員。'}
+              {t('ops.crises.empty')}
+              {isAdmin ? t('ops.crises.emptyAdmin') : t('ops.crises.emptyStaff')}
             </p>
           )}
         </section>
@@ -403,11 +436,11 @@ export function OpsDashboard() {
 
       {activeTab === 'create-crisis' && isAdmin && (
         <section className="ops-dash-section">
-          <h2>新增危機</h2>
-          <p className="muted">建立後請至「人員管理」指派危機 Lead，再由 Lead 至營運地圖畫分區。</p>
+          <h2>{t('ops.create.title')}</h2>
+          <p className="muted">{t('ops.create.hint')}</p>
           <div className="ops-dash-form">
             <label className="ops-field">
-              <span>Slug（英文識別）</span>
+              <span>{t('ops.create.slug')}</span>
               <input
                 className="ops-input"
                 placeholder="taipei-flood-2026"
@@ -416,7 +449,7 @@ export function OpsDashboard() {
               />
             </label>
             <label className="ops-field">
-              <span>顯示名稱（繁中）</span>
+              <span>{t('ops.create.name')}</span>
               <input
                 className="ops-input"
                 placeholder="2026 台北水患"
@@ -425,7 +458,7 @@ export function OpsDashboard() {
               />
             </label>
             <button type="button" onClick={createCrisis} disabled={busy}>
-              {busy ? '建立中…' : '建立危機'}
+              {busy ? t('ops.create.submitting') : t('ops.create.submit')}
             </button>
             {crisisFormMsg && (
               <p className={crisisFormMsg.startsWith('已建立') ? 'ops-form-ok' : 'error'}>{crisisFormMsg}</p>
@@ -436,7 +469,7 @@ export function OpsDashboard() {
 
       {activeTab === 'team' && (isAdmin || canAssignCoord) && (
         <section className="ops-dash-section" id="team">
-          <h2>人員管理</h2>
+          <h2>{t('ops.team.title')}</h2>
           {isAdmin && (
             <div className="ops-dash-form">
               <h3>新增營運人員</h3>
@@ -481,7 +514,7 @@ export function OpsDashboard() {
                   <option value="">選擇危機</option>
                   {crises.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {crisisLabel(c)}
+                      {crisisName(c.name, c.slug)}
                     </option>
                   ))}
                 </select>
@@ -519,14 +552,14 @@ export function OpsDashboard() {
                   >
                     {crises.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {crisisLabel(c)}
+                        {crisisName(c.name, c.slug)}
                       </option>
                     ))}
                   </select>
                 </label>
               )}
               {!isAdmin && selectedCrisis && (
-                <p className="muted">危機：{crisisLabel(selectedCrisis)}</p>
+                <p className="muted">危機：{crisisName(selectedCrisis.name, selectedCrisis.slug)}</p>
               )}
               <select className="ops-input" value={assignUserId} onChange={(e) => setAssignUserId(e.target.value)}>
                 <option value="">選擇人員</option>
@@ -559,7 +592,7 @@ export function OpsDashboard() {
               {opsUsers.map((u) => (
                 <li key={u.id}>
                   <strong>{u.email}</strong>
-                  <span className="muted"> {roleLabel(u.role)}</span>
+                  <span className="muted"> {roleLabel(u.role, t)}</span>
                   {u.crisis_lead_assignments?.length > 0 && (
                     <ul>
                       {u.crisis_lead_assignments.map((a) => (

@@ -2,9 +2,9 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 
+import { useI18n } from '../i18n/I18nContext';
 import { opsPost } from '../ops/opsApi';
 import { getOpsToken, getOpsUser, setOpsSession, type OpsUserSession } from '../ops/opsAuth';
-import { OPS_LABELS } from '../ops/opsLabels';
 
 type LoginResp = {
   access_token: string;
@@ -12,6 +12,7 @@ type LoginResp = {
 };
 
 export function OpsLogin() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -39,13 +40,14 @@ export function OpsLogin() {
 
   return (
     <section className="card ops-login-card">
-      <h1>{OPS_LABELS.login}</h1>
+      <h1>{t('ops.login.title')}</h1>
       <p className="muted">
-        登入後進入{OPS_LABELS.console}。民眾回報請至 <Link to="/">回報地圖</Link>。
+        {t('ops.login.hint')}{' '}
+        <Link to="/">{t('ops.nav.contributorMap')}</Link>。
       </p>
       <form className="ops-login-form" onSubmit={onSubmit}>
         <label className="ops-field">
-          <span>Email</span>
+          <span>{t('ops.login.email')}</span>
           <input
             className="ops-input"
             type="email"
@@ -55,7 +57,7 @@ export function OpsLogin() {
           />
         </label>
         <label className="ops-field">
-          <span>密碼</span>
+          <span>{t('ops.login.password')}</span>
           <input
             className="ops-input"
             type="password"
@@ -68,7 +70,7 @@ export function OpsLogin() {
         {err && <p className="error">{err}</p>}
         <div className="ops-login-actions">
           <button type="submit" disabled={busy}>
-            {busy ? '登入中…' : '登入'}
+            {busy ? t('ops.login.submitting') : t('ops.login.submit')}
           </button>
         </div>
       </form>
