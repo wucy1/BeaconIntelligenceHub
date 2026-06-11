@@ -294,5 +294,18 @@
   "ops.create.name": "Display name",
   "ops.create.submit": "Create crisis",
   "ops.create.submitting": "Creating…",
-  "ops.team.title": "Team management"
+  "ops.team.title": "Team management",
+  "ops.crisis.status": "Status",
+  "ops.crisis.statusDraft": "Draft",
+  "ops.crisis.statusActive": "Active",
+  "ops.crisis.statusArchived": "Archived",
+  "ops.crisis.eventStart": "Event period start",
+  "ops.crisis.eventEnd": "Event period end",
+  "ops.crisis.eventHint": "The event period is the official crisis window for archive and reporting. Use the operations map view filter for browsing.",
+  "ops.crisis.editTitle": "Crisis settings",
+  "ops.crisis.save": "Save crisis settings",
+  "ops.crisis.saving": "Saving…",
+  "ops.crisis.saved": "Crisis settings saved",
+  "ops.crisis.saveError": "Could not save crisis settings",
+  "ops.create.statusHint": "Choose draft or active when creating; event dates are optional."
 }

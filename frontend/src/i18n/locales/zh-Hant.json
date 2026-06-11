@@ -294,5 +294,18 @@
   "ops.create.name": "顯示名稱（繁中）",
   "ops.create.submit": "建立危機",
   "ops.create.submitting": "建立中…",
-  "ops.team.title": "人員管理"
+  "ops.team.title": "人員管理",
+  "ops.crisis.status": "狀態",
+  "ops.crisis.statusDraft": "草稿（draft）",
+  "ops.crisis.statusActive": "進行中（active）",
+  "ops.crisis.statusArchived": "已歸檔（archived）",
+  "ops.crisis.eventStart": "事件期間起",
+  "ops.crisis.eventEnd": "事件期間迄",
+  "ops.crisis.eventHint": "事件期間為危機正式定義，供歸檔與報表使用；瀏覽篩選請至營運地圖管理視角。",
+  "ops.crisis.editTitle": "危機設定",
+  "ops.crisis.save": "儲存危機設定",
+  "ops.crisis.saving": "儲存中…",
+  "ops.crisis.saved": "已儲存危機設定",
+  "ops.crisis.saveError": "無法儲存危機設定",
+  "ops.create.statusHint": "建立時可選草稿或進行中；起訖時間可留空稍後再設。"
 }

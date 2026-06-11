@@ -3,15 +3,18 @@ import { Link, Navigate } from 'react-router-dom';
 
 import { wakeApiBackend } from '../api';
 import { useI18n } from '../i18n/I18nContext';
+import { CrisisMetaFields, type CrisisMetaDraft } from '../components/ops/CrisisMetaFields';
 import {
   opsDelete,
   opsGet,
+  opsPatch,
   opsPost,
   type AuditEntry,
   type OpsCrisis,
   type OpsUserRecord,
   type OpsZone,
 } from '../ops/opsApi';
+import { fromDatetimeLocalValue, toDatetimeLocalValue } from '../ops/polygonUtils';
 import {
   getOpsUser,
   opsCanAssignCoordinator,
@@ -50,6 +53,17 @@ export function OpsDashboard() {
   const [selectedCrisisId, setSelectedCrisisId] = useState('');
   const [newCrisisSlug, setNewCrisisSlug] = useState('');
   const [newCrisisName, setNewCrisisName] = useState('');
+  const [newCrisisMeta, setNewCrisisMeta] = useState<CrisisMetaDraft>({
+    archive_status: 'draft',
+    event_start: '',
+    event_end: '',
+  });
+  const [editCrisisMeta, setEditCrisisMeta] = useState<CrisisMetaDraft>({
+    archive_status: 'draft',
+    event_start: '',
+    event_end: '',
+  });
+  const [crisisEditMsg, setCrisisEditMsg] = useState<string | null>(null);
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserName, setNewUserName] = useState('');
@@ -157,7 +171,32 @@ export function OpsDashboard() {
     loadAssignableUsers();
   }, [loadAssignableUsers, selectedCrisisId]);
 
+  useEffect(() => {
+    if (!selectedCrisis) return;
+    setEditCrisisMeta({
+      archive_status: selectedCrisis.archive_status,
+      event_start: toDatetimeLocalValue(selectedCrisis.archive_window_start),
+      event_end: toDatetimeLocalValue(selectedCrisis.archive_window_end),
+    });
+    setCrisisEditMsg(null);
+  }, [selectedCrisis]);
+
+  const crisisMetaLabels = useMemo(
+    () => ({
+      status: t('ops.crisis.status'),
+      eventStart: t('ops.crisis.eventStart'),
+      eventEnd: t('ops.crisis.eventEnd'),
+      eventHint: t('ops.crisis.eventHint'),
+      statusDraft: t('ops.crisis.statusDraft'),
+      statusActive: t('ops.crisis.statusActive'),
+      statusArchived: t('ops.crisis.statusArchived'),
+    }),
+    [t],
+  );
+
   if (!user) return <Navigate to="/ops/login" replace />;
+
+  const canEditSelectedCrisis = isAdmin || isLeadForSelected;
 
   const createCrisis = async () => {
     if (!isAdmin) {
@@ -175,12 +214,15 @@ export function OpsDashboard() {
       const c = await opsPost<OpsCrisis>('/v1/ops/crises', {
         slug: newCrisisSlug.trim(),
         name: { 'zh-Hant': newCrisisName.trim(), zh: newCrisisName.trim() },
-        archive_status: 'draft',
+        archive_status: newCrisisMeta.archive_status,
+        archive_window_start: fromDatetimeLocalValue(newCrisisMeta.event_start),
+        archive_window_end: fromDatetimeLocalValue(newCrisisMeta.event_end),
       });
       setCrises((prev) => (prev.some((x) => x.id === c.id) ? prev : [c, ...prev]));
       setSelectedCrisisId(c.id);
       setNewCrisisSlug('');
       setNewCrisisName('');
+      setNewCrisisMeta({ archive_status: 'draft', event_start: '', event_end: '' });
       setCrisisFormMsg(`已建立「${crisisName(c.name, c.slug)}」`);
       setActiveTab('crises');
       await loadCrises();
@@ -188,6 +230,30 @@ export function OpsDashboard() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setCrisisFormMsg(msg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveSelectedCrisisMeta = async () => {
+    if (!selectedCrisisId || !canEditSelectedCrisis) return;
+    setBusy(true);
+    setCrisisEditMsg(null);
+    try {
+      const updated = await opsPatch<OpsCrisis>(`/v1/ops/crises/${selectedCrisisId}`, {
+        archive_status: editCrisisMeta.archive_status,
+        archive_window_start: fromDatetimeLocalValue(editCrisisMeta.event_start),
+        archive_window_end: fromDatetimeLocalValue(editCrisisMeta.event_end),
+      });
+      setCrises((prev) => {
+        const next = prev.map((c) => (c.id === updated.id ? updated : c));
+        writeOpsCrisesCache(next);
+        return next;
+      });
+      setCrisisEditMsg(t('ops.crisis.saved'));
+      loadAudit();
+    } catch (e) {
+      setCrisisEditMsg(e instanceof Error ? e.message : t('ops.crisis.saveError'));
     } finally {
       setBusy(false);
     }
@@ -431,6 +497,25 @@ export function OpsDashboard() {
               {isAdmin ? t('ops.crises.emptyAdmin') : t('ops.crises.emptyStaff')}
             </p>
           )}
+          {selectedCrisis && canEditSelectedCrisis && (
+            <div className="ops-dash-form ops-crisis-edit-block">
+              <h3>{t('ops.crisis.editTitle')}</h3>
+              <CrisisMetaFields
+                value={editCrisisMeta}
+                onChange={setEditCrisisMeta}
+                labels={crisisMetaLabels}
+                disabled={busy}
+              />
+              <button type="button" onClick={() => void saveSelectedCrisisMeta()} disabled={busy}>
+                {busy ? t('ops.crisis.saving') : t('ops.crisis.save')}
+              </button>
+              {crisisEditMsg && (
+                <p className={crisisEditMsg === t('ops.crisis.saved') ? 'ops-form-ok' : 'error'}>
+                  {crisisEditMsg}
+                </p>
+              )}
+            </div>
+          )}
         </section>
       )}
 
@@ -457,6 +542,14 @@ export function OpsDashboard() {
                 onChange={(e) => setNewCrisisName(e.target.value)}
               />
             </label>
+            <p className="muted">{t('ops.create.statusHint')}</p>
+            <CrisisMetaFields
+              value={newCrisisMeta}
+              onChange={setNewCrisisMeta}
+              statusOptions={['draft', 'active']}
+              labels={crisisMetaLabels}
+              disabled={busy}
+            />
             <button type="button" onClick={createCrisis} disabled={busy}>
               {busy ? t('ops.create.submitting') : t('ops.create.submit')}
             </button>

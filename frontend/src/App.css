@@ -2194,6 +2194,23 @@ button.linkish {
   font-size: 0.85rem;
 }
 
+.ops-crisis-meta-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ops-crisis-meta-hint {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.ops-crisis-edit-block {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
 .ops-header-nav {
   display: flex;
   flex-wrap: wrap;
