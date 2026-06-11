@@ -14,7 +14,12 @@ from app.models import Report
 router = APIRouter(prefix="/v1/export", tags=["export"])
 
 
-def _fetch_rows(db: Session, crisis_id: UUID, latest_only: bool) -> list[Report]:
+def _fetch_rows(
+    db: Session,
+    crisis_id: UUID,
+    latest_only: bool,
+    reviewed_only: bool | None = None,
+) -> list[Report]:
     if latest_only:
         ids = db.execute(
             text("SELECT id FROM latest_report_per_building WHERE crisis_id = :cid"),
@@ -22,13 +27,23 @@ def _fetch_rows(db: Session, crisis_id: UUID, latest_only: bool) -> list[Report]
         ).scalars().all()
         if not ids:
             return []
-        return db.query(Report).filter(Report.id.in_(list(ids))).order_by(Report.received_at_server.asc()).all()
-    return (
+        rows = db.query(Report).filter(Report.id.in_(list(ids))).order_by(Report.received_at_server.asc()).all()
+        if reviewed_only is True:
+            return [r for r in rows if r.admin_reviewed]
+        if reviewed_only is False:
+            return [r for r in rows if not r.admin_reviewed]
+        return rows
+    rows = (
         db.query(Report)
         .filter(Report.crisis_id == crisis_id)
         .order_by(Report.received_at_server.asc())
         .all()
     )
+    if reviewed_only is True:
+        return [r for r in rows if r.admin_reviewed]
+    if reviewed_only is False:
+        return [r for r in rows if not r.admin_reviewed]
+    return rows
 
 
 def _coords(db: Session, report_id: UUID, r: Report) -> tuple[str, str]:
@@ -58,11 +73,16 @@ def export_data(
     crisis_id: UUID,
     export_format: str = Query("csv", alias="format", pattern="^(csv|geojson)$"),
     latest: int = Query(0, ge=0, le=1),
+    reviewed_only: bool | None = None,
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     latest_only = latest == 1
-    rows = _fetch_rows(db, crisis_id, latest_only)
+    rows = _fetch_rows(db, crisis_id, latest_only, reviewed_only=reviewed_only)
     suffix = "latest" if latest_only else "all"
+    if reviewed_only is True:
+        suffix += "-reviewed"
+    elif reviewed_only is False:
+        suffix += "-pending"
 
     if export_format == "csv":
         buf = io.StringIO()

@@ -2,8 +2,9 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 import { useI18n } from '../i18n/I18nContext';
-import { clearOpsSession, getOpsUser } from '../ops/opsAuth';
+import { getOpsUser } from '../ops/opsAuth';
 import { BihLogo } from './BihLogo';
+import { OpsUserMenu } from './OpsUserMenu';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { OfflineBanner } from './OfflineBanner';
 
@@ -16,11 +17,6 @@ type Props = {
 export function OpsShell({ children, narrow }: Props) {
   const { t } = useI18n();
   const user = getOpsUser();
-
-  const logout = () => {
-    clearOpsSession();
-    window.location.href = '/ops/login';
-  };
 
   return (
     <div className="layout ops-layout">
@@ -36,13 +32,7 @@ export function OpsShell({ children, narrow }: Props) {
               <LanguageSwitcher />
             </>
           )}
-          {user ? (
-            <button type="button" className="ops-header-linkish" onClick={logout}>
-              {t('ops.nav.logout')}
-            </button>
-          ) : (
-            <Link to="/ops/login">{t('ops.nav.login')}</Link>
-          )}
+          {user ? <OpsUserMenu /> : <Link to="/ops/login">{t('ops.nav.login')}</Link>}
         </nav>
       </header>
       <OfflineBanner />

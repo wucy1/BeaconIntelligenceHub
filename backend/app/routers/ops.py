@@ -14,6 +14,11 @@ from sqlalchemy.orm import Session
 
 from app.archive_logic import report_ids_for_archive
 from app.database import get_db
+from app.ops_reports_query import (
+    report_ids_all_scoped,
+    report_ids_for_crisis_scoped,
+    report_ids_unspecified_scoped,
+)
 from app.org_settings import get_org_settings
 from app.models import (
     Crisis,
@@ -86,6 +91,22 @@ class CrisisPatchBody(BaseModel):
 class ArchiveRunBody(BaseModel):
     zone_ids: list[UUID] | None = None
     limit: int = Field(500, ge=1, le=2000)
+    captured_from: datetime | None = None
+    captured_to: datetime | None = None
+
+
+class ProfilePatchBody(BaseModel):
+    display_name: str | None = None
+    locale: str | None = None
+    phone: str | None = None
+    title: str | None = None
+    org_unit: str | None = None
+
+
+class BatchReviewBody(BaseModel):
+    report_ids: list[UUID]
+    reviewed: bool | None = None
+    flagged: bool | None = None
 
 
 class UserCreateBody(BaseModel):
@@ -181,12 +202,22 @@ def _user_out(db: Session, user: OpsUser) -> dict:
         "id": str(user.id),
         "email": user.email,
         "display_name": user.display_name,
+        "locale": getattr(user, "locale", None),
+        "phone": getattr(user, "phone", None),
+        "title": getattr(user, "title", None),
+        "org_unit": getattr(user, "org_unit", None),
         "role": user.role,
         "is_active": bool(user.is_active),
         "created_at": user.created_at.isoformat() if user.created_at else None,
         "zone_assignments": _zone_assignments_payload(db, user.id),
         "crisis_lead_assignments": _crisis_leads_payload(db, user.id),
     }
+
+
+def _archive_window(crisis: Crisis, body: ArchiveRunBody) -> tuple[datetime | None, datetime | None]:
+    start = body.captured_from if body.captured_from is not None else crisis.archive_window_start
+    end = body.captured_to if body.captured_to is not None else crisis.archive_window_end
+    return start, end
 
 
 def _report_geom_json(db: Session, report_id: UUID, building_id: UUID | None):
@@ -234,6 +265,10 @@ def ops_me(principal: OpsPrincipal = Depends(get_ops_principal)) -> dict:
         "id": str(u.id),
         "email": u.email,
         "display_name": u.display_name,
+        "locale": getattr(u, "locale", None),
+        "phone": getattr(u, "phone", None),
+        "title": getattr(u, "title", None),
+        "org_unit": getattr(u, "org_unit", None),
         "role": u.role,
         "zone_ids": [str(z) for z in principal.zone_ids],
         "zone_assignments": [
@@ -244,6 +279,38 @@ def ops_me(principal: OpsPrincipal = Depends(get_ops_principal)) -> dict:
             {"crisis_id": str(cid)} for cid in principal.crisis_lead_ids
         ],
     }
+
+
+@router.patch("/me")
+def ops_patch_me(
+    body: ProfilePatchBody,
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    user = db.query(OpsUser).filter(OpsUser.id == principal.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if body.display_name is not None:
+        user.display_name = body.display_name.strip() or None
+    if body.locale is not None:
+        user.locale = body.locale.strip() or None
+    if body.phone is not None:
+        user.phone = body.phone.strip() or None
+    if body.title is not None:
+        user.title = body.title.strip() or None
+    if body.org_unit is not None:
+        user.org_unit = body.org_unit.strip() or None
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="profile.update",
+        entity_type="ops_user",
+        entity_id=user.id,
+        detail={},
+    )
+    db.commit()
+    db.refresh(user)
+    return _user_out(db, user)
 
 
 @router.get("/zones")
@@ -478,12 +545,13 @@ def ops_archive_preview(
     if zone_ids is None and not principal.is_system_admin():
         zone_rows = db.query(Zone.id).filter(Zone.crisis_id == crisis_id).all()
         zone_ids = [row[0] for row in zone_rows] if zone_rows else list(principal.zone_ids)
+    win_start, win_end = _archive_window(crisis, body)
     ids = report_ids_for_archive(
         db,
         crisis_id,
         zone_ids,
-        crisis.archive_window_start,
-        crisis.archive_window_end,
+        win_start,
+        win_end,
         body.limit,
         exclude_already_linked=True,
     )
@@ -493,8 +561,8 @@ def ops_archive_preview(
         "matched_count": len(ids),
         "sample_report_ids": [str(i) for i in ids[:20]],
         "already_linked_count": linked,
-        "archive_window_start": crisis.archive_window_start.isoformat() if crisis.archive_window_start else None,
-        "archive_window_end": crisis.archive_window_end.isoformat() if crisis.archive_window_end else None,
+        "archive_window_start": win_start.isoformat() if win_start else None,
+        "archive_window_end": win_end.isoformat() if win_end else None,
         "zone_ids": [str(z) for z in zone_ids] if zone_ids else None,
     }
 
@@ -515,12 +583,13 @@ def ops_archive_run(
     if zone_ids is None and not principal.is_system_admin():
         zone_rows = db.query(Zone.id).filter(Zone.crisis_id == crisis_id).all()
         zone_ids = [row[0] for row in zone_rows] if zone_rows else list(principal.zone_ids)
+    win_start, win_end = _archive_window(crisis, body)
     ids = report_ids_for_archive(
         db,
         crisis_id,
         zone_ids,
-        crisis.archive_window_start,
-        crisis.archive_window_end,
+        win_start,
+        win_end,
         body.limit,
         exclude_already_linked=True,
     )
@@ -580,9 +649,11 @@ def ops_audit_log(
 @router.get("/reports")
 def ops_list_reports(
     crisis_id: UUID | None = None,
+    view: str = Query("crisis", pattern="^(crisis|unspecified|all)$"),
     zone_id: UUID | None = None,
     captured_from: datetime | None = None,
     captured_to: datetime | None = None,
+    reviewed_only: bool | None = None,
     limit: int = Query(100, ge=1, le=500),
     principal: OpsPrincipal = Depends(get_ops_principal),
     db: Session = Depends(get_db),
@@ -593,7 +664,26 @@ def ops_list_reports(
         if str(exc) == "zone_not_allowed":
             raise HTTPException(status_code=403, detail="Zone not in your assignment") from exc
         raise
-    ids = report_ids_in_zones(db, crisis_id, zone_ids, captured_from, captured_to, limit)
+    if view == "unspecified":
+        ids = report_ids_unspecified_scoped(
+            db, zone_ids, captured_from, captured_to, limit, reviewed_only=reviewed_only
+        )
+    elif view == "all":
+        ids = report_ids_all_scoped(
+            db, zone_ids, captured_from, captured_to, limit, reviewed_only=reviewed_only
+        )
+    elif crisis_id is None:
+        raise HTTPException(status_code=422, detail="crisis_id required for view=crisis")
+    else:
+        ids = report_ids_for_crisis_scoped(
+            db,
+            crisis_id,
+            zone_ids,
+            captured_from,
+            captured_to,
+            limit,
+            reviewed_only=reviewed_only,
+        )
     rows = db.query(Report).filter(Report.id.in_(list(ids))).all() if ids else []
     if rows and ids:
         order = {rid: i for i, rid in enumerate(ids)}
@@ -616,8 +706,46 @@ def ops_list_reports(
     ]
     return {
         "items": items,
+        "view": view,
         "zone_scope": [str(z) for z in zone_ids] if zone_ids is not None else None,
     }
+
+
+@router.post("/reports/batch-review")
+def ops_batch_review_reports(
+    body: BatchReviewBody,
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not body.report_ids:
+        return {"ok": True, "updated": 0}
+    visible: set[UUID] | None = None
+    if not principal.sees_all_zones():
+        visible = set(
+            report_ids_in_zones(db, None, list(principal.zone_ids), None, None, 2000)
+        )
+    updated = 0
+    for rid in body.report_ids:
+        if visible is not None and rid not in visible:
+            continue
+        r = db.query(Report).filter(Report.id == rid).first()
+        if not r:
+            continue
+        if body.reviewed is not None:
+            r.admin_reviewed = body.reviewed
+        if body.flagged is not None:
+            r.admin_flagged = body.flagged
+        updated += 1
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="report.batch_review",
+        entity_type="report",
+        entity_id=None,
+        detail={"count": updated, "reviewed": body.reviewed, "flagged": body.flagged},
+    )
+    db.commit()
+    return {"ok": True, "updated": updated}
 
 
 @router.patch("/reports/{report_id}")

@@ -90,6 +90,7 @@ def public_settings(db: Session = Depends(get_db)) -> dict:
     org = get_org_settings(db)
     return {
         "default_public_report_months": org.default_public_report_months,
+        "show_demo_cold_start_hint": org.show_demo_cold_start_hint,
     }
 
 
@@ -108,6 +109,12 @@ def active_window(db: Session = Depends(get_db)) -> dict:
     ).scalar_one()
     now = datetime.now(timezone.utc)
     has_bounds = bounds is not None
+    captured_from, captured_to = effective_capture_window(
+        months=org.default_public_report_months,
+        event_start=c.archive_window_start,
+        event_end=c.archive_window_end,
+        now=now,
+    )
     return {
         "window_id": str(c.id),
         "crisis_id": str(c.id),
@@ -119,8 +126,8 @@ def active_window(db: Session = Depends(get_db)) -> dict:
         "reporting_unbounded": True,
         # unspecified：管理員尚未劃定範圍；defined：已有參考 AOI（顯示可調整，提交仍不限 bounds）
         "reporting_phase": "defined" if has_bounds else "unspecified",
-        "starts_at": None,
-        "ends_at": None,
+        "starts_at": captured_from.isoformat(),
+        "ends_at": captured_to.isoformat(),
         "default_report_months": org.default_public_report_months,
         "is_open": True,
         "server_time": now.isoformat(),

@@ -21,7 +21,6 @@ import {
   type OpsZone,
 } from '../ops/opsApi';
 import {
-  clearOpsSession,
   getOpsToken,
   getOpsUser,
   opsCanCreateZones,
@@ -32,6 +31,7 @@ import {
   type OpsUserSession,
 } from '../ops/opsAuth';
 import { BihLogo } from '../components/BihLogo';
+import { OpsUserMenu } from '../components/OpsUserMenu';
 import { OsmTileLayer } from '../components/map/CachedOsmTileLayer';
 import { MapRailZoom } from '../components/map/MapRailZoom';
 import { OpsMapClearSelection } from '../components/ops/OpsMapClearSelection';
@@ -72,15 +72,22 @@ function FlyToZone({ zone }: { zone: OpsZone | null }) {
   return null;
 }
 
-function roleLabel(role: string, t: (key: string) => string): string {
-  if (role === 'system_admin') return t('ops.role.systemAdmin');
-  return t('ops.role.coordinator');
+function FlyToPoint({ point }: { point: [number, number] | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!point) return;
+    map.flyTo(point, 16, { duration: 0.8 });
+  }, [map, point]);
+  return null;
 }
 
 export function OpsMapPage() {
   const { t, crisisName } = useI18n();
   const [searchParams] = useSearchParams();
   const crisisFromUrl = searchParams.get('crisis_id') ?? '';
+  const reportFromUrl = searchParams.get('report_id');
+  const latFromUrl = searchParams.get('lat');
+  const lngFromUrl = searchParams.get('lng');
   const [user, setUser] = useState<OpsUserSession | null>(() => getOpsUser());
   const isAdmin = opsIsSystemAdmin(user);
   const hasZoneDrawRole =
@@ -107,10 +114,12 @@ export function OpsMapPage() {
 
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
+  const [reportView, setReportView] = useState<'crisis' | 'unspecified' | 'all'>('crisis');
 
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [flyZone, setFlyZone] = useState<OpsZone | null>(null);
+  const [flyPoint, setFlyPoint] = useState<[number, number] | null>(null);
   const [zonesRevision, setZonesRevision] = useState(0);
 
   const selectedZone = zones.find((z) => z.id === selectedZoneId) ?? null;
@@ -155,7 +164,8 @@ export function OpsMapPage() {
   }, [isAdmin]);
 
   const loadReports = useCallback(() => {
-    const q = new URLSearchParams({ limit: '300' });
+    const q = new URLSearchParams({ limit: '300', view: reportView });
+    if (reportView === 'crisis' && activeCrisisId) q.set('crisis_id', activeCrisisId);
     if (selectedZoneId) q.set('zone_id', selectedZoneId);
     const from = fromDatetimeLocalValue(filterFrom);
     const to = fromDatetimeLocalValue(filterTo);
@@ -164,7 +174,7 @@ export function OpsMapPage() {
     opsGet<{ items: OpsReport[] }>(`/v1/ops/reports?${q}`)
       .then((d) => setReports(d.items))
       .catch(() => setReports([]));
-  }, [selectedZoneId, filterFrom, filterTo]);
+  }, [selectedZoneId, filterFrom, filterTo, reportView, activeCrisisId]);
 
   useEffect(() => {
     void wakeApiBackend();
@@ -202,6 +212,18 @@ export function OpsMapPage() {
   useEffect(() => {
     loadReports();
   }, [loadReports]);
+
+  useEffect(() => {
+    if (reportFromUrl) setSelectedReportId(reportFromUrl);
+    const lat = latFromUrl ? Number(latFromUrl) : NaN;
+    const lng = lngFromUrl ? Number(lngFromUrl) : NaN;
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      setFlyPoint([lat, lng]);
+      const id = window.setTimeout(() => setFlyPoint(null), 200);
+      return () => window.clearTimeout(id);
+    }
+    return undefined;
+  }, [reportFromUrl, latFromUrl, lngFromUrl]);
 
   useEffect(() => {
     if (!activeCrisis) return;
@@ -357,7 +379,14 @@ export function OpsMapPage() {
     if (!activeCrisisId) return;
     setBusy(true);
     try {
-      const body = { zone_ids: selectedZoneId ? [selectedZoneId] : null, limit: 500 };
+      const from = fromDatetimeLocalValue(filterFrom);
+      const to = fromDatetimeLocalValue(filterTo);
+      const body = {
+        zone_ids: selectedZoneId ? [selectedZoneId] : null,
+        limit: 500,
+        captured_from: from || null,
+        captured_to: to || null,
+      };
       const p = await opsPost<ArchivePreview>(`/v1/ops/crises/${activeCrisisId}/archive-preview`, body);
       setPreview(p);
       setPanel('crisis');
@@ -372,7 +401,14 @@ export function OpsMapPage() {
     if (!activeCrisisId || !window.confirm('執行批次歸檔？將建立 report_crisis_links。')) return;
     setBusy(true);
     try {
-      const body = { zone_ids: selectedZoneId ? [selectedZoneId] : null, limit: 500 };
+      const from = fromDatetimeLocalValue(filterFrom);
+      const to = fromDatetimeLocalValue(filterTo);
+      const body = {
+        zone_ids: selectedZoneId ? [selectedZoneId] : null,
+        limit: 500,
+        captured_from: from || null,
+        captured_to: to || null,
+      };
       const r = await opsPost<{ linked_count: number }>(`/v1/ops/crises/${activeCrisisId}/archive-run`, body);
       setPreview(null);
       loadCrises();
@@ -384,11 +420,6 @@ export function OpsMapPage() {
     } finally {
       setBusy(false);
     }
-  };
-
-  const logout = () => {
-    clearOpsSession();
-    window.location.href = '/ops/login';
   };
 
   const togglePanel = (key: PanelKey) => {
@@ -409,6 +440,7 @@ export function OpsMapPage() {
         <MapRailZoom />
         <OpsMapClearSelection enabled={mapMode === 'browse' && Boolean(selectedZoneId)} onClear={clearZoneSelection} />
         <FlyToZone zone={flyZone} />
+        <FlyToPoint point={flyPoint} />
         {isEditingShape && (mapMode === 'draw' ? canCreateZones : editingZoneId != null) && (
           <OpsPolygonEditor
             vertices={vertices}
@@ -502,13 +534,7 @@ export function OpsMapPage() {
           </Link>
         </div>
         <div className="ops-map-top-right">
-          <div className="ops-map-chip ops-map-user-chip">
-            <span className="ops-map-user-email">{user.email}</span>
-            <span className="ops-map-sub">{roleLabel(user.role, t)}</span>
-          </div>
-          <button type="button" className="ops-map-chip ops-map-btn" onClick={logout}>
-            {t('ops.nav.logout')}
-          </button>
+          <OpsUserMenu className="ops-map-user-menu" compact />
         </div>
       </div>
 
@@ -537,7 +563,17 @@ export function OpsMapPage() {
 
       <div className="ops-map-view-panel">
         <span className="ops-map-view-label">{t('ops.map.viewPanel')}</span>
-        {crises.length > 0 ? (
+        <select
+          className="ops-map-chip"
+          value={reportView}
+          onChange={(e) => setReportView(e.target.value as 'crisis' | 'unspecified' | 'all')}
+          aria-label={t('dashboard.viewMode')}
+        >
+          <option value="crisis">{t('dashboard.view.crisis')}</option>
+          <option value="unspecified">{t('dashboard.view.unspecified')}</option>
+          <option value="all">{t('dashboard.view.all')}</option>
+        </select>
+        {crises.length > 0 && reportView === 'crisis' ? (
           <label className="ops-map-chip ops-map-crisis-select">
             {t('ops.map.crisis')}
             <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>

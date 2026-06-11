@@ -30,7 +30,6 @@ import {
 import type { MapRegionMeta } from '../offline/tileCache';
 import { useI18n } from '../i18n/I18nContext';
 import { getOpsToken } from '../ops/opsAuth';
-import { OPS_LABELS } from '../ops/opsLabels';
 import { DEFAULT_BOX_SIDE_KM, DEFAULT_RADIUS_KM, PREFETCH_ZOOM_MAX } from '../offline/tileMath';
 import {
   buildingFeatureById,
@@ -72,6 +71,7 @@ function fmtCoord(v: number): string {
 
 export function MapPage() {
   const { t, locale } = useI18n();
+  const [reportWindowMonths, setReportWindowMonths] = useState<number | null>(null);
   const {
     crises: publicCrises,
     selectedId: selectedCrisisId,
@@ -208,6 +208,12 @@ export function MapPage() {
 
   const onFlyComplete = useCallback(() => {
     setFlyTarget(null);
+  }, []);
+
+  useEffect(() => {
+    apiGet<{ default_report_months?: number }>('/v1/public/active-window')
+      .then((w) => setReportWindowMonths(w.default_report_months ?? null))
+      .catch(() => setReportWindowMonths(null));
   }, []);
 
   /** 恢復連線時自動切回連線地圖（不重複顯示橫幅） */
@@ -979,6 +985,11 @@ export function MapPage() {
           </span>
         </div>
         <div className="map-overlay-right">
+          {reportWindowMonths != null && (
+            <span className="muted map-window-hint" title={t('map.window.hintTitle')}>
+              {t('map.window.recentMonths', { months: reportWindowMonths })}
+            </span>
+          )}
           <label className="lang-switcher map-crisis-switcher">
             <span className="muted">{t('map.crisis.select')}</span>
             <select
@@ -1021,8 +1032,8 @@ export function MapPage() {
           </div>
           <nav className="map-dev-links">
             <a href="/dev">{t('nav.home')}</a>
-            {getOpsToken() && <a href="/dashboard">{OPS_LABELS.dashboard}</a>}
-            {!getOpsToken() && <a href="/ops/login">{OPS_LABELS.login}</a>}
+            {getOpsToken() && <a href="/dashboard">{t('ops.nav.dashboard')}</a>}
+            {!getOpsToken() && <a href="/ops/login">{t('ops.nav.login')}</a>}
           </nav>
         </div>
       </div>

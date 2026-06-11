@@ -14,6 +14,9 @@ export type ActiveWindow = {
   reporting_unbounded?: boolean;
   /** unspecified = 管理員尚未劃定範圍；defined = 已有參考 AOI */
   reporting_phase?: 'unspecified' | 'defined';
+  starts_at?: string | null;
+  ends_at?: string | null;
+  default_report_months?: number;
   is_open: boolean;
 };
 

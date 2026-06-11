@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { apiBase, apiGet } from '../api';
 import { useI18n } from '../i18n/I18nContext';
-import { opsGet, opsPatch, type OpsCrisis, type OpsZone } from '../ops/opsApi';
+import { opsGet, opsPatch, opsPost, type OpsCrisis, type OpsZone } from '../ops/opsApi';
 import {
   getOpsUser,
   opsHasStaffAccess,
@@ -27,6 +27,7 @@ type ReportSummary = {
 type ListResp = { items: ReportSummary[]; nextCursor?: string | null; zone_scope?: string[] | null };
 
 type ReviewFilter = 'all' | 'pending' | 'flagged' | 'reviewed';
+type ReportView = 'crisis' | 'unspecified' | 'all';
 
 type AnalyticsSummary = {
   total_reports: number;
@@ -45,26 +46,31 @@ export function Dashboard() {
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
   const [crisisId, setCrisisId] = useState('');
   const [zoneId, setZoneId] = useState('');
+  const [reportView, setReportView] = useState<ReportView>('crisis');
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('pending');
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchBusy, setBatchBusy] = useState(false);
 
   const loadReports = useCallback(async () => {
-    if (!crisisId) {
+    if (reportView === 'crisis' && !crisisId) {
       setData({ items: [], zone_scope: [] });
       return;
     }
     try {
-      const q = new URLSearchParams({ crisis_id: crisisId, limit: '200' });
+      const q = new URLSearchParams({ limit: '200', view: reportView });
+      if (reportView === 'crisis' && crisisId) q.set('crisis_id', crisisId);
       if (zoneId) q.set('zone_id', zoneId);
       const d = await opsGet<ListResp>(`/v1/ops/reports?${q}`);
       setData({ items: d.items, nextCursor: null, zone_scope: d.zone_scope });
+      setSelectedIds(new Set());
       setErr(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
-  }, [crisisId, zoneId]);
+  }, [crisisId, zoneId, reportView]);
 
   useEffect(() => {
     opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises')
@@ -98,6 +104,31 @@ export function Dashboard() {
       .then(setAnalytics)
       .catch(() => setAnalytics(null));
   }, [crisisId]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const batchReview = async (reviewed: boolean) => {
+    if (selectedIds.size === 0) return;
+    setBatchBusy(true);
+    try {
+      await opsPost('/v1/ops/reports/batch-review', {
+        report_ids: [...selectedIds],
+        reviewed,
+      });
+      await loadReports();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBatchBusy(false);
+    }
+  };
 
   const patchReport = async (id: string, reviewed?: boolean, flagged?: boolean) => {
     setBusyId(id);
@@ -172,7 +203,19 @@ export function Dashboard() {
 
       <section className="ops-dash-section">
         <h2>{t('dashboard.filterTitle')}</h2>
-        {crises.length > 0 && (
+        <div className="ops-review-tabs">
+          {(['crisis', 'unspecified', 'all'] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              className={reportView === v ? 'ops-review-tab active' : 'ops-review-tab'}
+              onClick={() => setReportView(v)}
+            >
+              {t(`dashboard.view.${v}`)}
+            </button>
+          ))}
+        </div>
+        {crises.length > 0 && reportView === 'crisis' && (
           <label className="ops-field">
             {t('dashboard.crisisFilter')}
             <select
@@ -191,10 +234,13 @@ export function Dashboard() {
             </select>
           </label>
         )}
-        {activeCrisis && (
+        {activeCrisis && reportView === 'crisis' && (
           <p className="muted">
             {t('dashboard.statusLabel')}: {activeCrisis.archive_status}
           </p>
+        )}
+        {reportView !== 'crisis' && (
+          <p className="muted">{t(`dashboard.viewHint.${reportView}`)}</p>
         )}
         {zones.length > 0 && (
           <label className="ops-field">
@@ -270,7 +316,7 @@ export function Dashboard() {
         </section>
       )}
 
-      {crisisId && (
+      {crisisId && reportView === 'crisis' && (
         <section className="ops-dash-section">
           <h2>{t('dashboard.exportTitle')}</h2>
           <p className="ops-export-links">
@@ -280,17 +326,35 @@ export function Dashboard() {
             <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson&latest=1`}>
               {t('dashboard.exportLatestGeojson')}
             </a>
+            <a href={`${api}/v1/export?crisis_id=${crisisId}&format=csv&reviewed_only=true`}>
+              {t('dashboard.exportReviewedCsv')}
+            </a>
+            <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson&reviewed_only=true`}>
+              {t('dashboard.exportReviewedGeojson')}
+            </a>
           </p>
         </section>
       )}
 
       <section className="ops-dash-section">
         <h2>{t('dashboard.reviewQueueTitle')}</h2>
+        {selectedIds.size > 0 && (
+          <div className="ops-batch-actions">
+            <span className="muted">{t('dashboard.batchSelected', { count: selectedIds.size })}</span>
+            <button type="button" className="small" disabled={batchBusy} onClick={() => void batchReview(true)}>
+              {t('dashboard.batchMarkReviewed')}
+            </button>
+            <button type="button" className="small secondary" disabled={batchBusy} onClick={() => void batchReview(false)}>
+              {t('dashboard.batchUnreview')}
+            </button>
+          </div>
+        )}
         {err && <p className="error">{err}</p>}
         <div className="ops-table-wrap">
           <table className="table ops-table">
             <thead>
               <tr>
+                <th aria-label={t('dashboard.col.select')} />
                 <th>{t('dashboard.col.time')}</th>
                 <th>{t('dashboard.col.damage')}</th>
                 <th>{t('dashboard.col.building')}</th>
@@ -300,8 +364,24 @@ export function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((r) => (
+              {filteredItems.map((r) => {
+                const mapQ = new URLSearchParams();
+                if (crisisId) mapQ.set('crisis_id', crisisId);
+                mapQ.set('report_id', r.id);
+                if (r.geom) {
+                  mapQ.set('lat', String(r.geom.coordinates[1]));
+                  mapQ.set('lng', String(r.geom.coordinates[0]));
+                }
+                return (
                 <tr key={r.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(r.id)}
+                      onChange={() => toggleSelect(r.id)}
+                      aria-label={t('dashboard.col.select')}
+                    />
+                  </td>
                   <td>{new Date(r.received_at_server).toLocaleString()}</td>
                   <td>{r.damage_level}</td>
                   <td>{r.building_id?.slice(0, 8) ?? '—'}</td>
@@ -327,12 +407,13 @@ export function Dashboard() {
                     >
                       {r.admin_flagged ? t('dashboard.unflag') : t('dashboard.flag')}
                     </button>
-                    <Link to={`/ops/map?crisis_id=${crisisId}`} className="ops-dash-inline-link">
+                    <Link to={`/ops/map?${mapQ}`} className="ops-dash-inline-link">
                       {t('dashboard.openOnMap')}
                     </Link>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         </div>

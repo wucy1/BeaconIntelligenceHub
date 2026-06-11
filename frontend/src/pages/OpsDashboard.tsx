@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 
-import { wakeApiBackend } from '../api';
+import { apiGet, wakeApiBackend } from '../api';
 import { useI18n } from '../i18n/I18nContext';
 import { CrisisMetaFields, type CrisisMetaDraft } from '../components/ops/CrisisMetaFields';
 import {
@@ -22,9 +22,8 @@ import {
   opsIsSystemAdmin,
 } from '../ops/opsAuth';
 import { readOpsCrisesCache, readOpsZonesCache, writeOpsCrisesCache, writeOpsZonesCache } from '../ops/opsCache';
-import { isOpsDemoHosting } from '../ops/opsHosting';
+import { isOpsDemoHosting, setOpsDemoHostingHint } from '../ops/opsHosting';
 import { OpsTabs } from '../components/ops/OpsTabs';
-import { OPS_LABELS } from '../ops/opsLabels';
 
 type OpsTabId = 'overview' | 'crises' | 'create-crisis' | 'team' | 'audit';
 
@@ -165,6 +164,16 @@ export function OpsDashboard() {
     const hasCache = Boolean(readOpsCrisesCache()?.length);
     void reloadAll({ background: hasCache });
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    apiGet<{ show_demo_cold_start_hint?: boolean }>('/v1/public/settings')
+      .then((s) => {
+        if (typeof s.show_demo_cold_start_hint === 'boolean') {
+          setOpsDemoHostingHint(s.show_demo_cold_start_hint);
+        }
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -358,23 +367,20 @@ export function OpsDashboard() {
 
   const workflowSteps = isAdmin
     ? [
-        '「新增危機」分頁建立危機',
-        '「人員管理」新增帳號並指派 Lead',
-        'Lead 至營運地圖畫分區',
-        'Lead 指派 Coordinator 到各分區',
-        '於營運地圖或儀表板審核回報；必要時執行歸檔',
+        t('ops.workflow.admin.1'),
+        t('ops.workflow.admin.2'),
+        t('ops.workflow.admin.3'),
+        t('ops.workflow.admin.4'),
+        t('ops.workflow.admin.5'),
       ]
     : isLeadForSelected
       ? [
-          '至營運地圖為目前危機畫分區',
-          '「人員管理」指派 Coordinator 到各分區',
-          '於營運地圖或儀表板審核回報',
-          '於營運地圖執行危機歸檔（設定時間窗後預覽／執行）',
+          t('ops.workflow.lead.1'),
+          t('ops.workflow.lead.2'),
+          t('ops.workflow.lead.3'),
+          t('ops.workflow.lead.4'),
         ]
-      : [
-          `至${OPS_LABELS.map}或${OPS_LABELS.dashboard}查看指派分區內的回報`,
-          '點選回報標記審核或加旗標',
-        ];
+      : [t('ops.workflow.coord.1'), t('ops.workflow.coord.2')];
 
   const tabs = useMemo(() => {
     const items: Array<{ id: OpsTabId; label: string }> = [
@@ -675,7 +681,7 @@ export function OpsDashboard() {
               </button>
               {crisisZones.length === 0 && (
                 <p className="muted">
-                  此危機尚無分區。<Link to={`/ops/map?crisis_id=${coordCrisisId}`}>至{OPS_LABELS.map}畫分區</Link>
+                  {t('ops.team.noZones')}<Link to={`/ops/map?crisis_id=${coordCrisisId}`}>{t('ops.team.drawZonesLink')}</Link>
                 </p>
               )}
             </div>

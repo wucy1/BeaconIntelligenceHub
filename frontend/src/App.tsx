@@ -5,7 +5,6 @@ import { LanguageSwitcher } from './components/LanguageSwitcher';
 import { OfflineBanner } from './components/OfflineBanner';
 import { OpsRequireAuth } from './components/OpsRequireAuth';
 import { OpsShell } from './components/OpsShell';
-import { OPS_LABELS } from './ops/opsLabels';
 import { I18nProvider, useI18n } from './i18n/I18nContext';
 import { Admin } from './pages/Admin';
 import { Dashboard } from './pages/Dashboard';
@@ -14,6 +13,8 @@ import { MapPage } from './pages/MapPage';
 import { OpsDashboard } from './pages/OpsDashboard';
 import { OpsLogin } from './pages/OpsLogin';
 import { OpsMapPage } from './pages/OpsMapPage';
+import { OpsProfile } from './pages/OpsProfile';
+import { OpsSettings } from './pages/OpsSettings';
 import { ReportNew } from './pages/ReportNew';
 
 import './App.css';
@@ -28,7 +29,7 @@ function DevLayout({ children }: { children: ReactNode }) {
           <a href="/">{t('map.mode.all')}</a>
           <a href="/dev">{t('nav.home')}</a>
           <a href="/admin">{t('nav.admin')}</a>
-          <a href="/ops/login">{OPS_LABELS.login}</a>
+          <a href="/ops/login">{t('ops.nav.login')}</a>
           <LanguageSwitcher />
         </nav>
       </header>
@@ -92,6 +93,26 @@ export default function App() {
               <OpsShell>
                 <OpsDashboard />
               </OpsShell>
+            }
+          />
+          <Route
+            path="/ops/settings"
+            element={
+              <OpsRequireAuth>
+                <OpsShell>
+                  <OpsSettings />
+                </OpsShell>
+              </OpsRequireAuth>
+            }
+          />
+          <Route
+            path="/ops/profile"
+            element={
+              <OpsRequireAuth>
+                <OpsShell>
+                  <OpsProfile />
+                </OpsShell>
+              </OpsRequireAuth>
             }
           />
           <Route path="/ops/map" element={<OpsMapPage />} />
