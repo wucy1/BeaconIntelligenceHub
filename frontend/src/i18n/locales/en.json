@@ -307,5 +307,18 @@
   "ops.crisis.saving": "Saving…",
   "ops.crisis.saved": "Crisis settings saved",
   "ops.crisis.saveError": "Could not save crisis settings",
-  "ops.create.statusHint": "Choose draft or active when creating; event dates are optional."
+  "ops.create.statusHint": "Choose draft or active when creating; event dates are optional.",
+  "ops.map.viewPanel": "View filter",
+  "ops.map.crisis": "Crisis",
+  "ops.map.noCrisis": "No crisis ·",
+  "ops.map.timeFrom": "From",
+  "ops.map.timeTo": "To",
+  "ops.map.zone": "Zone",
+  "ops.map.allZones": "All visible zones",
+  "ops.map.reportCount": "{{count}} reports",
+  "ops.map.clearZone": "Clear zone selection",
+  "ops.map.archiveTitle": "Archive crisis",
+  "ops.map.archiveHint": "Batch-link reports by crisis event period and visible zones. Edit event period in the operations console.",
+  "ops.map.archivePreview": "Preview archive",
+  "ops.map.archiveRun": "Run archive"
 }

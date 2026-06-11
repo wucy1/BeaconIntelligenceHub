@@ -3,7 +3,7 @@ import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CircleMarker, GeoJSON, MapContainer, ZoomControl, useMap } from 'react-leaflet';
+import { CircleMarker, GeoJSON, MapContainer, useMap } from 'react-leaflet';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 import 'leaflet/dist/leaflet.css';
@@ -31,9 +31,12 @@ import {
   setOpsSession,
   type OpsUserSession,
 } from '../ops/opsAuth';
+import { BihLogo } from '../components/BihLogo';
 import { OsmTileLayer } from '../components/map/CachedOsmTileLayer';
+import { MapRailZoom } from '../components/map/MapRailZoom';
+import { OpsMapClearSelection } from '../components/ops/OpsMapClearSelection';
 import { OpsPolygonEditor } from '../components/ops/OpsPolygonEditor';
-import { OPS_LABELS } from '../ops/opsLabels';
+import { useI18n } from '../i18n/I18nContext';
 import {
   formatArea,
   fromDatetimeLocalValue,
@@ -69,17 +72,13 @@ function FlyToZone({ zone }: { zone: OpsZone | null }) {
   return null;
 }
 
-function crisisLabel(c: OpsCrisis): string {
-  return c.name['zh-Hant'] ?? c.name.zh ?? c.name.en ?? c.slug;
-}
-
-function roleLabel(role: string): string {
-  if (role === 'system_admin') return '系統管理員';
-  if (role === 'crisis_lead') return '營運人員（舊）';
-  return '營運人員';
+function roleLabel(role: string, t: (key: string) => string): string {
+  if (role === 'system_admin') return t('ops.role.systemAdmin');
+  return t('ops.role.coordinator');
 }
 
 export function OpsMapPage() {
+  const { t, crisisName } = useI18n();
   const [searchParams] = useSearchParams();
   const crisisFromUrl = searchParams.get('crisis_id') ?? '';
   const [user, setUser] = useState<OpsUserSession | null>(() => getOpsUser());
@@ -108,9 +107,6 @@ export function OpsMapPage() {
 
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
-  const [crisisWindowStart, setCrisisWindowStart] = useState('');
-  const [crisisWindowEnd, setCrisisWindowEnd] = useState('');
-  const [crisisStatus, setCrisisStatus] = useState<OpsCrisis['archive_status']>('draft');
 
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -209,10 +205,15 @@ export function OpsMapPage() {
 
   useEffect(() => {
     if (!activeCrisis) return;
-    setCrisisWindowStart(toDatetimeLocalValue(activeCrisis.archive_window_start));
-    setCrisisWindowEnd(toDatetimeLocalValue(activeCrisis.archive_window_end));
-    setCrisisStatus(activeCrisis.archive_status);
-  }, [activeCrisis]);
+    setFilterFrom(toDatetimeLocalValue(activeCrisis.archive_window_start));
+    setFilterTo(toDatetimeLocalValue(activeCrisis.archive_window_end));
+  }, [activeCrisis?.id, activeCrisis?.archive_window_start, activeCrisis?.archive_window_end]);
+
+  const clearZoneSelection = useCallback(() => {
+    setSelectedZoneId(null);
+    setFlyZone(null);
+    setPanel((p) => (p === 'zone' && mapMode === 'browse' ? null : p));
+  }, [mapMode]);
 
   if (!user) return <Navigate to="/ops/login" replace />;
 
@@ -352,25 +353,6 @@ export function OpsMapPage() {
     }
   };
 
-  const saveCrisisMeta = async () => {
-    if (!activeCrisisId) return;
-    setBusy(true);
-    try {
-      await opsPatch(`/v1/ops/crises/${activeCrisisId}`, {
-        archive_status: crisisStatus,
-        archive_window_start: fromDatetimeLocalValue(crisisWindowStart),
-        archive_window_end: fromDatetimeLocalValue(crisisWindowEnd),
-      });
-      loadCrises();
-      loadAudit();
-      setErr(null);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const runArchivePreview = async () => {
     if (!activeCrisisId) return;
     setBusy(true);
@@ -424,7 +406,8 @@ export function OpsMapPage() {
         style={{ cursor: mapMode === 'draw' || mapMode === 'edit' ? 'crosshair' : undefined }}
       >
         <OsmTileLayer />
-        <ZoomControl position="topleft" />
+        <MapRailZoom />
+        <OpsMapClearSelection enabled={mapMode === 'browse' && Boolean(selectedZoneId)} onClear={clearZoneSelection} />
         <FlyToZone zone={flyZone} />
         {isEditingShape && (mapMode === 'draw' ? canCreateZones : editingZoneId != null) && (
           <OpsPolygonEditor
@@ -451,7 +434,7 @@ export function OpsMapPage() {
           const selected = z.id === selectedZoneId;
           return (
             <GeoJSON
-              key={`${z.id}-${zonesRevision}-${z.updated_at ?? ''}`}
+              key={`${z.id}-${zonesRevision}-${selectedZoneId ?? ''}-${z.updated_at ?? ''}`}
               data={feature}
               style={{
                 color: selected ? '#0d47a1' : '#b91c1c',
@@ -463,9 +446,14 @@ export function OpsMapPage() {
                 path.options.interactive = mapMode === 'browse';
                 layer.off('click');
                 if (mapMode !== 'browse') return;
-                layer.on('click', () => {
-                  setSelectedZoneId(z.id);
+                layer.on('click', (ev) => {
+                  L.DomEvent.stopPropagation(ev);
                   setSelectedReportId(null);
+                  if (selectedZoneId === z.id) {
+                    clearZoneSelection();
+                    return;
+                  }
+                  setSelectedZoneId(z.id);
                   setPanel('zone');
                   setFlyZone(z);
                   setTimeout(() => setFlyZone(null), 100);
@@ -504,38 +492,22 @@ export function OpsMapPage() {
       </MapContainer>
 
       <div className="ops-map-overlay-top">
-        <div className="ops-map-zoom-spacer" aria-hidden="true" />
-        <div className="ops-map-header-center">
-          <div className="ops-map-chip ops-map-title">
-            <strong>{OPS_LABELS.map}</strong>
-            <span className="ops-map-sub">{user.email} · {roleLabel(user.role)}</span>
-          </div>
-          {crises.length > 0 ? (
-            <label className="ops-map-chip ops-map-crisis-select">
-              危機
-              <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
-                {crises.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {crisisLabel(c)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : hasZoneDrawRole ? (
-            <span className="ops-map-chip muted">
-              尚無危機 · <Link to="/ops">至{OPS_LABELS.console}建立</Link>
-            </span>
-          ) : null}
-        </div>
-        <div className="ops-map-toolbar">
+        <div className="ops-map-top-left">
+          <BihLogo to="/ops" size={28} />
           <Link to="/ops" className="ops-map-chip ops-map-link">
-            {OPS_LABELS.console}
+            {t('ops.nav.console')}
           </Link>
           <Link to="/dashboard" className="ops-map-chip ops-map-link">
-            {OPS_LABELS.dashboard}
+            {t('ops.nav.dashboard')}
           </Link>
+        </div>
+        <div className="ops-map-top-right">
+          <div className="ops-map-chip ops-map-user-chip">
+            <span className="ops-map-user-email">{user.email}</span>
+            <span className="ops-map-sub">{roleLabel(user.role, t)}</span>
+          </div>
           <button type="button" className="ops-map-chip ops-map-btn" onClick={logout}>
-            登出
+            {t('ops.nav.logout')}
           </button>
         </div>
       </div>
@@ -563,17 +535,68 @@ export function OpsMapPage() {
         )}
       </div>
 
-      <div className="ops-map-filter-bar">
+      <div className="ops-map-view-panel">
+        <span className="ops-map-view-label">{t('ops.map.viewPanel')}</span>
+        {crises.length > 0 ? (
+          <label className="ops-map-chip ops-map-crisis-select">
+            {t('ops.map.crisis')}
+            <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
+              {crises.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {crisisName(c.name, c.slug)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <span className="ops-map-chip muted">
+            {t('ops.map.noCrisis')}{' '}
+            <Link to="/ops">{t('ops.nav.console')}</Link>
+          </span>
+        )}
         <label className="ops-map-chip">
-          時間起
+          {t('ops.map.timeFrom')}
           <input type="datetime-local" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} />
         </label>
         <label className="ops-map-chip">
-          時間迄
+          {t('ops.map.timeTo')}
           <input type="datetime-local" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
         </label>
-        <span className="ops-map-chip muted">{reports.length} 筆回報</span>
-        {selectedZone && <span className="ops-map-chip">分區：{selectedZone.name}</span>}
+        {zones.length > 0 && (
+          <label className="ops-map-chip">
+            {t('ops.map.zone')}
+            <select
+              value={selectedZoneId ?? ''}
+              onChange={(e) => {
+                const id = e.target.value || null;
+                setSelectedZoneId(id);
+                if (!id) {
+                  setPanel((p) => (p === 'zone' ? null : p));
+                  return;
+                }
+                const z = zones.find((x) => x.id === id);
+                if (z) {
+                  setPanel('zone');
+                  setFlyZone(z);
+                  setTimeout(() => setFlyZone(null), 100);
+                }
+              }}
+            >
+              <option value="">{t('ops.map.allZones')}</option>
+              {zones.map((z) => (
+                <option key={z.id} value={z.id}>
+                  {z.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <span className="ops-map-chip muted">{t('ops.map.reportCount', { count: reports.length })}</span>
+        {selectedZone && (
+          <button type="button" className="ops-map-chip ops-map-btn secondary" onClick={clearZoneSelection}>
+            {t('ops.map.clearZone')}
+          </button>
+        )}
       </div>
 
       {err && (
@@ -660,8 +683,8 @@ export function OpsMapPage() {
                     刪除
                   </button>
                 )}
-                <button type="button" className="secondary" onClick={() => setSelectedZoneId(null)}>
-                  清除選取
+                <button type="button" className="secondary" onClick={clearZoneSelection}>
+                  {t('ops.map.clearZone')}
                 </button>
               </div>
             </>
@@ -674,45 +697,19 @@ export function OpsMapPage() {
           <button type="button" className="ops-map-card-close" onClick={() => setPanel(null)}>
             ×
           </button>
-          <h3>危機歸檔（3b）</h3>
-          <label className="ops-field">
-            危機
-            <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
-              {crises.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {crisisLabel(c)} ({c.archive_status})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="ops-field">
-            狀態
-            <select value={crisisStatus} onChange={(e) => setCrisisStatus(e.target.value as OpsCrisis['archive_status'])}>
-              <option value="draft">draft</option>
-              <option value="active">active</option>
-              <option value="archived">archived</option>
-            </select>
-          </label>
-          <label className="ops-field">
-            歸檔時間起
-            <input type="datetime-local" value={crisisWindowStart} onChange={(e) => setCrisisWindowStart(e.target.value)} />
-          </label>
-          <label className="ops-field">
-            歸檔時間迄
-            <input type="datetime-local" value={crisisWindowEnd} onChange={(e) => setCrisisWindowEnd(e.target.value)} />
-          </label>
-          <p className="muted">
-            依 <code>captured_at_client</code> 與{selectedZone ? `分區「${selectedZone.name}」` : '可見分區'}空間交集篩選；不影響 Contributor 回報。
-          </p>
+          <h3>{t('ops.map.archiveTitle')}</h3>
+          <p className="muted">{t('ops.map.archiveHint')}</p>
+          {activeCrisis && (
+            <p className="muted">
+              {crisisName(activeCrisis.name, activeCrisis.slug)} · {activeCrisis.archive_status}
+            </p>
+          )}
           <div className="ops-map-card-actions">
-            <button type="button" onClick={saveCrisisMeta} disabled={busy}>
-              儲存時間設定
-            </button>
             <button type="button" onClick={runArchivePreview} disabled={busy}>
-              預覽歸檔
+              {t('ops.map.archivePreview')}
             </button>
             <button type="button" onClick={runArchive} disabled={busy}>
-              執行歸檔
+              {t('ops.map.archiveRun')}
             </button>
           </div>
           {preview && (

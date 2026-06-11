@@ -3,7 +3,6 @@ import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   CircleMarker,
   GeoJSON,
@@ -27,6 +26,7 @@ import {
 } from './CachedOsmTileLayer';
 import { CrisisZonesLayer } from './CrisisZonesLayer';
 import { ClusteredReportMarkers } from './ClusteredReportMarkers';
+import { MapRailZoom } from './MapRailZoom';
 import { DownloadPreviewLayer } from './DownloadPreviewLayer';
 import { OfflineRegionLayers } from './OfflineRegionLayers';
 import type { MapRegionMeta } from '../../offline/tileCache';
@@ -236,39 +236,6 @@ function FitBoundsOnce({
     }
   }, [bounds, tick, map]);
   return null;
-}
-
-function MapRailZoom() {
-  const map = useMap();
-  const [host, setHost] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    setHost(document.querySelector<HTMLElement>('.map-page'));
-  }, []);
-
-  if (!host) return null;
-
-  return createPortal(
-    <div className="map-rail-zoom" aria-label="Zoom">
-      <button
-        type="button"
-        className="map-rail-zoom-in"
-        aria-label="Zoom in"
-        onClick={() => map.zoomIn()}
-      >
-        +
-      </button>
-      <button
-        type="button"
-        className="map-rail-zoom-out"
-        aria-label="Zoom out"
-        onClick={() => map.zoomOut()}
-      >
-        −
-      </button>
-    </div>,
-    host,
-  );
 }
 
 function FitLatLngBoundsOnce({

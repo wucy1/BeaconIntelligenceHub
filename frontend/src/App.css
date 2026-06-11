@@ -1816,7 +1816,7 @@ button.danger {
 
 /* —— Ops map-first (Phase 3) —— */
 .ops-map-page .leaflet-top.leaflet-left {
-  z-index: 800;
+  display: none;
 }
 
 .ops-map-page .ops-map-overlay-top {
@@ -1825,9 +1825,9 @@ button.danger {
   left: 0.5rem;
   right: 0.5rem;
   z-index: 600;
-  display: grid;
-  grid-template-columns: 2.5rem 1fr auto;
-  align-items: start;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
   gap: 0.5rem;
   pointer-events: none;
 }
@@ -1836,17 +1836,28 @@ button.danger {
   pointer-events: auto;
 }
 
-.ops-map-page .ops-map-zoom-spacer {
-  pointer-events: none;
-}
-
-.ops-map-page .ops-map-header-center {
+.ops-map-top-left,
+.ops-map-top-right {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
   gap: 0.35rem;
-  min-width: 0;
+}
+
+.ops-map-top-right {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.ops-map-user-chip {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
+
+.ops-map-user-email {
+  font-weight: 600;
+  font-size: 0.78rem;
 }
 
 .ops-map-page .ops-map-crisis-select {
@@ -1857,7 +1868,8 @@ button.danger {
   font-weight: 600;
 }
 
-.ops-map-page .ops-map-crisis-select select {
+.ops-map-page .ops-map-crisis-select select,
+.ops-map-view-panel select {
   font-size: 0.78rem;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
@@ -1908,7 +1920,7 @@ button.danger {
 .ops-map-fab-col {
   position: absolute;
   right: 0.5rem;
-  top: 4.5rem;
+  top: 5.5rem;
   z-index: 600;
   display: flex;
   flex-direction: column;
@@ -1942,17 +1954,35 @@ button.danger {
   border: none;
 }
 
-.ops-map-filter-bar {
+.ops-map-view-panel {
   position: absolute;
-  left: 0.5rem;
-  bottom: 0.5rem;
+  left: 50%;
+  bottom: 0.65rem;
+  transform: translateX(-50%);
   z-index: 600;
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
   gap: 0.35rem;
-  max-width: min(100% - 1rem, 42rem);
+  max-width: min(calc(100% - 5rem), 52rem);
+  padding: 0.35rem 0.5rem;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+  pointer-events: auto;
 }
 
+.ops-map-view-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ops-map-view-panel input[type='datetime-local'],
 .ops-map-filter-bar input[type='datetime-local'] {
   font-size: 0.75rem;
   border: 1px solid #cbd5e1;

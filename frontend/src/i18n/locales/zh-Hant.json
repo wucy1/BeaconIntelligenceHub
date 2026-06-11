@@ -307,5 +307,18 @@
   "ops.crisis.saving": "儲存中…",
   "ops.crisis.saved": "已儲存危機設定",
   "ops.crisis.saveError": "無法儲存危機設定",
-  "ops.create.statusHint": "建立時可選草稿或進行中；起訖時間可留空稍後再設。"
+  "ops.create.statusHint": "建立時可選草稿或進行中；起訖時間可留空稍後再設。",
+  "ops.map.viewPanel": "管理視角",
+  "ops.map.crisis": "危機",
+  "ops.map.noCrisis": "尚無危機 ·",
+  "ops.map.timeFrom": "時間起",
+  "ops.map.timeTo": "時間迄",
+  "ops.map.zone": "分區",
+  "ops.map.allZones": "全部可見分區",
+  "ops.map.reportCount": "{{count}} 筆回報",
+  "ops.map.clearZone": "清除分區選取",
+  "ops.map.archiveTitle": "危機歸檔",
+  "ops.map.archiveHint": "依危機事件期間與可見分區執行批次歸檔；事件期間請至營運控制台調整。",
+  "ops.map.archivePreview": "預覽歸檔",
+  "ops.map.archiveRun": "執行歸檔"
 }
