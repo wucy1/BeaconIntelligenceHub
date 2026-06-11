@@ -15,6 +15,7 @@ import { ContributionStrip } from '../components/map/ContributionStrip';
 import { PlacementBar } from '../components/map/PlacementBar';
 import { ReportSheet } from '../components/map/ReportSheet';
 import { OfflineBanner } from '../components/OfflineBanner';
+import { UNSPECIFIED_CRISIS_ID } from '../constants/crisis';
 import { usePublicCrises } from '../hooks/usePublicCrises';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useOfflineMapTiles } from '../hooks/useOfflineMapTiles';
@@ -142,7 +143,7 @@ export function MapPage() {
 
   bboxRef.current = bbox;
 
-  const reportCrisisId = unspecifiedCrisis?.id ?? '';
+  const reportCrisisId = unspecifiedCrisis?.id ?? UNSPECIFIED_CRISIS_ID;
   const scopeRef = useRef(mapScope);
   scopeRef.current = mapScope;
   const buildingsCacheRef = useRef<Record<string, GeoJSON.FeatureCollection>>({});

@@ -211,26 +211,44 @@ function resolveUploadPutUrl(url: string): string {
 
 export async function apiPutRaw(url: string, body: Blob, contentType: string): Promise<void> {
   const target = resolveUploadPutUrl(url);
-  let res: Response;
-  try {
-    res = await fetch(target, {
-      method: 'PUT',
-      headers: { 'Content-Type': contentType },
-      body,
-    });
-  } catch (e) {
-    if (e instanceof TypeError) {
-      if (url.includes('r2.cloudflarestorage.com')) {
-        throw new Error('圖片上傳失敗（R2 跨域）。');
+  const maxAttempts = isLocalDevHost() ? 1 : PROD_RETRY_ATTEMPTS;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) await sleep(RETRY_DELAY_MS * attempt);
+    try {
+      const res = await fetchOnce(target, {
+        method: 'PUT',
+        headers: { 'Content-Type': contentType },
+        body,
+      });
+      if (RETRYABLE_STATUS.has(res.status) && attempt < maxAttempts - 1) {
+        await res.text().catch(() => undefined);
+        continue;
       }
-      throw new Error('圖片上傳失敗：無法連到上傳端點。');
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`${res.status} ${text}`);
+      }
+      return;
+    } catch (e) {
+      lastError = e;
+      if (e instanceof Error && /^\d{3} /.test(e.message)) throw e;
+      if (attempt < maxAttempts - 1 && isTransientFetchError(e)) continue;
+      break;
     }
-    throw e;
   }
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`${res.status} ${text}`);
+
+  if (lastError instanceof DOMException && lastError.name === 'AbortError') {
+    throw new Error(`圖片上傳逾時（${DEFAULT_TIMEOUT_MS / 1000}s）。${connectionErrorMessage()}`);
   }
+  if (lastError instanceof TypeError) {
+    if (url.includes('r2.cloudflarestorage.com')) {
+      throw new Error('圖片上傳失敗（R2 跨域）。');
+    }
+    throw new Error(`圖片上傳失敗：無法連到上傳端點。${connectionErrorMessage()}`);
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 export async function sha256Hex(blob: Blob): Promise<string> {

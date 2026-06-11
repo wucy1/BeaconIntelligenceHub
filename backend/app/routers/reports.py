@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import Building, Report, ReportImage
-from app.r2_storage import object_exists, r2_client, r2_enabled
+from app.r2_storage import object_exists, r2_client, r2_enabled, upload_via_api
 from app.image_urls import thumb_url_for_report
 from app.reporter import device_id_header, reporter_hash_from_device
 from app.schemas import (
@@ -101,9 +101,10 @@ def create_report(
             raise HTTPException(status_code=404, detail="Building not found for resolved crisis")
 
     if r2_enabled(settings):
-        client = r2_client(settings)
-        if not object_exists(client, settings.r2_bucket, payload.image.objectKey):
-            raise HTTPException(status_code=400, detail="Image not uploaded (object key missing on server)")
+        if not upload_via_api(settings):
+            client = r2_client(settings)
+            if not object_exists(client, settings.r2_bucket, payload.image.objectKey):
+                raise HTTPException(status_code=400, detail="Image not uploaded (object key missing on server)")
     else:
         base = Path(settings.storage_path)
         img_path = safe_join(base, payload.image.objectKey)

@@ -7,6 +7,7 @@ import {
   INFRASTRUCTURE_TYPES,
 } from '../../config/questionnaire';
 import { useI18n } from '../../i18n/I18nContext';
+import { UNSPECIFIED_CRISIS_ID } from '../../constants/crisis';
 import { enqueueReport, submitReportOnline } from '../../offline/queue';
 import { compressImage } from '../../utils/imageCompress';
 import {
@@ -156,7 +157,7 @@ export function ReportSheet({
     const { damage_level, site_status } = fieldsFromSiteCondition(siteCondition);
     return {
       client_generated_uuid: clientUuid,
-      crisis_id: crisisId,
+      crisis_id: crisisId || UNSPECIFIED_CRISIS_ID,
       building_id: buildingId,
       geom: reportGeom,
       textual_location: textualLocation.trim() || null,
@@ -233,17 +234,27 @@ export function ReportSheet({
       onSaved({ possibleDuplicate: result.possible_duplicate });
       onClose();
     } catch (err) {
-      if (mode === 'create' && !navigator.onLine && file) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const transientOnlineFailure =
+        mode === 'create' &&
+        file &&
+        (msg.includes('無法連線') ||
+          msg.includes('逾時') ||
+          msg.includes('503') ||
+          msg.includes('502') ||
+          msg.includes('504'));
+      if (mode === 'create' && file && (!navigator.onLine || transientOnlineFailure)) {
         try {
           const clientUuid = crypto.randomUUID();
-          await enqueueReport(crisisId, buildPayload(clientUuid), file);
+          const uploadId = crisisId || UNSPECIFIED_CRISIS_ID;
+          await enqueueReport(uploadId, buildPayload(clientUuid), file);
           onSaved();
           onClose();
         } catch {
-          setError(err instanceof Error ? err.message : String(err));
+          setError(msg);
         }
       } else {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(msg);
       }
     } finally {
       setSubmitting(false);

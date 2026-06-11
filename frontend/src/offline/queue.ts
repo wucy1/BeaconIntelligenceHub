@@ -1,4 +1,5 @@
 import { apiGet, apiPost, apiPutRaw, sha256Hex } from '../api';
+import { UNSPECIFIED_CRISIS_ID } from '../constants/crisis';
 import { openOfflineDb } from './openDb';
 
 const STORE = 'pending_reports';
@@ -30,8 +31,8 @@ export async function enqueueReport(
   const id = (payload.client_generated_uuid as string) || crypto.randomUUID();
   const item: PendingReport = {
     id,
-    crisisId,
-    payload: { ...payload, client_generated_uuid: id },
+    crisisId: presignCrisisId(crisisId),
+    payload: { ...payload, client_generated_uuid: id, crisis_id: UNSPECIFIED_CRISIS_ID },
     fileBlob: file,
     mimeType: file.type || 'image/jpeg',
     createdAt: new Date().toISOString(),
@@ -135,16 +136,21 @@ export type SubmitReportResult = {
   possible_duplicate: boolean;
 };
 
+function presignCrisisId(storedId: string): string {
+  return storedId && storedId.length > 10 ? storedId : UNSPECIFIED_CRISIS_ID;
+}
+
 export async function submitReportOnline(
   crisisId: string,
   payload: Record<string, unknown>,
   file: File,
 ): Promise<SubmitReportResult> {
   const checksum = await sha256Hex(file);
+  const uploadCrisisId = presignCrisisId(crisisId);
   let presign: { putUrl: string; objectKey: string };
   try {
     presign = await apiGet<{ putUrl: string; objectKey: string }>(
-      `/v1/uploads/presign?crisisId=${encodeURIComponent(crisisId)}&mimeType=${encodeURIComponent(file.type || 'image/jpeg')}&checksumSha256=${checksum}&bytes=${file.size}`,
+      `/v1/uploads/presign?crisisId=${encodeURIComponent(uploadCrisisId)}&mimeType=${encodeURIComponent(file.type || 'image/jpeg')}&checksumSha256=${checksum}&bytes=${file.size}`,
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -160,6 +166,7 @@ export async function submitReportOnline(
   try {
     const created = await apiPost<{ possible_duplicate?: boolean }>('/v1/reports', {
       ...payload,
+      crisis_id: UNSPECIFIED_CRISIS_ID,
       image: {
         objectKey: presign.objectKey,
         mimeType: file.type || 'image/jpeg',
