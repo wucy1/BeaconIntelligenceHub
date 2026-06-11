@@ -48,7 +48,15 @@ export async function enqueueReport(
 
 export async function countPending(): Promise<number> {
   const all = await listPending();
-  return all.filter((r) => r.status === 'pending' || r.status === 'failed').length;
+  return all.filter((r) => r.status === 'pending' || r.status === 'failed' || r.status === 'syncing').length;
+}
+
+/** 上次同步中斷時，syncing 項目不會再被處理；重設為 pending。 */
+async function resetStuckSyncing(): Promise<void> {
+  const items = await listPending();
+  for (const item of items.filter((r) => r.status === 'syncing')) {
+    await updateStatus(item.id, 'pending');
+  }
 }
 
 async function listPending(): Promise<PendingReport[]> {
@@ -101,7 +109,7 @@ async function syncOne(item: PendingReport): Promise<void> {
   const crisisId = presignCrisisId(item.crisisId);
   const payload = { ...item.payload, crisis_id: UNSPECIFIED_CRISIS_ID };
   const file = new File([item.fileBlob], 'photo.jpg', { type: item.mimeType });
-  await submitReportOnline(crisisId, payload, file);
+  await submitReportOnline(crisisId, payload, file, { skipWake: true });
   await removeReport(item.id);
 }
 
@@ -146,8 +154,9 @@ export async function submitReportOnline(
   crisisId: string,
   payload: Record<string, unknown>,
   file: File,
+  opts?: { skipWake?: boolean },
 ): Promise<SubmitReportResult> {
-  await ensureApiReady();
+  if (!opts?.skipWake) await ensureApiReady();
   const checksum = await sha256Hex(file);
   const uploadCrisisId = presignCrisisId(crisisId);
   let presign: { putUrl: string; objectKey: string };
@@ -191,6 +200,8 @@ export async function submitReportOnline(
 
 export async function syncQueue(): Promise<{ synced: number; failed: number }> {
   if (!navigator.onLine) return { synced: 0, failed: 0 };
+  await resetStuckSyncing();
+  await ensureApiReady();
   const items = await listPending();
   let synced = 0;
   let failed = 0;

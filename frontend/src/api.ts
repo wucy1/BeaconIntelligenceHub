@@ -303,8 +303,10 @@ export async function apiPutRaw(
     throw new Error(`圖片上傳逾時（${timeoutMs / 1000}s）。${connectionErrorMessage()}`);
   }
   if (lastError instanceof TypeError) {
-    if (url.includes('r2.cloudflarestorage.com')) {
-      throw new Error('圖片上傳失敗（R2 跨域）。');
+    if (target.includes('r2.cloudflarestorage.com')) {
+      throw new Error(
+        '圖片上傳失敗（R2 CORS）。請在 R2 bucket 設定允許本站網域 PUT/GET，或暫改 UPLOAD_VIA_API=true。',
+      );
     }
     throw new Error(`圖片上傳失敗：無法連到上傳端點。${connectionErrorMessage()}`);
   }

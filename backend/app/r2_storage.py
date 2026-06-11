@@ -62,6 +62,25 @@ def object_exists(client: Any, bucket: str, key: str) -> bool:
         raise
 
 
+def wait_object_exists(
+    client: Any,
+    bucket: str,
+    key: str,
+    *,
+    attempts: int = 6,
+    delay_sec: float = 0.4,
+) -> bool:
+    """Poll R2 HEAD after browser PUT; object may not be visible instantly."""
+    import time
+
+    for i in range(attempts):
+        if object_exists(client, bucket, key):
+            return True
+        if i + 1 < attempts:
+            time.sleep(delay_sec)
+    return False
+
+
 def presigned_put(client: Any, bucket: str, key: str, mime: str, expires_in: int) -> str:
     return client.generate_presigned_url(
         "put_object",

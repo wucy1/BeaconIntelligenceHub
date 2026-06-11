@@ -195,6 +195,7 @@ export function ReportSheet({
     }
 
     setSubmitting(true);
+    let photo: File | null = null;
     try {
       if (mode === 'edit' && reportId) {
         const { damage_level, site_status } = fieldsFromSiteCondition(siteCondition);
@@ -218,7 +219,7 @@ export function ReportSheet({
 
       const clientUuid = crypto.randomUUID();
       const payload = buildPayload(clientUuid);
-      const photo = file ? await compressImage(file) : null;
+      photo = file ? await compressImage(file) : null;
       if (!photo) {
         setError(t('report.err.photo'));
         return;
@@ -239,7 +240,8 @@ export function ReportSheet({
         try {
           const clientUuid = crypto.randomUUID();
           const uploadId = crisisId || UNSPECIFIED_CRISIS_ID;
-          await enqueueReport(uploadId, buildPayload(clientUuid), file);
+          const queued = photo ?? (await compressImage(file));
+          await enqueueReport(uploadId, buildPayload(clientUuid), queued);
           onSaved();
           onClose();
         } catch {
