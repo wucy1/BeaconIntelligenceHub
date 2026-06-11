@@ -219,6 +219,35 @@ function MapPlaceClick({
   return null;
 }
 
+/** 拖曳圖釘時關閉 Leaflet autoPan，避免手機上地圖莫名飄移。 */
+function ReportPinMarker({
+  pin,
+  onMove,
+}: {
+  pin: { lat: number; lng: number };
+  onMove?: (lat: number, lng: number) => void;
+}) {
+  const map = useMap();
+  return (
+    <Marker
+      position={[pin.lat, pin.lng]}
+      icon={reportPinIcon}
+      draggable
+      zIndexOffset={1000}
+      eventHandlers={{
+        dragstart: () => {
+          map.dragging.disable();
+        },
+        dragend: (e) => {
+          map.dragging.enable();
+          const ll = e.target.getLatLng();
+          onMove?.(ll.lat, ll.lng);
+        },
+      }}
+    />
+  );
+}
+
 function FitBoundsOnce({
   bounds,
   tick,
@@ -474,18 +503,7 @@ export function ContributorMap({
       )}
 
       {reportPin && mapMode === 'new' && (
-        <Marker
-          position={[reportPin.lat, reportPin.lng]}
-          icon={reportPinIcon}
-          draggable
-          zIndexOffset={1000}
-          eventHandlers={{
-            dragend: (e) => {
-              const ll = e.target.getLatLng();
-              onReportPinMove?.(ll.lat, ll.lng);
-            },
-          }}
-        />
+        <ReportPinMarker pin={reportPin} onMove={onReportPinMove} />
       )}
 
       {buildingPopup && (mapMode === 'all' || mapMode === 'mine') && (

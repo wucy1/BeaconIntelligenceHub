@@ -17,6 +17,7 @@ type ReportSummary = {
   description_preview: string;
   building_id: string | null;
   is_mine?: boolean;
+  thumb_url?: string | null;
 };
 
 export type LocationPanelContext = 'all' | 'mine';
@@ -79,6 +80,7 @@ export function LocationPanel({
       description_preview: '',
       building_id: m.building_id,
       is_mine: m.is_mine,
+      thumb_url: m.thumb_url,
     }));
     setHistory(context === 'mine' ? fromMarkers.filter((r) => r.is_mine) : fromMarkers);
   }, [open, buildingId, nearbyMarkers, context]);
@@ -126,6 +128,12 @@ export function LocationPanel({
           </div>
         )}
 
+        {focusedMarker?.thumb_url && (
+          <figure className="location-panel-focus-thumb">
+            <img src={focusedMarker.thumb_url} alt="" loading="lazy" />
+          </figure>
+        )}
+
         <section className="location-history">
           <h4>{t('map.locationPanel.history')}</h4>
           {loading ? (
@@ -141,6 +149,9 @@ export function LocationPanel({
                 const pillClass = chipClassForCondition(cond).replace('chip-', 'damage-');
                 return (
                 <li key={r.id}>
+                  {r.thumb_url && (
+                    <img src={r.thumb_url} alt="" className="location-history-thumb" loading="lazy" />
+                  )}
                   <div className="location-history-row">
                     <span className={`damage-pill ${pillClass}`}>
                       {t(siteConditionLabelKey(cond))}

@@ -121,14 +121,25 @@ export function ClusteredReportMarkers({
       const color = pinFillColor(m);
       const existing = existingById.get(m.id);
       if (existing) {
-        existing.setStyle({
-          radius: m.is_mine ? 11 : 9,
-          color: '#fff',
-          weight: 2,
-          fillColor: color,
-          fillOpacity: 0.95,
-        });
-        existing.setLatLng([lat, lng]);
+        const prev = existing.getLatLng();
+        if (Math.abs(prev.lat - lat) > 1e-7 || Math.abs(prev.lng - lng) > 1e-7) {
+          existing.setLatLng([lat, lng]);
+        }
+        const radius = m.is_mine ? 11 : 9;
+        const opts = existing.options;
+        if (
+          opts.radius !== radius ||
+          opts.fillColor !== color ||
+          opts.fillOpacity !== 0.95
+        ) {
+          existing.setStyle({
+            radius,
+            color: '#fff',
+            weight: 2,
+            fillColor: color,
+            fillOpacity: 0.95,
+          });
+        }
         continue;
       }
 

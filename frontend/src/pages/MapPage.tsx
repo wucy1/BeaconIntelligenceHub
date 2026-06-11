@@ -128,6 +128,7 @@ export function MapPage() {
   const [duplicateBanner, setDuplicateBanner] = useState(false);
   /** 首次取得 GPS 後自動飛一次（同意定位或 ◎），避免一直停在台北示範預設中心 */
   const autoFlewToUserRef = useRef(false);
+  const offlineRegionBootstrappedRef = useRef(false);
   const [activeRegionId, setActiveRegionId] = useState<string | null>(null);
   const [activeTopPanel, setActiveTopPanel] = useState<TopPanelKey>(null);
   const [pendingReports, setPendingReports] = useState<PendingReportSummary[]>([]);
@@ -201,14 +202,18 @@ export function MapPage() {
     [],
   );
 
-  const goToRegion = useCallback((r: MapRegionMeta) => {
-    setActiveRegionId(r.id);
-    setFlyTarget({
-      lat: r.center.lat,
-      lng: r.center.lng,
-      zoom: !online ? PREFETCH_ZOOM_MAX : undefined,
-    });
-  }, [online]);
+  const goToRegion = useCallback(
+    (r: MapRegionMeta, opts?: { adjustZoom?: boolean }) => {
+      setActiveRegionId(r.id);
+      const adjustZoom = opts?.adjustZoom ?? !online;
+      setFlyTarget({
+        lat: r.center.lat,
+        lng: r.center.lng,
+        zoom: adjustZoom ? PREFETCH_ZOOM_MAX : undefined,
+      });
+    },
+    [online],
+  );
 
   const onFlyComplete = useCallback(() => {
     setFlyTarget(null);
@@ -235,7 +240,14 @@ export function MapPage() {
   }, [online, reloadCrises]);
 
   useEffect(() => {
-    if (online || offlineTiles.regions.length === 0 || activeRegionId) return;
+    if (online) {
+      offlineRegionBootstrappedRef.current = false;
+      return;
+    }
+    if (offlineTiles.regions.length === 0 || activeRegionId) return;
+    if (mapMode === 'new' || placement.pin) return;
+    if (offlineRegionBootstrappedRef.current) return;
+    offlineRegionBootstrappedRef.current = true;
     const point = tileCenter ?? { lat: mapCenter[0], lng: mapCenter[1] };
     let pick = offlineTiles.regions[0];
     let bestD = Infinity;
@@ -247,8 +259,17 @@ export function MapPage() {
         pick = r;
       }
     }
-    goToRegion(pick);
-  }, [online, offlineTiles.regions, activeRegionId, tileCenter, mapCenter, goToRegion]);
+    goToRegion(pick, { adjustZoom: true });
+  }, [
+    online,
+    offlineTiles.regions,
+    activeRegionId,
+    mapMode,
+    placement.pin,
+    tileCenter,
+    mapCenter,
+    goToRegion,
+  ]);
 
   const setPinWithDetect = useCallback(
     (lat: number, lng: number, buildingsFc: GeoJSON.FeatureCollection) => {
@@ -364,7 +385,7 @@ export function MapPage() {
   }, [online, mapScope, bbox, refreshKey, publicCrises.length, activeCrises, buildingsCacheKey]);
 
   useEffect(() => {
-    if (!online || !bbox || mapMode === 'new') {
+    if (!online || !bbox || mapMode === 'new' || inspectOpen) {
       if (mapMode === 'new') setMarkers([]);
       return;
     }
@@ -389,7 +410,7 @@ export function MapPage() {
         });
     }, 350);
     return () => clearTimeout(timer);
-  }, [online, bbox, mapMode, mapScope, refreshKey]);
+  }, [online, bbox, mapMode, mapScope, refreshKey, inspectOpen]);
 
   const showOthers = mapMode === 'all';
 
@@ -664,6 +685,7 @@ export function MapPage() {
 
   const onReportPinMove = useCallback(
     (lat: number, lng: number) => {
+      autoFlewToUserRef.current = true;
       setPinWithDetect(lat, lng, buildings);
     },
     [buildings, setPinWithDetect],
@@ -816,7 +838,7 @@ export function MapPage() {
         activeSavedRegionId={activeRegionId}
         onSavedRegionSelect={(id) => {
           const r = offlineTiles.regions.find((x) => x.id === id);
-          if (r) goToRegion(r);
+          if (r) goToRegion(r, { adjustZoom: false });
         }}
         downloadPreview={downloadPreview}
       />
