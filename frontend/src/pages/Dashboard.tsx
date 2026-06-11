@@ -1,16 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { apiBase } from '../api';
+import { apiBase, apiGet } from '../api';
 import { useI18n } from '../i18n/I18nContext';
-import { opsGet, type OpsCrisis, type OpsZone } from '../ops/opsApi';
+import { opsGet, opsPatch, type OpsCrisis, type OpsZone } from '../ops/opsApi';
 import {
   getOpsUser,
   opsHasStaffAccess,
   opsIsSystemAdmin,
   opsRoleLabel,
 } from '../ops/opsAuth';
-import { OPS_LABELS } from '../ops/opsLabels';
 
 type ReportSummary = {
   id: string;
@@ -27,12 +26,17 @@ type ReportSummary = {
 
 type ListResp = { items: ReportSummary[]; nextCursor?: string | null; zone_scope?: string[] | null };
 
-function crisisLabel(c: OpsCrisis): string {
-  return c.name['zh-Hant'] ?? c.name.zh ?? c.name.en ?? c.slug;
-}
+type ReviewFilter = 'all' | 'pending' | 'flagged' | 'reviewed';
+
+type AnalyticsSummary = {
+  total_reports: number;
+  latest_building_count: number;
+  damage_counts: Record<string, number>;
+  timeline: Array<{ day: string; count: number }>;
+};
 
 export function Dashboard() {
-  const { t } = useI18n();
+  const { t, crisisName } = useI18n();
   const opsUser = getOpsUser()!;
   const isAdmin = opsIsSystemAdmin(opsUser);
   const isLead = (opsUser.crisis_lead_assignments?.length ?? 0) > 0;
@@ -40,8 +44,27 @@ export function Dashboard() {
   const [zones, setZones] = useState<OpsZone[]>([]);
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
   const [crisisId, setCrisisId] = useState('');
-  const [zoneId, setZoneId] = useState<string>('');
+  const [zoneId, setZoneId] = useState('');
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('pending');
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const loadReports = useCallback(async () => {
+    if (!crisisId) {
+      setData({ items: [], zone_scope: [] });
+      return;
+    }
+    try {
+      const q = new URLSearchParams({ crisis_id: crisisId, limit: '200' });
+      if (zoneId) q.set('zone_id', zoneId);
+      const d = await opsGet<ListResp>(`/v1/ops/reports?${q}`);
+      setData({ items: d.items, nextCursor: null, zone_scope: d.zone_scope });
+      setErr(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }, [crisisId, zoneId]);
 
   useEffect(() => {
     opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises')
@@ -63,23 +86,40 @@ export function Dashboard() {
   }, [crisisId]);
 
   useEffect(() => {
+    void loadReports();
+  }, [loadReports]);
+
+  useEffect(() => {
     if (!crisisId) {
-      setData({ items: [], zone_scope: [] });
+      setAnalytics(null);
       return;
     }
-    const loadReports = async () => {
-      try {
-        const q = new URLSearchParams({ crisis_id: crisisId, limit: '100' });
-        if (zoneId) q.set('zone_id', zoneId);
-        const d = await opsGet<ListResp>(`/v1/ops/reports?${q}`);
-        setData({ items: d.items, nextCursor: null, zone_scope: d.zone_scope });
-        setErr(null);
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : String(e));
-      }
-    };
-    void loadReports();
-  }, [zoneId, crisisId]);
+    apiGet<AnalyticsSummary>(`/v1/analytics/summary?crisis_id=${crisisId}`)
+      .then(setAnalytics)
+      .catch(() => setAnalytics(null));
+  }, [crisisId]);
+
+  const patchReport = async (id: string, reviewed?: boolean, flagged?: boolean) => {
+    setBusyId(id);
+    try {
+      await opsPatch(`/v1/ops/reports/${id}`, { reviewed, flagged });
+      await loadReports();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const filteredItems = useMemo(() => {
+    if (!data) return [];
+    return data.items.filter((r) => {
+      if (reviewFilter === 'pending') return !r.admin_reviewed;
+      if (reviewFilter === 'reviewed') return Boolean(r.admin_reviewed);
+      if (reviewFilter === 'flagged') return Boolean(r.admin_flagged);
+      return true;
+    });
+  }, [data, reviewFilter]);
 
   if (!opsHasStaffAccess(opsUser)) {
     return (
@@ -87,12 +127,12 @@ export function Dashboard() {
         <header className="ops-dash-header">
           <h1>{t('dashboard.title')}</h1>
         </header>
-        <p className="muted">您的帳號尚未被指派危機或分區，請聯絡系統管理員。</p>
+        <p className="muted">{t('dashboard.noAccess')}</p>
       </section>
     );
   }
 
-  if (err) {
+  if (err && !data) {
     return (
       <section className="card ops-dashboard">
         <p className="error">{err}</p>
@@ -103,6 +143,8 @@ export function Dashboard() {
 
   const api = apiBase();
   const activeCrisis = crises.find((c) => c.id === crisisId);
+  const damageMax = Math.max(1, ...Object.values(analytics?.damage_counts ?? {}));
+  const timelineMax = Math.max(1, ...(analytics?.timeline ?? []).map((x) => x.count));
 
   return (
     <section className="card ops-dashboard">
@@ -111,26 +153,28 @@ export function Dashboard() {
           <h1>{t('dashboard.title')}</h1>
           <p className="muted">
             {opsUser.email} · {opsRoleLabel(opsUser.role)}
-            {isAdmin && ' · 可檢視全部危機'}
-            {!isAdmin && isLead && ' · 可檢視所負責危機與分區回報'}
-            {!isAdmin && !isLead && ' · 僅可檢視指派分區內回報'}
+            {isAdmin && ` · ${t('dashboard.scopeAdmin')}`}
+            {!isAdmin && isLead && ` · ${t('dashboard.scopeLead')}`}
+            {!isAdmin && !isLead && ` · ${t('dashboard.scopeCoord')}`}
           </p>
         </div>
       </header>
 
       <section className="ops-dash-banner">
-        <strong>營運審核</strong>
+        <strong>{t('dashboard.reviewBannerTitle')}</strong>
         <p className="muted">
-          建立危機、指派人員請至 <Link to="/ops">{OPS_LABELS.console}</Link>；畫分區與歸檔請至{' '}
-          <Link to="/ops/map">{OPS_LABELS.map}</Link>。此頁供檢視與匯出您權限範圍內的回報。
+          {t('dashboard.reviewBannerHint', {
+            console: t('ops.nav.console'),
+            map: t('ops.nav.map'),
+          })}
         </p>
       </section>
 
       <section className="ops-dash-section">
-        <h2>篩選</h2>
+        <h2>{t('dashboard.filterTitle')}</h2>
         {crises.length > 0 && (
           <label className="ops-field">
-            危機
+            {t('dashboard.crisisFilter')}
             <select
               className="ops-input"
               value={crisisId}
@@ -141,23 +185,22 @@ export function Dashboard() {
             >
               {crises.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {crisisLabel(c)}
+                  {crisisName(c.name, c.slug)}
                 </option>
               ))}
             </select>
           </label>
         )}
-        {activeCrisis && <p className="muted">狀態：{activeCrisis.archive_status}</p>}
-        {crises.length === 0 && (
+        {activeCrisis && (
           <p className="muted">
-            尚無可檢視的危機。{isAdmin ? `請至${OPS_LABELS.console}建立危機。` : '請聯絡管理員指派權限。'}
+            {t('dashboard.statusLabel')}: {activeCrisis.archive_status}
           </p>
         )}
         {zones.length > 0 && (
           <label className="ops-field">
-            分區篩選
+            {t('dashboard.zoneFilter')}
             <select className="ops-input" value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
-              <option value="">（全部可見分區）</option>
+              <option value="">{t('dashboard.allZones')}</option>
               {zones.map((z) => (
                 <option key={z.id} value={z.id}>
                   {z.name}
@@ -166,14 +209,70 @@ export function Dashboard() {
             </select>
           </label>
         )}
-        {data.zone_scope && data.zone_scope.length > 0 && (
-          <p className="muted">可見範圍：{data.zone_scope.length} 個分區</p>
-        )}
+        <div className="ops-review-tabs">
+          {(['pending', 'flagged', 'reviewed', 'all'] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              className={reviewFilter === f ? 'ops-review-tab active' : 'ops-review-tab'}
+              onClick={() => setReviewFilter(f)}
+            >
+              {t(`dashboard.reviewFilter.${f}`)}
+            </button>
+          ))}
+        </div>
       </section>
+
+      {analytics && crisisId && (
+        <section className="ops-dash-section ops-analytics-section">
+          <h2>{t('dashboard.analytics')}</h2>
+          <div className="ops-analytics-stats">
+            <div className="ops-stat-card">
+              <span className="ops-stat-label">{t('dashboard.totalReports')}</span>
+              <strong>{analytics.total_reports}</strong>
+            </div>
+            <div className="ops-stat-card">
+              <span className="ops-stat-label">{t('dashboard.latestBuildings')}</span>
+              <strong>{analytics.latest_building_count}</strong>
+            </div>
+            <div className="ops-stat-card">
+              <span className="ops-stat-label">{t('dashboard.pendingCount')}</span>
+              <strong>{data.items.filter((r) => !r.admin_reviewed).length}</strong>
+            </div>
+          </div>
+          <h3 className="ops-analytics-sub">{t('dashboard.damageCounts')}</h3>
+          <div className="ops-bar-chart">
+            {Object.entries(analytics.damage_counts).map(([level, count]) => (
+              <div key={level} className="ops-bar-row">
+                <span>{level}</span>
+                <div className="ops-bar-track">
+                  <div className="ops-bar-fill" style={{ width: `${(count / damageMax) * 100}%` }} />
+                </div>
+                <span>{count}</span>
+              </div>
+            ))}
+          </div>
+          {analytics.timeline.length > 0 && (
+            <>
+              <h3 className="ops-analytics-sub">{t('dashboard.timeline')}</h3>
+              <div className="ops-timeline-chart">
+                {analytics.timeline.slice(-14).map((pt) => (
+                  <div key={pt.day} className="ops-timeline-col" title={`${pt.day}: ${pt.count}`}>
+                    <div
+                      className="ops-timeline-bar"
+                      style={{ height: `${(pt.count / timelineMax) * 100}%` }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
       {crisisId && (
         <section className="ops-dash-section">
-          <h2>匯出</h2>
+          <h2>{t('dashboard.exportTitle')}</h2>
           <p className="ops-export-links">
             <a href={`${api}/v1/export?crisis_id=${crisisId}&format=csv`}>{t('dashboard.exportCsv')}</a>
             <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson`}>{t('dashboard.exportGeojson')}</a>
@@ -186,7 +285,8 @@ export function Dashboard() {
       )}
 
       <section className="ops-dash-section">
-        <h2>回報列表</h2>
+        <h2>{t('dashboard.reviewQueueTitle')}</h2>
+        {err && <p className="error">{err}</p>}
         <div className="ops-table-wrap">
           <table className="table ops-table">
             <thead>
@@ -195,12 +295,12 @@ export function Dashboard() {
                 <th>{t('dashboard.col.damage')}</th>
                 <th>{t('dashboard.col.building')}</th>
                 <th>{t('dashboard.col.summary')}</th>
-                <th>審核</th>
-                <th>{t('dashboard.col.image')}</th>
+                <th>{t('dashboard.col.review')}</th>
+                <th>{t('dashboard.col.actions')}</th>
               </tr>
             </thead>
             <tbody>
-              {data.items.map((r) => (
+              {filteredItems.map((r) => (
                 <tr key={r.id}>
                   <td>{new Date(r.received_at_server).toLocaleString()}</td>
                   <td>{r.damage_level}</td>
@@ -210,17 +310,33 @@ export function Dashboard() {
                     {r.admin_reviewed ? '✓' : '—'}
                     {r.admin_flagged ? ' ⚑' : ''}
                   </td>
-                  <td>
-                    <a href={`${api}/v1/reports/${r.id}?includeImageUrl=1`} target="_blank" rel="noreferrer">
-                      JSON
-                    </a>
+                  <td className="ops-table-actions">
+                    <button
+                      type="button"
+                      className="small"
+                      disabled={busyId === r.id}
+                      onClick={() => void patchReport(r.id, !r.admin_reviewed, undefined)}
+                    >
+                      {r.admin_reviewed ? t('dashboard.unreview') : t('dashboard.markReviewed')}
+                    </button>
+                    <button
+                      type="button"
+                      className="small secondary"
+                      disabled={busyId === r.id}
+                      onClick={() => void patchReport(r.id, undefined, !r.admin_flagged)}
+                    >
+                      {r.admin_flagged ? t('dashboard.unflag') : t('dashboard.flag')}
+                    </button>
+                    <Link to={`/ops/map?crisis_id=${crisisId}`} className="ops-dash-inline-link">
+                      {t('dashboard.openOnMap')}
+                    </Link>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        {data.items.length === 0 && <p className="muted">{t('dashboard.empty')}</p>}
+        {filteredItems.length === 0 && <p className="muted">{t('dashboard.emptyFilter')}</p>}
       </section>
     </section>
   );
