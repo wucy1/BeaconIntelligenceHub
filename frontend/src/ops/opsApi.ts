@@ -102,6 +102,8 @@ export type OpsReport = {
   description_preview: string;
   admin_reviewed: boolean;
   admin_flagged: boolean;
+  /** crisis 視角：linked=已歸檔至此危機，candidate=分區內待歸檔 */
+  crisis_link_status?: 'linked' | 'candidate' | null;
 };
 
 export type ArchivePreview = {

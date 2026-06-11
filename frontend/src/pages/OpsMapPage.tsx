@@ -97,6 +97,8 @@ export function OpsMapPage() {
   const [activeCrisisId, setActiveCrisisId] = useState<string>(crisisFromUrl);
   const [zones, setZones] = useState<OpsZone[]>([]);
   const [reports, setReports] = useState<OpsReport[]>([]);
+  const [crisisLinkedCount, setCrisisLinkedCount] = useState(0);
+  const [crisisCandidateCount, setCrisisCandidateCount] = useState(0);
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [preview, setPreview] = useState<ArchivePreview | null>(null);
@@ -178,9 +180,21 @@ export function OpsMapPage() {
     const to = fromDatetimeLocalValue(filterTo);
     if (from) q.set('captured_from', from);
     if (to) q.set('captured_to', to);
-    opsGet<{ items: OpsReport[] }>(`/v1/ops/reports?${q}`)
-      .then((d) => setReports(d.items))
-      .catch(() => setReports([]));
+    opsGet<{
+      items: OpsReport[];
+      crisis_linked_count?: number | null;
+      crisis_candidate_count?: number | null;
+    }>(`/v1/ops/reports?${q}`)
+      .then((d) => {
+        setReports(d.items);
+        setCrisisLinkedCount(d.crisis_linked_count ?? 0);
+        setCrisisCandidateCount(d.crisis_candidate_count ?? 0);
+      })
+      .catch(() => {
+        setReports([]);
+        setCrisisLinkedCount(0);
+        setCrisisCandidateCount(0);
+      });
   }, [selectedZoneId, filterFrom, filterTo, reportView, activeCrisisId]);
 
   useEffect(() => {
@@ -442,7 +456,12 @@ export function OpsMapPage() {
       loadCrises();
       loadAudit();
       setErr(null);
-      alert(`已歸檔連結 ${r.linked_count} 筆回報`);
+      alert(
+        t('ops.map.archiveDone', {
+          linked: r.linked_count,
+          hint: r.linked_count === 0 ? t('ops.map.archiveDoneZeroHint') : '',
+        }),
+      );
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -526,17 +545,19 @@ export function OpsMapPage() {
         {reports.map((r) => {
           if (!r.geom) return null;
           const [lng, lat] = r.geom.coordinates;
-          const color = DAMAGE_COLOR[r.damage_level] ?? '#64748b';
+          const isCandidate = r.crisis_link_status === 'candidate';
+          const color = isCandidate ? '#7c3aed' : (DAMAGE_COLOR[r.damage_level] ?? '#64748b');
           return (
             <CircleMarker
               key={r.id}
               center={[lat, lng]}
-              radius={selectedReportId === r.id ? 9 : 6}
+              radius={selectedReportId === r.id ? 9 : isCandidate ? 5 : 6}
               pathOptions={{
                 color: selectedReportId === r.id ? '#0f172a' : color,
-                fillColor: color,
-                fillOpacity: 0.85,
-                weight: 2,
+                fillColor: isCandidate ? '#ede9fe' : color,
+                fillOpacity: isCandidate ? 0.75 : 0.85,
+                weight: isCandidate ? 2.5 : 2,
+                dashArray: isCandidate ? '4 3' : undefined,
               }}
               eventHandlers={{
                 click: (e) => {
@@ -661,9 +682,20 @@ export function OpsMapPage() {
             <input type="datetime-local" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
           </label>
           <span className="ops-map-chip ops-map-view-field ops-map-report-count">
-            {t('ops.map.reportCount', { count: reports.length })}
+            {reportView === 'crisis'
+              ? t('ops.map.reportCountCrisis', {
+                  total: reports.length,
+                  linked: crisisLinkedCount,
+                  candidate: crisisCandidateCount,
+                })
+              : t('ops.map.reportCount', { count: reports.length })}
           </span>
         </div>
+        <p className="ops-map-view-rules muted">
+          {reportView === 'crisis' && t('ops.map.viewRules.crisis')}
+          {reportView === 'unspecified' && t('ops.map.viewRules.unspecified')}
+          {reportView === 'all' && t('ops.map.viewRules.all')}
+        </p>
         {selectedZone && (
           <button type="button" className="ops-map-chip ops-map-btn secondary" onClick={clearZoneSelection}>
             {t('ops.map.clearZone')}
@@ -787,7 +819,12 @@ export function OpsMapPage() {
           {preview && (
             <div className="ops-preview-box">
               <strong>預覽（3c）</strong>
-              <p>符合 {preview.matched_count} 筆 · 已連結 {preview.already_linked_count} 筆</p>
+              <p>
+                {t('ops.map.archivePreviewCounts', {
+                  matched: preview.matched_count,
+                  linked: preview.already_linked_count,
+                })}
+              </p>
               {preview.sample_report_ids.length > 0 && (
                 <p className="muted">範例：{preview.sample_report_ids.slice(0, 5).join(', ')}</p>
               )}

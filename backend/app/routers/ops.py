@@ -16,6 +16,7 @@ from app.archive_logic import report_ids_for_archive
 from app.database import get_db
 from app.ops_reports_query import (
     report_ids_all_scoped,
+    report_ids_for_crisis_browse,
     report_ids_for_crisis_scoped,
     report_ids_unspecified_scoped,
 )
@@ -675,6 +676,7 @@ def ops_list_reports(
     principal: OpsPrincipal = Depends(get_ops_principal),
     db: Session = Depends(get_db),
 ) -> dict:
+    link_status_map: dict[UUID, str] = {}
     try:
         zone_ids = resolve_zone_filter_ids(principal, zone_id)
     except ValueError as exc:
@@ -692,15 +694,26 @@ def ops_list_reports(
     elif crisis_id is None:
         raise HTTPException(status_code=422, detail="crisis_id required for view=crisis")
     else:
-        ids = report_ids_for_crisis_scoped(
-            db,
-            crisis_id,
-            zone_ids,
-            captured_from,
-            captured_to,
-            limit,
-            reviewed_only=reviewed_only,
-        )
+        if reviewed_only is not None:
+            ids = report_ids_for_crisis_scoped(
+                db,
+                crisis_id,
+                zone_ids,
+                captured_from,
+                captured_to,
+                limit,
+                reviewed_only=reviewed_only,
+            )
+            link_status_map = {rid: "linked" for rid in ids}
+        else:
+            ids, link_status_map = report_ids_for_crisis_browse(
+                db,
+                crisis_id,
+                zone_ids,
+                captured_from,
+                captured_to,
+                limit,
+            )
     rows = db.query(Report).filter(Report.id.in_(list(ids))).all() if ids else []
     if rows and ids:
         order = {rid: i for i, rid in enumerate(ids)}
@@ -721,13 +734,18 @@ def ops_list_reports(
             debris_clearing_required=bool(r.debris_clearing_required),
             crisis_types=list(r.crisis_types or []),
             infrastructure_types=list(r.infrastructure_types or []),
+            crisis_link_status=link_status_map.get(r.id) if view == "crisis" else None,
         )
         for r in rows
     ]
+    linked_n = sum(1 for s in link_status_map.values() if s == "linked") if view == "crisis" else None
+    candidate_n = sum(1 for s in link_status_map.values() if s == "candidate") if view == "crisis" else None
     return {
         "items": items,
         "view": view,
         "zone_scope": [str(z) for z in zone_ids] if zone_ids is not None else None,
+        "crisis_linked_count": linked_n,
+        "crisis_candidate_count": candidate_n,
     }
 
 

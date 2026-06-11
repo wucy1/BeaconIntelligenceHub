@@ -175,3 +175,67 @@ def report_ids_all_scoped(
                 if len(merged) >= limit:
                     break
     return merged[:limit]
+
+
+def _crisis_zone_ids(
+    db: Session,
+    crisis_id: UUID,
+    zone_ids: list[UUID] | None,
+) -> list[UUID] | None:
+    """Resolve zone filter for archive-aligned browse: explicit filter or all crisis zones."""
+    if zone_ids is not None:
+        return zone_ids
+    rows = db.execute(
+        text("SELECT id FROM zones WHERE crisis_id = CAST(:cid AS uuid)"),
+        {"cid": str(crisis_id)},
+    ).scalars().all()
+    return list(rows) if rows else None
+
+
+def report_ids_for_crisis_browse(
+    db: Session,
+    crisis_id: UUID,
+    zone_ids: list[UUID] | None,
+    captured_from: datetime | None,
+    captured_to: datetime | None,
+    limit: int,
+) -> tuple[list[UUID], dict[UUID, str]]:
+    """
+    Crisis map/dashboard browse: linked reports plus archive candidates (same rules as archive preview).
+    Returns ordered ids and per-id status: linked | candidate.
+    """
+    from app.archive_logic import report_ids_for_archive
+
+    linked = report_ids_for_crisis_scoped(
+        db, crisis_id, zone_ids, captured_from, captured_to, limit
+    )
+    status: dict[UUID, str] = {rid: "linked" for rid in linked}
+    seen = set(linked)
+    merged = list(linked)
+
+    archive_zones = _crisis_zone_ids(db, crisis_id, zone_ids)
+    if archive_zones is not None and len(archive_zones) == 0:
+        return merged, status
+
+    remaining = limit - len(merged)
+    if remaining <= 0:
+        return merged[:limit], status
+
+    candidates = report_ids_for_archive(
+        db,
+        crisis_id,
+        archive_zones,
+        captured_from,
+        captured_to,
+        remaining,
+        exclude_already_linked=True,
+    )
+    for rid in candidates:
+        if rid in seen:
+            continue
+        seen.add(rid)
+        status[rid] = "candidate"
+        merged.append(rid)
+        if len(merged) >= limit:
+            break
+    return merged[:limit], status
