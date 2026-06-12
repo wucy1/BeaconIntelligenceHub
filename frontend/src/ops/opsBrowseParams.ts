@@ -49,6 +49,7 @@ export function parseOpsBrowseSearchParams(search: URLSearchParams): Partial<Ops
   const view = search.get('view');
   const out: Partial<OpsBrowseParams> & { reportId?: string; lat?: string; lng?: string } = {};
   if (view === 'crisis' || view === 'unspecified' || view === 'all') out.view = view;
+  else out.view = 'all';
   const crisisId = search.get('crisis_id');
   if (crisisId) out.crisisId = crisisId;
   const zoneId = search.get('zone_id');

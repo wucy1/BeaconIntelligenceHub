@@ -157,6 +157,7 @@ class OpsSavedReport(Base):
     snapshot_total = Column(Integer, nullable=True)
     snapshot_linked = Column(Integer, nullable=True)
     snapshot_candidate = Column(Integer, nullable=True)
+    zone_snapshots = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 

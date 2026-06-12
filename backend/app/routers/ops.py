@@ -101,6 +101,12 @@ class ArchiveRunBody(BaseModel):
     unlink_out_of_scope: bool = True
 
 
+class ZoneSnapshotBody(BaseModel):
+    zone_id: UUID | None = None
+    name: str
+    geom: dict[str, Any]
+
+
 class SavedReportCreateBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     report_view: str = Field("crisis", pattern="^(crisis|unspecified|all)$")
@@ -112,6 +118,7 @@ class SavedReportCreateBody(BaseModel):
     snapshot_total: int | None = None
     snapshot_linked: int | None = None
     snapshot_candidate: int | None = None
+    zone_snapshots: list[ZoneSnapshotBody] | None = None
 
 
 class ProfilePatchBody(BaseModel):
@@ -278,8 +285,82 @@ def _saved_report_out(row: OpsSavedReport, creator_email: str | None = None) -> 
         "snapshot_total": row.snapshot_total,
         "snapshot_linked": row.snapshot_linked,
         "snapshot_candidate": row.snapshot_candidate,
+        "zone_snapshots": row.zone_snapshots,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _archive_summary(db: Session, crisis: Crisis) -> dict:
+    zone_count = db.query(Zone).filter(Zone.crisis_id == crisis.id).count()
+    link_rows = db.execute(
+        text(
+            """
+            SELECT link_source, COUNT(*)::int AS n
+            FROM report_crisis_links
+            WHERE crisis_id = CAST(:cid AS uuid)
+            GROUP BY link_source
+            """
+        ),
+        {"cid": str(crisis.id)},
+    ).mappings().all()
+    by_source = {r["link_source"]: r["n"] for r in link_rows}
+    linked_auto = by_source.get("auto_classify", 0)
+    linked_manual = by_source.get("batch_archive", 0)
+    linked_total = sum(by_source.values())
+
+    candidate_count = 0
+    if zone_count > 0:
+        zone_ids = [row[0] for row in db.query(Zone.id).filter(Zone.crisis_id == crisis.id).all()]
+        if zone_ids:
+            from app.archive_logic import report_ids_for_archive
+
+            candidate_count = len(
+                report_ids_for_archive(
+                    db,
+                    crisis.id,
+                    zone_ids,
+                    crisis.archive_window_start,
+                    crisis.archive_window_end,
+                    5000,
+                    exclude_already_linked=True,
+                )
+            )
+
+    last_run = (
+        db.query(OpsAuditLog, OpsUser.email)
+        .outerjoin(OpsUser, OpsUser.id == OpsAuditLog.actor_user_id)
+        .filter(
+            OpsAuditLog.action == "crisis.archive_run",
+            OpsAuditLog.entity_id == crisis.id,
+        )
+        .order_by(OpsAuditLog.created_at.desc())
+        .first()
+    )
+    last_manual_at = None
+    last_manual_actor = None
+    last_manual_detail = None
+    if last_run:
+        log_row, actor_email = last_run
+        last_manual_at = log_row.created_at.isoformat() if log_row.created_at else None
+        last_manual_actor = actor_email
+        last_manual_detail = log_row.detail
+
+    return {
+        "crisis_id": str(crisis.id),
+        "archive_status": crisis.archive_status,
+        "archive_window_start": crisis.archive_window_start.isoformat()
+        if crisis.archive_window_start
+        else None,
+        "archive_window_end": crisis.archive_window_end.isoformat() if crisis.archive_window_end else None,
+        "zone_count": zone_count,
+        "linked_total": linked_total,
+        "linked_auto": linked_auto,
+        "linked_manual": linked_manual,
+        "candidate_count": candidate_count,
+        "last_manual_archive_at": last_manual_at,
+        "last_manual_archive_actor": last_manual_actor,
+        "last_manual_archive_detail": last_manual_detail,
     }
 
 
@@ -797,11 +878,25 @@ def ops_list_reports(
     captured_from: datetime | None = None,
     captured_to: datetime | None = None,
     reviewed_only: bool | None = None,
+    saved_report_id: UUID | None = None,
     limit: int = Query(100, ge=1, le=500),
     principal: OpsPrincipal = Depends(get_ops_principal),
     db: Session = Depends(get_db),
 ) -> dict:
     link_status_map: dict[UUID, str] = {}
+    saved_name: str | None = None
+    geom_snapshots: list | None = None
+    if saved_report_id is not None:
+        saved = db.query(OpsSavedReport).filter(OpsSavedReport.id == saved_report_id).first()
+        if not saved:
+            raise HTTPException(status_code=404, detail="Saved report not found")
+        saved_name = saved.name
+        view = saved.report_view
+        crisis_id = saved.crisis_id
+        captured_from = saved.browse_from
+        captured_to = saved.browse_to
+        geom_snapshots = saved.zone_snapshots
+        zone_id = saved.zone_id if not geom_snapshots else None
     try:
         zone_ids = resolve_zone_filter_ids(principal, zone_id)
     except ValueError as exc:
@@ -810,27 +905,17 @@ def ops_list_reports(
         raise
     if view == "unspecified":
         ids = report_ids_unspecified_scoped(
-            db, zone_ids, captured_from, captured_to, limit, reviewed_only=reviewed_only
+            db,
+            zone_ids,
+            captured_from,
+            captured_to,
+            limit,
+            reviewed_only=reviewed_only,
+            geom_snapshots=geom_snapshots,
+            crisis_context_id=crisis_id,
         )
     elif view == "all":
-        ids = report_ids_all_scoped(
-            db, zone_ids, captured_from, captured_to, limit, reviewed_only=reviewed_only
-        )
-    elif crisis_id is None:
-        raise HTTPException(status_code=422, detail="crisis_id required for view=crisis")
-    else:
-        if reviewed_only is not None:
-            ids = report_ids_for_crisis_scoped(
-                db,
-                crisis_id,
-                zone_ids,
-                captured_from,
-                captured_to,
-                limit,
-                reviewed_only=reviewed_only,
-            )
-            link_status_map = {rid: "linked" for rid in ids}
-        else:
+        if crisis_id is not None and reviewed_only is None:
             ids, link_status_map = report_ids_for_crisis_browse(
                 db,
                 crisis_id,
@@ -838,7 +923,32 @@ def ops_list_reports(
                 captured_from,
                 captured_to,
                 limit,
+                geom_snapshots=geom_snapshots,
             )
+        else:
+            ids = report_ids_all_scoped(
+                db,
+                zone_ids,
+                captured_from,
+                captured_to,
+                limit,
+                reviewed_only=reviewed_only,
+                geom_snapshots=geom_snapshots,
+            )
+    elif crisis_id is None:
+        raise HTTPException(status_code=422, detail="crisis_id required for view=crisis")
+    else:
+        ids = report_ids_for_crisis_scoped(
+            db,
+            crisis_id,
+            zone_ids,
+            captured_from,
+            captured_to,
+            limit,
+            reviewed_only=reviewed_only,
+            geom_snapshots=geom_snapshots,
+        )
+        link_status_map = {rid: "linked" for rid in ids}
     rows = db.query(Report).filter(Report.id.in_(list(ids))).all() if ids else []
     if rows and ids:
         order = {rid: i for i, rid in enumerate(ids)}
@@ -859,19 +969,37 @@ def ops_list_reports(
             debris_clearing_required=bool(r.debris_clearing_required),
             crisis_types=list(r.crisis_types or []),
             infrastructure_types=list(r.infrastructure_types or []),
-            crisis_link_status=link_status_map.get(r.id) if view == "crisis" else None,
+            crisis_link_status=link_status_map.get(r.id) if link_status_map else None,
         )
         for r in rows
     ]
-    linked_n = sum(1 for s in link_status_map.values() if s == "linked") if view == "crisis" else None
-    candidate_n = sum(1 for s in link_status_map.values() if s == "candidate") if view == "crisis" else None
+    linked_n = sum(1 for s in link_status_map.values() if s == "linked") if link_status_map else None
+    candidate_n = sum(1 for s in link_status_map.values() if s == "candidate") if link_status_map else None
+    other_linked_n = sum(1 for s in link_status_map.values() if s == "other_linked") if link_status_map else None
     return {
         "items": items,
         "view": view,
+        "saved_report_id": str(saved_report_id) if saved_report_id else None,
+        "saved_report_name": saved_name,
         "zone_scope": [str(z) for z in zone_ids] if zone_ids is not None else None,
         "crisis_linked_count": linked_n,
         "crisis_candidate_count": candidate_n,
+        "crisis_other_linked_count": other_linked_n,
     }
+
+
+@router.get("/crises/{crisis_id}/archive-summary")
+def ops_crisis_archive_summary(
+    crisis_id: UUID,
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
+    if not crisis:
+        raise HTTPException(status_code=404, detail="Crisis not found")
+    if _is_system_unspecified(crisis):
+        raise HTTPException(status_code=422, detail="System unspecified crisis")
+    return _archive_summary(db, crisis)
 
 
 @router.post("/reports/batch-review")
@@ -1250,17 +1378,18 @@ def ops_patch_settings(
 
 @router.get("/saved-reports")
 def ops_list_saved_reports(
+    crisis_id: UUID | None = None,
     limit: int = Query(50, ge=1, le=200),
     principal: OpsPrincipal = Depends(get_ops_principal),
     db: Session = Depends(get_db),
 ) -> dict:
-    rows = (
+    q = (
         db.query(OpsSavedReport, OpsUser.email)
         .outerjoin(OpsUser, OpsUser.id == OpsSavedReport.created_by)
-        .order_by(OpsSavedReport.updated_at.desc())
-        .limit(limit)
-        .all()
     )
+    if crisis_id is not None:
+        q = q.filter(OpsSavedReport.crisis_id == crisis_id)
+    rows = q.order_by(OpsSavedReport.updated_at.desc()).limit(limit).all()
     return {
         "items": [_saved_report_out(row, email) for row, email in rows],
     }
@@ -1274,6 +1403,9 @@ def ops_create_saved_report(
 ) -> dict:
     if body.report_view == "crisis" and not body.crisis_id:
         raise HTTPException(status_code=422, detail="crisis_id required for crisis view")
+    zone_snapshots = None
+    if body.zone_snapshots:
+        zone_snapshots = [s.model_dump(mode="json") for s in body.zone_snapshots]
     row = OpsSavedReport(
         name=body.name.strip(),
         created_by=principal.user_id,
@@ -1286,6 +1418,7 @@ def ops_create_saved_report(
         snapshot_total=body.snapshot_total,
         snapshot_linked=body.snapshot_linked,
         snapshot_candidate=body.snapshot_candidate,
+        zone_snapshots=zone_snapshots,
     )
     db.add(row)
     log_ops_action(

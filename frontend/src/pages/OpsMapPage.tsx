@@ -123,6 +123,7 @@ export function OpsMapPage() {
   const [reports, setReports] = useState<OpsReport[]>([]);
   const [crisisLinkedCount, setCrisisLinkedCount] = useState(0);
   const [crisisCandidateCount, setCrisisCandidateCount] = useState(0);
+  const [crisisOtherLinkedCount, setCrisisOtherLinkedCount] = useState(0);
   const [viewHelpOpen, setViewHelpOpen] = useState(false);
   const viewHelpRef = useRef<HTMLDivElement>(null);
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
@@ -143,7 +144,7 @@ export function OpsMapPage() {
   const [browseFrom, setBrowseFrom] = useState(urlBrowse.browseFrom ?? '');
   const [browseTo, setBrowseTo] = useState(urlBrowse.browseTo ?? '');
   const [reportView, setReportView] = useState<'crisis' | 'unspecified' | 'all'>(
-    urlBrowse.view ?? 'crisis',
+    urlBrowse.view ?? 'all',
   );
   const [unlinkOutOfScope, setUnlinkOutOfScope] = useState(true);
   const [draftWindowOpen, setDraftWindowOpen] = useState(false);
@@ -237,7 +238,7 @@ export function OpsMapPage() {
 
   const loadReports = useCallback(() => {
     const q = new URLSearchParams({ limit: '300', view: reportView });
-    if (reportView === 'crisis' && activeCrisisId) q.set('crisis_id', activeCrisisId);
+    if (activeCrisisId) q.set('crisis_id', activeCrisisId);
     if (selectedZoneId) q.set('zone_id', selectedZoneId);
     const from = fromDatetimeLocalValue(browseFrom);
     const to = fromDatetimeLocalValue(browseTo);
@@ -247,16 +248,19 @@ export function OpsMapPage() {
       items: OpsReport[];
       crisis_linked_count?: number | null;
       crisis_candidate_count?: number | null;
+      crisis_other_linked_count?: number | null;
     }>(`/v1/ops/reports?${q}`)
       .then((d) => {
         setReports(d.items);
         setCrisisLinkedCount(d.crisis_linked_count ?? 0);
         setCrisisCandidateCount(d.crisis_candidate_count ?? 0);
+        setCrisisOtherLinkedCount(d.crisis_other_linked_count ?? 0);
       })
       .catch(() => {
         setReports([]);
         setCrisisLinkedCount(0);
         setCrisisCandidateCount(0);
+        setCrisisOtherLinkedCount(0);
       });
   }, [selectedZoneId, browseFrom, browseTo, reportView, activeCrisisId]);
 
@@ -540,6 +544,20 @@ export function OpsMapPage() {
     setBusy(true);
     setErr(null);
     try {
+      const zoneSnapshots =
+        selectedZoneId && selectedZone
+          ? [
+              {
+                zone_id: selectedZone.id,
+                name: selectedZone.name,
+                geom: selectedZone.geom,
+              },
+            ]
+          : zones.map((z) => ({
+              zone_id: z.id,
+              name: z.name,
+              geom: z.geom,
+            }));
       await opsPost('/v1/ops/saved-reports', {
         name,
         report_view: reportView,
@@ -551,6 +569,7 @@ export function OpsMapPage() {
         snapshot_total: reports.length,
         snapshot_linked: crisisLinkedCount,
         snapshot_candidate: crisisCandidateCount,
+        zone_snapshots: zoneSnapshots,
       });
       setSaveReportOpen(false);
       setSaveReportName('');
@@ -689,18 +708,20 @@ export function OpsMapPage() {
           if (!r.geom) return null;
           const [lng, lat] = r.geom.coordinates;
           const isCandidate = r.crisis_link_status === 'candidate';
-          const color = isCandidate ? '#7c3aed' : (DAMAGE_COLOR[r.damage_level] ?? '#64748b');
+          const isOtherLinked = r.crisis_link_status === 'other_linked';
+          const baseColor = DAMAGE_COLOR[r.damage_level] ?? '#64748b';
+          const color = isCandidate ? '#7c3aed' : baseColor;
           return (
             <CircleMarker
               key={r.id}
               center={[lat, lng]}
               radius={selectedReportId === r.id ? 9 : isCandidate ? 5 : 6}
               pathOptions={{
-                color: selectedReportId === r.id ? '#0f172a' : color,
-                fillColor: isCandidate ? '#ede9fe' : color,
+                color: selectedReportId === r.id ? '#0f172a' : isOtherLinked ? '#b45309' : color,
+                fillColor: isCandidate ? '#ede9fe' : baseColor,
                 fillOpacity: isCandidate ? 0.75 : 0.85,
-                weight: isCandidate ? 2.5 : 2,
-                dashArray: isCandidate ? '4 3' : undefined,
+                weight: isCandidate || isOtherLinked ? 2.5 : 2,
+                dashArray: isCandidate ? '4 3' : isOtherLinked ? '2 2' : undefined,
               }}
               eventHandlers={{
                 click: (e) => {
@@ -776,14 +797,14 @@ export function OpsMapPage() {
               onChange={(e) => setReportView(e.target.value as 'crisis' | 'unspecified' | 'all')}
               aria-label={t('dashboard.viewMode')}
             >
-              <option value="crisis">{t('dashboard.view.crisis')}</option>
-              <option value="unspecified">{t('dashboard.view.unspecified')}</option>
               <option value="all">{t('dashboard.view.all')}</option>
+              <option value="unspecified">{t('dashboard.view.unspecified')}</option>
+              <option value="crisis">{t('dashboard.view.crisis')}</option>
             </select>
           </label>
-          {reportView === 'crisis' && manageableCrises.length > 0 ? (
+          {manageableCrises.length > 0 ? (
             <label className="ops-map-chip ops-map-crisis-select ops-map-view-field">
-              <span className="ops-map-view-label">{t('ops.map.crisis')}</span>
+              <span className="ops-map-view-label">{t('ops.map.workCrisis')}</span>
               <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
                 {manageableCrises.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -793,11 +814,12 @@ export function OpsMapPage() {
               </select>
             </label>
           ) : (
-            <span className="ops-map-chip muted ops-map-view-field">
-              {reportView !== 'crisis' ? t(`dashboard.viewHint.${reportView}`) : t('ops.map.noCrisis')}
-            </span>
+            <span className="ops-map-chip muted ops-map-view-field">{t('ops.map.noCrisis')}</span>
           )}
-          {zones.length > 0 && reportView === 'crisis' ? (
+          <span className="ops-map-chip muted ops-map-view-field ops-map-view-hint">
+            {t(`ops.map.viewHint.${reportView}`)}
+          </span>
+          {zones.length > 0 ? (
             <label className="ops-map-chip ops-map-view-field">
               <span className="ops-map-view-label">{t('ops.map.zone')}</span>
               <select
@@ -840,13 +862,16 @@ export function OpsMapPage() {
           </label>
           <div ref={viewHelpRef} className="ops-map-chip ops-map-view-field ops-map-report-count-wrap">
             <span className="ops-map-report-count">
-              {reportView === 'crisis'
+              {reportView === 'all' && activeCrisisId
                 ? t('ops.map.reportCountCrisis', {
                     total: reports.length,
                     linked: crisisLinkedCount,
+                    other: crisisOtherLinkedCount,
                     candidate: crisisCandidateCount,
                   })
-                : t('ops.map.reportCount', { count: reports.length })}
+                : reportView === 'crisis'
+                  ? t('ops.map.reportCountLinked', { count: reports.length })
+                  : t('ops.map.reportCount', { count: reports.length })}
             </span>
             <button
               type="button"

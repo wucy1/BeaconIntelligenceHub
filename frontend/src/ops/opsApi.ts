@@ -103,7 +103,7 @@ export type OpsReport = {
   admin_reviewed: boolean;
   admin_flagged: boolean;
   /** crisis 視角：linked=已歸檔至此危機，candidate=分區內待歸檔 */
-  crisis_link_status?: 'linked' | 'candidate' | null;
+  crisis_link_status?: 'linked' | 'candidate' | 'other_linked' | null;
 };
 
 export type ArchivePreview = {
@@ -120,6 +120,12 @@ export type ArchivePreview = {
   zone_count?: number;
 };
 
+export type OpsZoneSnapshot = {
+  zone_id: string | null;
+  name: string;
+  geom: GeoJSON.Polygon;
+};
+
 export type OpsSavedReport = {
   id: string;
   name: string;
@@ -134,8 +140,27 @@ export type OpsSavedReport = {
   snapshot_total: number | null;
   snapshot_linked: number | null;
   snapshot_candidate: number | null;
+  zone_snapshots: OpsZoneSnapshot[] | null;
   created_at: string | null;
   updated_at: string | null;
+};
+
+export type OpsArchiveSummary = {
+  crisis_id: string;
+  archive_status: string;
+  archive_window_start: string | null;
+  archive_window_end: string | null;
+  zone_count: number;
+  linked_total: number;
+  linked_auto: number;
+  linked_manual: number;
+  candidate_count: number;
+  last_manual_archive_at: string | null;
+  last_manual_archive_actor: string | null;
+  last_manual_archive_detail: {
+    linked_count?: number;
+    unlinked_count?: number;
+  } | null;
 };
 
 export type ArchiveRunResult = {

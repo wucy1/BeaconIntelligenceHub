@@ -1,11 +1,42 @@
 from __future__ import annotations
 
+import json
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.ops_auth import OpsPrincipal
+
+
+def geom_scope_clause(snapshots: list[dict[str, Any]] | None) -> tuple[str, dict]:
+    """Spatial filter using frozen GeoJSON polygons from a saved report."""
+    if not snapshots:
+        return "", {}
+    parts: list[str] = []
+    params: dict = {}
+    for i, snap in enumerate(snapshots):
+        geom = snap.get("geom")
+        if not geom:
+            continue
+        key = f"zgeom_{i}"
+        parts.append(
+            f"""(
+              (r.geom IS NOT NULL AND ST_Intersects(
+                r.geom, ST_SetSRID(ST_GeomFromGeoJSON(CAST(:{key} AS text)), 4326)))
+              OR EXISTS (
+                SELECT 1 FROM buildings bz WHERE bz.id = r.building_id
+                  AND bz.geom IS NOT NULL
+                  AND ST_Intersects(
+                    bz.geom, ST_SetSRID(ST_GeomFromGeoJSON(CAST(:{key} AS text)), 4326))
+              )
+            )"""
+        )
+        params[key] = json.dumps(geom)
+    if not parts:
+        return "", {}
+    return " AND (" + " OR ".join(parts) + ")", params
 
 
 def resolve_zone_filter_ids(

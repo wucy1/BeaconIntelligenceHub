@@ -3,8 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
+from typing import Any
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+from app.zone_scope import geom_scope_clause
 
 _ACTIVE_EXCLUSION = """
   AND NOT EXISTS (
@@ -67,6 +71,17 @@ def _run_ids(db: Session, sql: str, params: dict, limit: int) -> list[UUID]:
     return list(rows)
 
 
+_UNLINKED_ACTIVE_CRISIS = """
+  AND NOT EXISTS (
+    SELECT 1 FROM report_crisis_links l
+    JOIN crises c ON c.id = l.crisis_id
+    WHERE l.report_id = r.id
+      AND c.archive_status = 'active'
+      AND c.slug <> 'unspecified'
+  )
+"""
+
+
 def report_ids_unspecified_scoped(
     db: Session,
     zone_ids: list[UUID] | None,
@@ -75,18 +90,29 @@ def report_ids_unspecified_scoped(
     limit: int,
     *,
     reviewed_only: bool | None = None,
+    geom_snapshots: list[dict[str, Any]] | None = None,
+    crisis_context_id: UUID | None = None,
 ) -> list[UUID]:
     time_clause, params = _time_reviewed_clause(captured_from, captured_to, reviewed_only)
-    zone_clause = ""
-    if zone_ids is not None:
+    exclusion = _UNLINKED_ACTIVE_CRISIS if crisis_context_id is not None else _ACTIVE_EXCLUSION
+    if crisis_context_id is not None:
+        params["cid"] = str(crisis_context_id)
+        zone_clause, zone_params = _crisis_query_zone_clause(crisis_context_id, zone_ids, geom_snapshots)
+        params.update(zone_params)
+    elif geom_snapshots:
+        zone_clause, geom_params = geom_scope_clause(geom_snapshots)
+        params.update(geom_params)
+    elif zone_ids is not None:
         if len(zone_ids) == 0:
             return []
         zone_clause = _ZONE_SCOPE
         params["zone_ids"] = [str(z) for z in zone_ids]
+    else:
+        zone_clause = ""
     sql = f"""
         SELECT r.id FROM reports r
         LEFT JOIN buildings b ON b.id = r.building_id
-        WHERE TRUE {time_clause} {zone_clause} {_ACTIVE_EXCLUSION}
+        WHERE TRUE {time_clause} {zone_clause} {exclusion}
         ORDER BY r.captured_at_client DESC
         LIMIT :lim
     """
@@ -102,11 +128,29 @@ def report_ids_for_crisis_scoped(
     limit: int,
     *,
     reviewed_only: bool | None = None,
+    geom_snapshots: list[dict[str, Any]] | None = None,
 ) -> list[UUID]:
     time_clause, params = _time_reviewed_clause(captured_from, captured_to, reviewed_only)
     params["cid"] = str(crisis_id)
     zone_clause = ""
-    if zone_ids is not None:
+    crisis_zone_guard = """
+        AND (
+          NOT EXISTS (SELECT 1 FROM zones z WHERE z.crisis_id = CAST(:cid AS uuid))
+          OR EXISTS (
+            SELECT 1 FROM zones z
+            WHERE z.crisis_id = CAST(:cid AS uuid)
+              AND (
+                (r.geom IS NOT NULL AND ST_Intersects(r.geom, z.geom))
+                OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
+              )
+          )
+        )
+    """
+    if geom_snapshots:
+        zone_clause, geom_params = geom_scope_clause(geom_snapshots)
+        params.update(geom_params)
+        crisis_zone_guard = ""
+    elif zone_ids is not None:
         if len(zone_ids) == 0:
             return []
         zone_clause = _ZONE_SCOPE
@@ -123,17 +167,7 @@ def report_ids_for_crisis_scoped(
         )
         {time_clause}
         {zone_clause}
-        AND (
-          NOT EXISTS (SELECT 1 FROM zones z WHERE z.crisis_id = CAST(:cid AS uuid))
-          OR EXISTS (
-            SELECT 1 FROM zones z
-            WHERE z.crisis_id = CAST(:cid AS uuid)
-              AND (
-                (r.geom IS NOT NULL AND ST_Intersects(r.geom, z.geom))
-                OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
-              )
-          )
-        )
+        {crisis_zone_guard}
         ORDER BY r.captured_at_client DESC
         LIMIT :lim
     """
@@ -148,9 +182,16 @@ def report_ids_all_scoped(
     limit: int,
     *,
     reviewed_only: bool | None = None,
+    geom_snapshots: list[dict[str, Any]] | None = None,
 ) -> list[UUID]:
     unspecified = report_ids_unspecified_scoped(
-        db, zone_ids, captured_from, captured_to, limit, reviewed_only=reviewed_only
+        db,
+        zone_ids,
+        captured_from,
+        captured_to,
+        limit,
+        reviewed_only=reviewed_only,
+        geom_snapshots=geom_snapshots,
     )
     seen = set(unspecified)
     active_rows = db.execute(
@@ -168,6 +209,7 @@ def report_ids_all_scoped(
             captured_to,
             limit - len(merged),
             reviewed_only=reviewed_only,
+            geom_snapshots=geom_snapshots,
         ):
             if rid not in seen:
                 seen.add(rid)
@@ -192,6 +234,90 @@ def _crisis_zone_ids(
     return list(rows) if rows else None
 
 
+def _crisis_query_zone_clause(
+    crisis_id: UUID,
+    zone_ids: list[UUID] | None,
+    geom_snapshots: list[dict[str, Any]] | None,
+) -> tuple[str, dict]:
+    """Spatial filter for crisis query browse (not archive)."""
+    if geom_snapshots:
+        return geom_scope_clause(geom_snapshots)
+    if zone_ids is not None:
+        if len(zone_ids) == 0:
+            return " AND FALSE", {}
+        return _ZONE_SCOPE, {"zone_ids": [str(z) for z in zone_ids]}
+    return """
+        AND (
+          NOT EXISTS (SELECT 1 FROM zones z WHERE z.crisis_id = CAST(:cid AS uuid))
+          OR EXISTS (
+            SELECT 1 FROM zones z
+            WHERE z.crisis_id = CAST(:cid AS uuid)
+              AND (
+                (r.geom IS NOT NULL AND ST_Intersects(r.geom, z.geom))
+                OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
+              )
+          )
+        )
+    """, {}
+
+
+def report_ids_crisis_query_scope(
+    db: Session,
+    crisis_id: UUID,
+    zone_ids: list[UUID] | None,
+    captured_from: datetime | None,
+    captured_to: datetime | None,
+    limit: int,
+    *,
+    geom_snapshots: list[dict[str, Any]] | None = None,
+) -> list[UUID]:
+    """All reports in browse time + zone for this crisis (query layer; ignores archive links)."""
+    time_clause, params = _time_reviewed_clause(captured_from, captured_to, None)
+    params["cid"] = str(crisis_id)
+    zone_clause, zone_params = _crisis_query_zone_clause(crisis_id, zone_ids, geom_snapshots)
+    params.update(zone_params)
+    sql = f"""
+        SELECT r.id FROM reports r
+        LEFT JOIN buildings b ON b.id = r.building_id
+        WHERE TRUE {time_clause} {zone_clause}
+        ORDER BY r.captured_at_client DESC
+        LIMIT :lim
+    """
+    return _run_ids(db, sql, params, limit)
+
+
+def _browse_link_status(
+    db: Session,
+    crisis_id: UUID,
+    report_ids: list[UUID],
+) -> dict[UUID, str]:
+    if not report_ids:
+        return {}
+    rows = db.execute(
+        text(
+            """
+            SELECT report_id, crisis_id
+            FROM report_crisis_links
+            WHERE report_id = ANY(CAST(:ids AS uuid[]))
+            """
+        ),
+        {"ids": [str(i) for i in report_ids]},
+    ).all()
+    links_by_report: dict[UUID, set[UUID]] = {}
+    for rid, cid in rows:
+        links_by_report.setdefault(rid, set()).add(cid)
+    status: dict[UUID, str] = {}
+    for rid in report_ids:
+        linked_crises = links_by_report.get(rid, set())
+        if crisis_id in linked_crises:
+            status[rid] = "linked"
+        elif linked_crises:
+            status[rid] = "other_linked"
+        else:
+            status[rid] = "candidate"
+    return status
+
+
 def report_ids_for_crisis_browse(
     db: Session,
     crisis_id: UUID,
@@ -199,43 +325,20 @@ def report_ids_for_crisis_browse(
     captured_from: datetime | None,
     captured_to: datetime | None,
     limit: int,
+    *,
+    geom_snapshots: list[dict[str, Any]] | None = None,
 ) -> tuple[list[UUID], dict[UUID, str]]:
     """
-    Crisis map/dashboard browse: linked reports plus archive candidates (same rules as archive preview).
-    Returns ordered ids and per-id status: linked | candidate.
+  All reports in work-crisis zones + browse time (view=all).
+  Annotates link status for map markers.
     """
-    from app.archive_logic import report_ids_for_archive
-
-    linked = report_ids_for_crisis_scoped(
-        db, crisis_id, zone_ids, captured_from, captured_to, limit
-    )
-    status: dict[UUID, str] = {rid: "linked" for rid in linked}
-    seen = set(linked)
-    merged = list(linked)
-
-    archive_zones = _crisis_zone_ids(db, crisis_id, zone_ids)
-    if archive_zones is not None and len(archive_zones) == 0:
-        return merged, status
-
-    remaining = limit - len(merged)
-    if remaining <= 0:
-        return merged[:limit], status
-
-    candidates = report_ids_for_archive(
+    ids = report_ids_crisis_query_scope(
         db,
         crisis_id,
-        archive_zones,
+        zone_ids,
         captured_from,
         captured_to,
-        remaining,
-        exclude_already_linked=True,
+        limit,
+        geom_snapshots=geom_snapshots,
     )
-    for rid in candidates:
-        if rid in seen:
-            continue
-        seen.add(rid)
-        status[rid] = "candidate"
-        merged.append(rid)
-        if len(merged) >= limit:
-            break
-    return merged[:limit], status
+    return ids, _browse_link_status(db, crisis_id, ids)

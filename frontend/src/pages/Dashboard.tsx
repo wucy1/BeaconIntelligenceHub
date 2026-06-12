@@ -5,23 +5,16 @@ import { apiBase } from '../api';
 import { DashboardReviewModal } from '../components/ops/DashboardReviewModal';
 import { useI18n } from '../i18n/I18nContext';
 import { isManageableCrisis } from '../ops/crisisUtils';
-import {
-  applyBrowseToSearchParams,
-  buildOpsMapHref,
-  defaultBrowseRange,
-  parseOpsBrowseSearchParams,
-  savedReportToBrowseParams,
-  type OpsBrowseParams,
-} from '../ops/opsBrowseParams';
-import { fromDatetimeLocalValue } from '../ops/polygonUtils';
+import { buildOpsMapHref, savedReportToBrowseParams } from '../ops/opsBrowseParams';
 import {
   opsDelete,
   opsGet,
   opsPatch,
   opsPost,
+  type OpsArchiveSummary,
   type OpsCrisis,
   type OpsSavedReport,
-  type OpsZone,
+  type OpsZoneSnapshot,
 } from '../ops/opsApi';
 import {
   getOpsUser,
@@ -29,7 +22,6 @@ import {
   opsIsSystemAdmin,
   opsRoleLabel,
 } from '../ops/opsAuth';
-
 type ReportSummary = {
   id: string;
   crisis_id: string;
@@ -48,14 +40,41 @@ type ReportSummary = {
 
 type ListResp = {
   items: ReportSummary[];
-  nextCursor?: string | null;
-  zone_scope?: string[] | null;
+  saved_report_id?: string | null;
+  saved_report_name?: string | null;
   crisis_linked_count?: number | null;
   crisis_candidate_count?: number | null;
 };
 
 type ReviewFilter = 'all' | 'pending' | 'flagged' | 'reviewed';
-type ReportView = 'crisis' | 'unspecified' | 'all';
+
+function zoneVertexCount(geom: GeoJSON.Polygon): number {
+  return geom.coordinates[0]?.length ?? 0;
+}
+
+function formatRange(from: string | null, to: string | null, openEnded: string): string {
+  const f = from ? new Date(from).toLocaleString() : '—';
+  const t = to ? new Date(to).toLocaleString() : openEnded;
+  return `${f} ～ ${t}`;
+}
+
+function ZoneSnapshotList({ snapshots }: { snapshots: OpsZoneSnapshot[] }) {
+  const { t } = useI18n();
+  if (!snapshots.length) return null;
+  return (
+    <ul className="ops-zone-snapshot-list">
+      {snapshots.map((z, i) => (
+        <li key={z.zone_id ?? `snap-${i}`}>
+          <span>{z.name}</span>
+          <span className="muted">
+            {' '}
+            · {t('dashboard.zoneVertices', { count: zoneVertexCount(z.geom) })}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function Dashboard() {
   const { t, crisisName } = useI18n();
@@ -63,79 +82,78 @@ export function Dashboard() {
   const isAdmin = opsIsSystemAdmin(opsUser);
   const isLead = (opsUser.crisis_lead_assignments?.length ?? 0) > 0;
   const [searchParams, setSearchParams] = useSearchParams();
-  const urlBrowse = parseOpsBrowseSearchParams(searchParams);
+  const crisisFromUrl = searchParams.get('crisis_id') ?? '';
+  const savedFromUrl = searchParams.get('saved_report_id') ?? '';
+
   const [data, setData] = useState<ListResp | null>(null);
-  const [zones, setZones] = useState<OpsZone[]>([]);
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
-  const [crisisId, setCrisisId] = useState(urlBrowse.crisisId ?? '');
-  const [zoneId, setZoneId] = useState(urlBrowse.zoneId ?? '');
-  const [reportView, setReportView] = useState<ReportView>(urlBrowse.view ?? 'crisis');
-  const [browseFrom, setBrowseFrom] = useState(urlBrowse.browseFrom ?? '');
-  const [browseTo, setBrowseTo] = useState(urlBrowse.browseTo ?? '');
-  const [defaultOpsMonths, setDefaultOpsMonths] = useState(2);
+  const [crisisId, setCrisisId] = useState(crisisFromUrl);
+  const [savedReports, setSavedReports] = useState<OpsSavedReport[]>([]);
+  const [archiveSummary, setArchiveSummary] = useState<OpsArchiveSummary | null>(null);
+  const [activeSavedId, setActiveSavedId] = useState(savedFromUrl || '');
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('pending');
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
   const [reviewId, setReviewId] = useState<string | null>(null);
-  const [savedReports, setSavedReports] = useState<OpsSavedReport[]>([]);
-  const [archiveStatus, setArchiveStatus] = useState<{
-    linked: number;
-    candidate: number;
-    total: number;
-  } | null>(null);
-  const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
 
   const manageableCrises = useMemo(() => crises.filter(isManageableCrisis), [crises]);
   const activeCrisis = manageableCrises.find((c) => c.id === crisisId);
-
-  const browseParams = useMemo(
-    (): OpsBrowseParams => ({
-      view: reportView,
-      crisisId,
-      zoneId,
-      browseFrom,
-      browseTo,
-    }),
-    [reportView, crisisId, zoneId, browseFrom, browseTo],
-  );
+  const activeSaved = savedReports.find((s) => s.id === activeSavedId) ?? null;
 
   const loadReports = useCallback(async () => {
-    if (reportView === 'crisis' && !crisisId) {
-      setData({ items: [], zone_scope: [] });
+    if (!activeSavedId) {
+      setData({ items: [] });
       return;
     }
     try {
-      const q = new URLSearchParams({ limit: '200', view: reportView });
-      if (reportView === 'crisis' && crisisId) q.set('crisis_id', crisisId);
-      if (zoneId) q.set('zone_id', zoneId);
-      const from = fromDatetimeLocalValue(browseFrom);
-      const to = fromDatetimeLocalValue(browseTo);
-      if (from) q.set('captured_from', from);
-      if (to) q.set('captured_to', to);
-      const d = await opsGet<ListResp>(`/v1/ops/reports?${q}`);
-      setData({
-        items: d.items,
-        nextCursor: null,
-        zone_scope: d.zone_scope,
-        crisis_linked_count: d.crisis_linked_count,
-        crisis_candidate_count: d.crisis_candidate_count,
-      });
+      const d = await opsGet<ListResp>(`/v1/ops/reports?saved_report_id=${activeSavedId}&limit=200`);
+      setData(d);
       setSelectedIds(new Set());
       setErr(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
-  }, [crisisId, zoneId, reportView, browseFrom, browseTo]);
+  }, [activeSavedId]);
+
+  const loadSavedReports = useCallback(async () => {
+    if (!crisisId) {
+      setSavedReports([]);
+      return;
+    }
+    try {
+      const d = await opsGet<{ items: OpsSavedReport[] }>(
+        `/v1/ops/saved-reports?crisis_id=${crisisId}&limit=100`,
+      );
+      setSavedReports(d.items);
+    } catch {
+      setSavedReports([]);
+    }
+  }, [crisisId]);
+
+  const loadArchiveSummary = useCallback(async () => {
+    if (!crisisId) {
+      setArchiveSummary(null);
+      return;
+    }
+    try {
+      const s = await opsGet<OpsArchiveSummary>(`/v1/ops/crises/${crisisId}/archive-summary`);
+      setArchiveSummary(s);
+    } catch {
+      setArchiveSummary(null);
+    }
+  }, [crisisId]);
 
   useEffect(() => {
-    opsGet<{ default_ops_view_months?: number }>('/v1/public/settings')
-      .then((s) => {
-        if (s.default_ops_view_months) setDefaultOpsMonths(s.default_ops_view_months);
+    if (!savedFromUrl) return;
+    opsGet<OpsSavedReport>(`/v1/ops/saved-reports/${savedFromUrl}`)
+      .then((saved) => {
+        setActiveSavedId(saved.id);
+        if (saved.crisis_id) setCrisisId(saved.crisis_id);
       })
       .catch(() => undefined);
-  }, []);
+  }, [savedFromUrl]);
 
   useEffect(() => {
     opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises')
@@ -143,93 +161,52 @@ export function Dashboard() {
         setCrises(d.items);
         const manageable = d.items.filter(isManageableCrisis);
         setCrisisId((prev) =>
-          prev && manageable.some((c) => c.id === prev) ? prev : manageable[0]?.id ?? '',
+          prev && manageable.some((c) => c.id === prev)
+            ? prev
+            : crisisFromUrl && manageable.some((c) => c.id === crisisFromUrl)
+              ? crisisFromUrl
+              : manageable[0]?.id ?? '',
         );
       })
       .catch(() => setCrises([]));
-  }, []);
+  }, [crisisFromUrl]);
 
   useEffect(() => {
-    if (!crisisId || reportView !== 'crisis') {
-      setZones([]);
-      return;
-    }
-    opsGet<{ items: OpsZone[] }>(`/v1/ops/zones?crisis_id=${crisisId}`)
-      .then((d) => setZones(d.items))
-      .catch(() => setZones([]));
-  }, [crisisId, reportView]);
+    void loadSavedReports();
+    void loadArchiveSummary();
+  }, [loadSavedReports, loadArchiveSummary]);
 
   useEffect(() => {
-    if (browseFrom || browseTo) return;
-    const { browseFrom: from, browseTo: to } = defaultBrowseRange(activeCrisis, defaultOpsMonths);
-    setBrowseFrom(from);
-    setBrowseTo(to);
-  }, [
-    activeCrisis?.id,
-    activeCrisis?.archive_window_start,
-    activeCrisis?.archive_window_end,
-    defaultOpsMonths,
-    browseFrom,
-    browseTo,
-  ]);
+    if (!activeSavedId) return;
+    if (savedReports.length > 0 && !savedReports.some((s) => s.id === activeSavedId)) {
+      setActiveSavedId('');
+    }
+  }, [savedReports, activeSavedId]);
 
   useEffect(() => {
-    const next = applyBrowseToSearchParams(new URLSearchParams(), browseParams);
-    const cur = new URLSearchParams(window.location.search).toString();
-    const nxt = next.toString();
-    if (cur !== nxt) setSearchParams(next, { replace: true });
-  }, [browseParams, setSearchParams]);
+    if (activeSaved) {
+      setReviewFilter(activeSaved.review_filter);
+    }
+  }, [activeSaved?.id, activeSaved?.review_filter]);
 
-  const loadSavedReports = useCallback(async () => {
-    try {
-      const d = await opsGet<{ items: OpsSavedReport[] }>('/v1/ops/saved-reports?limit=100');
-      setSavedReports(d.items);
-    } catch {
-      setSavedReports([]);
-    }
-  }, []);
-
-  const loadArchiveStatus = useCallback(async () => {
-    if (reportView !== 'crisis' || !crisisId || !activeCrisis) {
-      setArchiveStatus(null);
-      return;
-    }
-    try {
-      const q = new URLSearchParams({ limit: '500', view: 'crisis', crisis_id: crisisId });
-      if (activeCrisis.archive_window_start) q.set('captured_from', activeCrisis.archive_window_start);
-      if (activeCrisis.archive_window_end) q.set('captured_to', activeCrisis.archive_window_end);
-      const d = await opsGet<ListResp>(`/v1/ops/reports?${q}`);
-      setArchiveStatus({
-        linked: d.crisis_linked_count ?? 0,
-        candidate: d.crisis_candidate_count ?? 0,
-        total: (d.crisis_linked_count ?? 0) + (d.crisis_candidate_count ?? 0),
-      });
-    } catch {
-      setArchiveStatus(null);
-    }
-  }, [reportView, crisisId, activeCrisis]);
+  useEffect(() => {
+    const q = new URLSearchParams();
+    if (crisisId) q.set('crisis_id', crisisId);
+    if (activeSavedId) q.set('saved_report_id', activeSavedId);
+    const cur = searchParams.toString();
+    const nxt = q.toString();
+    if (cur !== nxt) setSearchParams(q, { replace: true });
+  }, [crisisId, activeSavedId, searchParams, setSearchParams]);
 
   useEffect(() => {
     void loadReports();
   }, [loadReports]);
 
-  useEffect(() => {
-    void loadSavedReports();
-  }, [loadSavedReports]);
-
-  useEffect(() => {
-    void loadArchiveStatus();
-  }, [loadArchiveStatus]);
-
-  const applySavedReport = (saved: OpsSavedReport) => {
-    const p = savedReportToBrowseParams(saved);
-    setReportView(p.view);
-    setCrisisId(p.crisisId);
-    setZoneId(p.zoneId);
-    setBrowseFrom(p.browseFrom);
-    setBrowseTo(p.browseTo);
-    setReviewFilter(saved.review_filter);
+  const selectSavedReport = (saved: OpsSavedReport) => {
     setActiveSavedId(saved.id);
+    if (saved.crisis_id && saved.crisis_id !== crisisId) {
+      setCrisisId(saved.crisis_id);
+    }
   };
 
   const deleteSavedReport = async (id: string) => {
@@ -237,7 +214,7 @@ export function Dashboard() {
     try {
       await opsDelete(`/v1/ops/saved-reports/${id}`);
       setSavedReports((prev) => prev.filter((r) => r.id !== id));
-      if (activeSavedId === id) setActiveSavedId(null);
+      if (activeSavedId === id) setActiveSavedId('');
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -316,7 +293,12 @@ export function Dashboard() {
   const reviewRow = reviewId ? data?.items.find((r) => r.id === reviewId) : null;
   const damageMax = Math.max(1, ...Object.values(listStats?.damage_counts ?? {}));
   const crisisTypeMax = Math.max(1, ...Object.values(listStats?.crisis_type_counts ?? {}));
-  const mapHref = buildOpsMapHref(browseParams);
+
+  const mapHref = activeSaved
+    ? buildOpsMapHref(savedReportToBrowseParams(activeSaved))
+    : crisisId
+      ? `/ops/map?crisis_id=${crisisId}`
+      : '/ops/map';
 
   if (!opsHasStaffAccess(opsUser)) {
     return (
@@ -357,120 +339,16 @@ export function Dashboard() {
         </Link>
       </header>
 
-      <section className="ops-dash-banner">
-        <strong>{t('dashboard.reviewBannerTitle')}</strong>
-        <p className="muted">
-          {t('dashboard.reviewBannerHint', {
-            console: t('ops.nav.console'),
-            map: t('ops.nav.map'),
-          })}
-        </p>
-        <p className="muted">{t('dashboard.rolesHint')}</p>
-      </section>
-
-      {reportView === 'crisis' && activeCrisis && (
-        <section className="ops-dash-section ops-archive-status-section">
-          <h2>{t('dashboard.archiveStatusTitle')}</h2>
-          <p className="muted">{t('dashboard.archiveStatusHint')}</p>
-          <div className="ops-archive-status-grid">
-            <div>
-              <span className="ops-stat-label">{t('dashboard.officialWindow')}</span>
-              <p>
-                {t('ops.map.archiveWindowRange', {
-                  from: activeCrisis.archive_window_start
-                    ? new Date(activeCrisis.archive_window_start).toLocaleString()
-                    : '—',
-                  to: activeCrisis.archive_window_end
-                    ? new Date(activeCrisis.archive_window_end).toLocaleString()
-                    : t('dashboard.openEnded'),
-                })}
-              </p>
-            </div>
-            <div>
-              <span className="ops-stat-label">{t('dashboard.officialZones')}</span>
-              <p>{t('dashboard.zoneCount', { count: zones.length })}</p>
-            </div>
-            {archiveStatus && (
-              <div>
-                <span className="ops-stat-label">{t('dashboard.officialLinkCounts')}</span>
-                <p>
-                  {t('dashboard.crisisLinkCounts', {
-                    total: archiveStatus.total,
-                    linked: archiveStatus.linked,
-                    candidate: archiveStatus.candidate,
-                  })}
-                </p>
-              </div>
-            )}
-          </div>
-          <Link to={`/ops/map?crisis_id=${crisisId}`} className="ops-dash-inline-link">
-            {t('dashboard.openArchiveOnMap')}
-          </Link>
-        </section>
-      )}
-
-      <section className="ops-dash-section">
-        <h2>{t('dashboard.savedReportsTitle')}</h2>
-        <p className="muted">{t('dashboard.savedReportsHint')}</p>
-        {savedReports.length === 0 ? (
-          <p className="muted">{t('dashboard.savedReportsEmpty')}</p>
-        ) : (
-          <ul className="ops-saved-reports-list">
-            {savedReports.map((saved) => {
-              const official = saved.crisis_id
-                ? crises.find((c) => c.id === saved.crisis_id)
-                : null;
-              return (
-                <li key={saved.id} className={activeSavedId === saved.id ? 'active' : ''}>
-                  <button type="button" className="ops-saved-report-btn" onClick={() => applySavedReport(saved)}>
-                    <strong>{saved.name}</strong>
-                    <span className="muted">
-                      {t(`dashboard.view.${saved.report_view}`)}
-                      {official && ` · ${crisisName(official.name, official.slug)}`}
-                      {saved.snapshot_total != null && ` · ${saved.snapshot_total} ${t('dashboard.savedAtCount')}`}
-                    </span>
-                    <span className="muted ops-saved-report-meta">
-                      {saved.updated_at ? new Date(saved.updated_at).toLocaleString() : ''}
-                      {saved.creator_email ? ` · ${saved.creator_email}` : ''}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="small secondary"
-                    onClick={() => void deleteSavedReport(saved.id)}
-                  >
-                    {t('dashboard.savedReportDelete')}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section className="ops-dash-section">
-        <h2>{t('dashboard.queryTitle')}</h2>
-        <div className="ops-review-tabs ops-dash-view-tabs">
-          {(['crisis', 'unspecified', 'all'] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              className={reportView === v ? 'ops-review-tab active' : 'ops-review-tab'}
-              onClick={() => setReportView(v)}
-            >
-              {t(`dashboard.view.${v}`)}
-            </button>
-          ))}
-        </div>
-        {manageableCrises.length > 0 && reportView === 'crisis' && (
+      <section className="ops-dash-section ops-dash-crisis-top">
+        <h2>{t('dashboard.crisisFilter')}</h2>
+        {manageableCrises.length > 0 ? (
           <label className="ops-field ops-dash-crisis-field">
-            {t('dashboard.crisisFilter')}
             <select
               className="ops-input"
               value={crisisId}
               onChange={(e) => {
                 setCrisisId(e.target.value);
-                setZoneId('');
+                setActiveSavedId('');
               }}
             >
               {manageableCrises.map((c) => (
@@ -480,74 +358,119 @@ export function Dashboard() {
               ))}
             </select>
           </label>
+        ) : (
+          <p className="muted">{t('ops.map.noCrisis')}</p>
         )}
-        {activeCrisis && reportView === 'crisis' && (
+        {activeCrisis && (
           <p className="muted">
             {t('dashboard.statusLabel')}: {activeCrisis.archive_status}
           </p>
         )}
-        {reportView !== 'crisis' && (
-          <p className="muted">{t(`dashboard.viewHint.${reportView}`)}</p>
-        )}
-        {zones.length > 0 && reportView === 'crisis' && (
-          <label className="ops-field">
-            {t('dashboard.zoneFilter')}
-            <select className="ops-input" value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
-              <option value="">{t('dashboard.allZones')}</option>
-              {zones.map((z) => (
-                <option key={z.id} value={z.id}>
-                  {z.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <div className="ops-dash-browse-times">
-          <label className="ops-field">
-            {t('dashboard.browseTimeFrom')}
-            <input
-              className="ops-input"
-              type="datetime-local"
-              value={browseFrom}
-              onChange={(e) => setBrowseFrom(e.target.value)}
-            />
-          </label>
-          <label className="ops-field">
-            {t('dashboard.browseTimeTo')}
-            <input
-              className="ops-input"
-              type="datetime-local"
-              value={browseTo}
-              onChange={(e) => setBrowseTo(e.target.value)}
-            />
-          </label>
-        </div>
-        <p className="muted">{t('dashboard.queryTimeHint')}</p>
-        {reportView === 'crisis' && crisisId && (
-          <p className="muted">
-            {t('dashboard.crisisLinkCounts', {
-              linked: data.crisis_linked_count ?? 0,
-              candidate: data.crisis_candidate_count ?? 0,
-              total: data.items.length,
-            })}
-          </p>
-        )}
-        <div className="ops-review-tabs">
-          {(['pending', 'flagged', 'reviewed', 'all'] as const).map((f) => (
-            <button
-              key={f}
-              type="button"
-              className={reviewFilter === f ? 'ops-review-tab active' : 'ops-review-tab'}
-              onClick={() => setReviewFilter(f)}
-            >
-              {t(`dashboard.reviewFilter.${f}`)}
-            </button>
-          ))}
-        </div>
-        <p className="muted ops-review-hint">{t('dashboard.reviewVsFlagHint')}</p>
       </section>
 
-      {listStats && (
+      {activeCrisis && archiveSummary && (
+        <section className="ops-dash-section ops-archive-status-section">
+          <h2>{t('dashboard.archiveStatusTitle')}</h2>
+          <p className="muted">{t('dashboard.archiveStatusHint')}</p>
+          <div className="ops-archive-status-grid">
+            <div>
+              <span className="ops-stat-label">{t('dashboard.officialWindow')}</span>
+              <p>
+                {formatRange(
+                  archiveSummary.archive_window_start,
+                  archiveSummary.archive_window_end,
+                  t('dashboard.openEnded'),
+                )}
+              </p>
+            </div>
+            <div>
+              <span className="ops-stat-label">{t('dashboard.officialZones')}</span>
+              <p>{t('dashboard.zoneCount', { count: archiveSummary.zone_count })}</p>
+            </div>
+            <div>
+              <span className="ops-stat-label">{t('dashboard.archiveLinkedTotal')}</span>
+              <p>
+                {t('dashboard.archiveLinkBreakdown', {
+                  total: archiveSummary.linked_total,
+                  auto: archiveSummary.linked_auto,
+                  manual: archiveSummary.linked_manual,
+                })}
+              </p>
+            </div>
+            <div>
+              <span className="ops-stat-label">{t('dashboard.archivePendingOfficial')}</span>
+              <p>{archiveSummary.candidate_count}</p>
+            </div>
+          </div>
+          {archiveSummary.last_manual_archive_at ? (
+            <p className="ops-last-manual-archive">
+              {t('dashboard.lastManualArchive', {
+                time: new Date(archiveSummary.last_manual_archive_at).toLocaleString(),
+                actor: archiveSummary.last_manual_archive_actor ?? '—',
+                linked: archiveSummary.last_manual_archive_detail?.linked_count ?? 0,
+                unlinked: archiveSummary.last_manual_archive_detail?.unlinked_count ?? 0,
+              })}
+            </p>
+          ) : (
+            <p className="muted">{t('dashboard.noManualArchiveYet')}</p>
+          )}
+          <Link to={`/ops/map?crisis_id=${crisisId}`} className="ops-dash-inline-link">
+            {t('dashboard.openArchiveOnMap')}
+          </Link>
+        </section>
+      )}
+
+      <section className="ops-dash-section">
+        <h2>{t('dashboard.queryTitle')}</h2>
+        <p className="muted">{t('dashboard.querySavedOnlyHint')}</p>
+        {savedReports.length === 0 ? (
+          <p className="muted">{t('dashboard.savedReportsEmpty')}</p>
+        ) : (
+          <ul className="ops-saved-reports-list">
+            {savedReports.map((saved) => (
+              <li key={saved.id} className={activeSavedId === saved.id ? 'active' : ''}>
+                <button type="button" className="ops-saved-report-btn" onClick={() => selectSavedReport(saved)}>
+                  <strong>{saved.name}</strong>
+                  <span className="muted">
+                    {t(`dashboard.view.${saved.report_view}`)}
+                    {' · '}
+                    {formatRange(saved.browse_from, saved.browse_to, t('dashboard.openEnded'))}
+                    {saved.snapshot_total != null && ` · ${saved.snapshot_total} ${t('dashboard.savedAtCount')}`}
+                  </span>
+                  {saved.zone_snapshots && saved.zone_snapshots.length > 0 && (
+                    <ZoneSnapshotList snapshots={saved.zone_snapshots} />
+                  )}
+                  <span className="muted ops-saved-report-meta">
+                    {saved.updated_at ? new Date(saved.updated_at).toLocaleString() : ''}
+                    {saved.creator_email ? ` · ${saved.creator_email}` : ''}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="small secondary"
+                  onClick={() => void deleteSavedReport(saved.id)}
+                >
+                  {t('dashboard.savedReportDelete')}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {activeSaved && (
+          <div className="ops-active-saved-detail">
+            <strong>{t('dashboard.activeSavedReport', { name: activeSaved.name })}</strong>
+            {activeSaved.zone_snapshots && activeSaved.zone_snapshots.length > 0 && (
+              <p className="muted">{t('dashboard.frozenZoneBoundaries')}</p>
+            )}
+          </div>
+        )}
+      </section>
+
+      {!activeSavedId && (
+        <p className="muted ops-dash-pick-saved">{t('dashboard.pickSavedReportHint')}</p>
+      )}
+
+      {activeSavedId && listStats && (
         <section className="ops-dash-section ops-analytics-section">
           <h2>{t('dashboard.analytics')}</h2>
           <p className="muted">{t('dashboard.analyticsListHint')}</p>
@@ -603,100 +526,111 @@ export function Dashboard() {
         </section>
       )}
 
-      {crisisId && reportView === 'crisis' && (
+      {crisisId && activeSavedId && (
         <section className="ops-dash-section">
           <h2>{t('dashboard.exportTitle')}</h2>
           <p className="muted">{t('dashboard.exportImageHint')}</p>
           <p className="ops-export-links">
             <a href={`${api}/v1/export?crisis_id=${crisisId}&format=csv`}>{t('dashboard.exportCsv')}</a>
             <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson`}>{t('dashboard.exportGeojson')}</a>
-            <a href={`${api}/v1/export?crisis_id=${crisisId}&format=csv&latest=1`}>{t('dashboard.exportLatestCsv')}</a>
-            <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson&latest=1`}>
-              {t('dashboard.exportLatestGeojson')}
-            </a>
-            <a href={`${api}/v1/export?crisis_id=${crisisId}&format=csv&reviewed_only=true`}>
-              {t('dashboard.exportReviewedCsv')}
-            </a>
-            <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson&reviewed_only=true`}>
-              {t('dashboard.exportReviewedGeojson')}
-            </a>
           </p>
         </section>
       )}
 
-      <section className="ops-dash-section">
-        <h2>{t('dashboard.reviewQueueTitle')}</h2>
-        {selectedIds.size > 0 && (
-          <div className="ops-batch-actions">
-            <span className="muted">{t('dashboard.batchSelected', { count: selectedIds.size })}</span>
-            <button type="button" className="small" disabled={batchBusy} onClick={() => void batchReview(true)}>
-              {t('dashboard.batchMarkReviewed')}
-            </button>
-            <button type="button" className="small secondary" disabled={batchBusy} onClick={() => void batchReview(false)}>
-              {t('dashboard.batchUnreview')}
-            </button>
+      {activeSavedId && (
+        <section className="ops-dash-section">
+          <h2>{t('dashboard.reviewQueueTitle')}</h2>
+          <div className="ops-review-tabs">
+            {(['pending', 'flagged', 'reviewed', 'all'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                className={reviewFilter === f ? 'ops-review-tab active' : 'ops-review-tab'}
+                onClick={() => setReviewFilter(f)}
+              >
+                {t(`dashboard.reviewFilter.${f}`)}
+              </button>
+            ))}
           </div>
-        )}
-        {err && <p className="error">{err}</p>}
-        <div className="ops-table-wrap">
-          <table className="table ops-table">
-            <thead>
-              <tr>
-                <th aria-label={t('dashboard.col.select')} />
-                <th>{t('dashboard.col.time')}</th>
-                <th>{t('dashboard.col.damage')}</th>
-                <th>{t('dashboard.col.building')}</th>
-                <th>{t('dashboard.col.summary')}</th>
-                <th>{t('dashboard.col.review')}</th>
-                <th>{t('dashboard.col.actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredItems.map((r) => {
-                const extra: Record<string, string> = { report_id: r.id };
-                if (r.geom) {
-                  extra.lat = String(r.geom.coordinates[1]);
-                  extra.lng = String(r.geom.coordinates[0]);
-                }
-                const rowMapHref = buildOpsMapHref(browseParams, extra);
-                return (
-                  <tr key={r.id}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(r.id)}
-                        onChange={() => toggleSelect(r.id)}
-                        aria-label={t('dashboard.col.select')}
-                      />
-                    </td>
-                    <td>{new Date(r.received_at_server).toLocaleString()}</td>
-                    <td>{r.damage_level}</td>
-                    <td>{r.building_id?.slice(0, 8) ?? '—'}</td>
-                    <td>
-                      <button type="button" className="linkish" onClick={() => setReviewId(r.id)}>
-                        {r.description_preview}
-                      </button>
-                    </td>
-                    <td>
-                      {r.admin_reviewed ? '✓' : '—'}
-                      {r.admin_flagged ? ' ⚑' : ''}
-                    </td>
-                    <td className="ops-table-actions">
-                      <button type="button" className="small" onClick={() => setReviewId(r.id)}>
-                        {t('dashboard.openReview')}
-                      </button>
-                      <Link to={rowMapHref} className="ops-dash-inline-link">
-                        {t('dashboard.openOnMap')}
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {filteredItems.length === 0 && <p className="muted">{t('dashboard.emptyFilter')}</p>}
-      </section>
+          <p className="muted ops-review-hint">{t('dashboard.reviewVsFlagHint')}</p>
+          {selectedIds.size > 0 && (
+            <div className="ops-batch-actions">
+              <span className="muted">{t('dashboard.batchSelected', { count: selectedIds.size })}</span>
+              <button type="button" className="small" disabled={batchBusy} onClick={() => void batchReview(true)}>
+                {t('dashboard.batchMarkReviewed')}
+              </button>
+              <button
+                type="button"
+                className="small secondary"
+                disabled={batchBusy}
+                onClick={() => void batchReview(false)}
+              >
+                {t('dashboard.batchUnreview')}
+              </button>
+            </div>
+          )}
+          {err && <p className="error">{err}</p>}
+          <div className="ops-table-wrap">
+            <table className="table ops-table">
+              <thead>
+                <tr>
+                  <th aria-label={t('dashboard.col.select')} />
+                  <th>{t('dashboard.col.time')}</th>
+                  <th>{t('dashboard.col.damage')}</th>
+                  <th>{t('dashboard.col.building')}</th>
+                  <th>{t('dashboard.col.summary')}</th>
+                  <th>{t('dashboard.col.review')}</th>
+                  <th>{t('dashboard.col.actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredItems.map((r) => {
+                  const browse = activeSaved ? savedReportToBrowseParams(activeSaved) : null;
+                  const extra: Record<string, string> = { report_id: r.id };
+                  if (r.geom) {
+                    extra.lat = String(r.geom.coordinates[1]);
+                    extra.lng = String(r.geom.coordinates[0]);
+                  }
+                  const rowMapHref = browse ? buildOpsMapHref(browse, extra) : mapHref;
+                  return (
+                    <tr key={r.id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(r.id)}
+                          onChange={() => toggleSelect(r.id)}
+                          aria-label={t('dashboard.col.select')}
+                        />
+                      </td>
+                      <td>{new Date(r.received_at_server).toLocaleString()}</td>
+                      <td>{r.damage_level}</td>
+                      <td>{r.building_id?.slice(0, 8) ?? '—'}</td>
+                      <td>
+                        <button type="button" className="linkish" onClick={() => setReviewId(r.id)}>
+                          {r.description_preview}
+                        </button>
+                      </td>
+                      <td>
+                        {r.admin_reviewed ? '✓' : '—'}
+                        {r.admin_flagged ? ' ⚑' : ''}
+                      </td>
+                      <td className="ops-table-actions">
+                        <button type="button" className="small" onClick={() => setReviewId(r.id)}>
+                          {t('dashboard.openReview')}
+                        </button>
+                        <Link to={rowMapHref} className="ops-dash-inline-link">
+                          {t('dashboard.openOnMap')}
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {filteredItems.length === 0 && <p className="muted">{t('dashboard.emptyFilter')}</p>}
+        </section>
+      )}
 
       <DashboardReviewModal
         reportId={reviewId}
