@@ -67,6 +67,8 @@ export function OpsDashboard() {
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserName, setNewUserName] = useState('');
+  const [newUserRole, setNewUserRole] = useState<'coordinator' | 'system_admin'>('coordinator');
+  const [resetPasswordByUser, setResetPasswordByUser] = useState<Record<string, string>>({});
   const [assignLeadUserId, setAssignLeadUserId] = useState('');
   const [assignLeadCrisisId, setAssignLeadCrisisId] = useState('');
   const [assignCoordCrisisId, setAssignCoordCrisisId] = useState('');
@@ -283,7 +285,7 @@ export function OpsDashboard() {
         email: newUserEmail.trim().toLowerCase(),
         password: newUserPassword,
         display_name: newUserName.trim() || null,
-        role: 'coordinator',
+        role: newUserRole,
       });
       setNewUserEmail('');
       setNewUserPassword('');
@@ -350,6 +352,26 @@ export function OpsDashboard() {
       loadAudit();
     } catch (e) {
       setLeadFormMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resetUserPassword = async (userId: string) => {
+    const password = resetPasswordByUser[userId]?.trim() ?? '';
+    if (password.length < 8) {
+      setUserFormMsg(t('ops.team.needUserFields'));
+      return;
+    }
+    setBusy(true);
+    setUserFormMsg(null);
+    try {
+      await opsPatch(`/v1/ops/users/${userId}`, { password });
+      setResetPasswordByUser((prev) => ({ ...prev, [userId]: '' }));
+      setUserFormMsg(t('ops.team.passwordReset'));
+      loadAudit();
+    } catch (e) {
+      setUserFormMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -617,6 +639,17 @@ export function OpsDashboard() {
                 value={newUserName}
                 onChange={(e) => setNewUserName(e.target.value)}
               />
+              <label className="ops-field">
+                {t('ops.team.roleLabel')}
+                <select
+                  className="ops-input"
+                  value={newUserRole}
+                  onChange={(e) => setNewUserRole(e.target.value as 'coordinator' | 'system_admin')}
+                >
+                  <option value="coordinator">{t('ops.team.roleCoordinator')}</option>
+                  <option value="system_admin">{t('ops.team.roleSystemAdmin')}</option>
+                </select>
+              </label>
               <button type="button" onClick={createUser} disabled={busy}>
                 {busy ? '建立中…' : '建立帳號'}
               </button>
@@ -750,6 +783,20 @@ export function OpsDashboard() {
                       ))}
                     </ul>
                   )}
+                  <div className="ops-user-reset-password">
+                    <input
+                      className="ops-input"
+                      type="password"
+                      placeholder={t('ops.team.resetPasswordPlaceholder')}
+                      value={resetPasswordByUser[u.id] ?? ''}
+                      onChange={(e) =>
+                        setResetPasswordByUser((prev) => ({ ...prev, [u.id]: e.target.value }))
+                      }
+                    />
+                    <button type="button" disabled={busy} onClick={() => resetUserPassword(u.id)}>
+                      {t('ops.team.resetPassword')}
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

@@ -25,9 +25,15 @@ export function OpsProfile() {
   const [phone, setPhone] = useState('');
   const [title, setTitle] = useState('');
   const [orgUnit, setOrgUnit] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
+  const [pwdMsg, setPwdMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pwdBusy, setPwdBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [pwdErr, setPwdErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -43,6 +49,39 @@ export function OpsProfile() {
   }, [user]);
 
   if (!user) return <Navigate to="/ops/login" replace />;
+
+  const changePassword = async () => {
+    if (newPassword.length < 8) {
+      setPwdErr(t('ops.profile.passwordTooShort'));
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwdErr(t('ops.profile.passwordMismatch'));
+      return;
+    }
+    setPwdBusy(true);
+    setPwdMsg(null);
+    setPwdErr(null);
+    try {
+      await opsPatch('/v1/ops/me/password', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPwdMsg(t('ops.profile.passwordChanged'));
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setPwdErr(
+        message.includes('401') || message.toLowerCase().includes('incorrect')
+          ? t('ops.profile.passwordWrong')
+          : message,
+      );
+    } finally {
+      setPwdBusy(false);
+    }
+  };
 
   const save = async () => {
     const token = getOpsToken();
@@ -119,6 +158,53 @@ export function OpsProfile() {
 
       <button type="button" disabled={busy} onClick={() => void save()}>
         {busy ? t('ops.profile.saving') : t('ops.profile.save')}
+      </button>
+
+      <hr className="ops-profile-divider" />
+
+      <h2>{t('ops.profile.passwordTitle')}</h2>
+      {pwdErr && <p className="error">{pwdErr}</p>}
+      {pwdMsg && <p className="ops-form-ok">{pwdMsg}</p>}
+
+      <label className="ops-field">
+        {t('ops.profile.currentPassword')}
+        <input
+          className="ops-input"
+          type="password"
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+        />
+      </label>
+
+      <label className="ops-field">
+        {t('ops.profile.newPassword')}
+        <input
+          className="ops-input"
+          type="password"
+          autoComplete="new-password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+        />
+      </label>
+
+      <label className="ops-field">
+        {t('ops.profile.confirmPassword')}
+        <input
+          className="ops-input"
+          type="password"
+          autoComplete="new-password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+        />
+      </label>
+
+      <button
+        type="button"
+        disabled={pwdBusy || !currentPassword || !newPassword}
+        onClick={() => void changePassword()}
+      >
+        {pwdBusy ? t('ops.profile.passwordSaving') : t('ops.profile.passwordSave')}
       </button>
     </section>
   );

@@ -150,6 +150,45 @@ function presignCrisisId(storedId: string): string {
   return storedId && storedId.length > 10 ? storedId : UNSPECIFIED_CRISIS_ID;
 }
 
+async function presignUpload(
+  uploadCrisisId: string,
+  file: File,
+  checksum: string,
+  viaApi: boolean,
+): Promise<{ putUrl: string; objectKey: string }> {
+  const via = viaApi ? '&viaApi=1' : '';
+  return apiGet<{ putUrl: string; objectKey: string }>(
+    `/v1/uploads/presign?crisisId=${encodeURIComponent(uploadCrisisId)}&mimeType=${encodeURIComponent(file.type || 'image/jpeg')}&checksumSha256=${checksum}&bytes=${file.size}${via}`,
+  );
+}
+
+function isDirectR2PutFailure(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.message.includes('R2 CORS')) return true;
+  if (err.message.includes('無法連到上傳端點')) return true;
+  return false;
+}
+
+async function putUploadFile(
+  uploadCrisisId: string,
+  file: File,
+  checksum: string,
+): Promise<{ putUrl: string; objectKey: string }> {
+  let presign = await presignUpload(uploadCrisisId, file, checksum, false);
+  const mime = file.type || 'image/jpeg';
+  try {
+    await apiPutRaw(presign.putUrl, file, mime, { timeoutMs: SUBMIT_TIMEOUT_MS });
+    return presign;
+  } catch (e) {
+    if (!isDirectR2PutFailure(e) || presign.putUrl.includes('/v1/uploads/receive/')) {
+      throw e;
+    }
+    presign = await presignUpload(uploadCrisisId, file, checksum, true);
+    await apiPutRaw(presign.putUrl, file, mime, { timeoutMs: SUBMIT_TIMEOUT_MS });
+    return presign;
+  }
+}
+
 export async function submitReportOnline(
   crisisId: string,
   payload: Record<string, unknown>,
@@ -157,21 +196,21 @@ export async function submitReportOnline(
   opts?: { skipWake?: boolean },
 ): Promise<SubmitReportResult> {
   if (!opts?.skipWake) await ensureApiReady();
+  if (!globalThis.crypto?.subtle) {
+    throw new Error('此瀏覽器環境無法計算檔案雜湊，請使用 HTTPS 或更換瀏覽器。');
+  }
   const checksum = await sha256Hex(file);
   const uploadCrisisId = presignCrisisId(crisisId);
   let presign: { putUrl: string; objectKey: string };
   try {
-    presign = await apiGet<{ putUrl: string; objectKey: string }>(
-      `/v1/uploads/presign?crisisId=${encodeURIComponent(uploadCrisisId)}&mimeType=${encodeURIComponent(file.type || 'image/jpeg')}&checksumSha256=${checksum}&bytes=${file.size}`,
-    );
+    presign = await putUploadFile(uploadCrisisId, file, checksum);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`取得上傳授權失敗：${msg}`);
-  }
-  try {
-    await apiPutRaw(presign.putUrl, file, file.type || 'image/jpeg', { timeoutMs: SUBMIT_TIMEOUT_MS });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('上傳圖片失敗') || msg.includes('R2 CORS') || msg.includes('無法連到上傳端點')) {
+      throw new Error(
+        `${msg} 若使用 Brave，請暫時關閉此站的「盾牌」後重試。`,
+      );
+    }
     throw new Error(`上傳圖片失敗：${msg}`);
   }
   const dims = await readImageDims(file);

@@ -855,7 +855,12 @@ export function MapPage() {
         activeSavedRegionId={activeRegionId}
         onSavedRegionSelect={(id) => {
           const r = offlineTiles.regions.find((x) => x.id === id);
-          if (r) goToRegion(r, { adjustZoom: false });
+          if (!r) return;
+          if (mapMode === 'new') {
+            setActiveRegionId(r.id);
+            return;
+          }
+          goToRegion(r, { adjustZoom: false });
         }}
         downloadPreview={downloadPreview}
       />

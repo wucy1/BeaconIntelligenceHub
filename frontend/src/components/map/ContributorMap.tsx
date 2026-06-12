@@ -466,6 +466,7 @@ export function ContributorMap({
           regions={savedRegions}
           activeRegionId={activeSavedRegionId}
           onSelect={onSavedRegionSelect}
+          interactive={mapMode !== 'new'}
         />
       )}
       <BboxWatcher onBboxChange={onBboxChange} />

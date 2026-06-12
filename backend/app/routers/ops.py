@@ -110,6 +110,11 @@ class ProfilePatchBody(BaseModel):
     org_unit: str | None = None
 
 
+class PasswordChangeBody(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8)
+
+
 class BatchReviewBody(BaseModel):
     report_ids: list[UUID]
     reviewed: bool | None = None
@@ -327,6 +332,32 @@ def ops_patch_me(
     db.commit()
     db.refresh(user)
     return _user_out(db, user)
+
+
+@router.patch("/me/password")
+def ops_change_password(
+    body: PasswordChangeBody,
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    user = db.query(OpsUser).filter(OpsUser.id == principal.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    if body.current_password == body.new_password:
+        raise HTTPException(status_code=422, detail="New password must differ from current password")
+    user.password_hash = hash_password(body.new_password)
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="password.change",
+        entity_type="ops_user",
+        entity_id=user.id,
+        detail={},
+    )
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/zones")

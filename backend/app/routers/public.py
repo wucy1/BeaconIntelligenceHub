@@ -31,6 +31,17 @@ def _active_crisis(db: Session) -> Crisis:
         c = db.query(Crisis).filter(Crisis.id == UUID(settings.active_crisis_id)).first()
         if c:
             return c
+    c = (
+        db.query(Crisis)
+        .filter(Crisis.archive_status == "active", Crisis.slug != "unspecified")
+        .order_by(Crisis.created_at.desc())
+        .first()
+    )
+    if c:
+        return c
+    c = db.query(Crisis).filter(Crisis.slug == "unspecified").first()
+    if c:
+        return c
     c = db.query(Crisis).order_by(Crisis.created_at.desc()).first()
     if not c:
         raise HTTPException(status_code=503, detail="No active reporting window configured")

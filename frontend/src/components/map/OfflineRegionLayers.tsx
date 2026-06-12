@@ -9,6 +9,8 @@ type Props = {
   regions: MapRegionMeta[];
   activeRegionId: string | null;
   onSelect?: (regionId: string) => void;
+  /** 新增回報放釘時停用，避免點擊觸發區域置中 */
+  interactive?: boolean;
 };
 
 function boundsForRegion(r: MapRegionMeta): L.LatLngBounds {
@@ -16,7 +18,12 @@ function boundsForRegion(r: MapRegionMeta): L.LatLngBounds {
   return L.latLngBounds([box.south, box.west], [box.north, box.east]);
 }
 
-export function OfflineRegionLayers({ regions, activeRegionId, onSelect }: Props) {
+export function OfflineRegionLayers({
+  regions,
+  activeRegionId,
+  onSelect,
+  interactive = true,
+}: Props) {
   const map = useMap();
   const groupRef = useRef<L.LayerGroup | null>(null);
   const onSelectRef = useRef(onSelect);
@@ -43,11 +50,14 @@ export function OfflineRegionLayers({ regions, activeRegionId, onSelect }: Props
         stroke: false,
         fillColor: active ? '#2563eb' : '#3b82f6',
         fillOpacity: active ? 0.28 : 0.18,
+        interactive,
       });
-      rect.on('click', () => onSelectRef.current?.(r.id));
+      if (interactive) {
+        rect.on('click', () => onSelectRef.current?.(r.id));
+      }
       group.addLayer(rect);
     }
-  }, [regions, activeRegionId]);
+  }, [regions, activeRegionId, interactive]);
 
   return null;
 }

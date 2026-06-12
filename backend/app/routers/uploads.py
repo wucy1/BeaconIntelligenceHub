@@ -41,6 +41,7 @@ def presign(
     mimeType: str,
     checksumSha256: str,
     size_bytes: int = Query(..., alias="bytes", ge=1, le=50 * 1024 * 1024),
+    via_api: bool = Query(False, alias="viaApi"),
     db: Session = Depends(get_db),
 ) -> PresignResponse:
     c = db.query(Crisis).filter(Crisis.id == crisisId).first()
@@ -54,7 +55,7 @@ def presign(
         ext = ".webp"
     object_key = f"{crisisId}/{secrets.token_hex(16)}{ext}"
 
-    if browser_uploads_to_r2(settings):
+    if browser_uploads_to_r2(settings) and not via_api:
         client = r2_client(settings)
         ttl = settings.upload_token_ttl_seconds
         put_url = presigned_put(client, settings.r2_bucket, object_key, mimeType, ttl)
