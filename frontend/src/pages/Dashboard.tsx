@@ -19,6 +19,7 @@ import {
 import {
   getOpsUser,
   opsHasStaffAccess,
+  opsIsCrisisLead,
   opsIsSystemAdmin,
   opsRoleLabel,
 } from '../ops/opsAuth';
@@ -101,6 +102,7 @@ export function Dashboard() {
   const manageableCrises = useMemo(() => crises.filter(isManageableCrisis), [crises]);
   const activeCrisis = manageableCrises.find((c) => c.id === crisisId);
   const activeSaved = savedReports.find((s) => s.id === activeSavedId) ?? null;
+  const canViewArchiveForCrisis = isAdmin || (crisisId ? opsIsCrisisLead(opsUser, crisisId) : false);
 
   const loadReports = useCallback(async () => {
     if (!activeSavedId) {
@@ -133,7 +135,7 @@ export function Dashboard() {
   }, [crisisId]);
 
   const loadArchiveSummary = useCallback(async () => {
-    if (!crisisId) {
+    if (!crisisId || (!isAdmin && !opsIsCrisisLead(opsUser, crisisId))) {
       setArchiveSummary(null);
       return;
     }
@@ -143,7 +145,7 @@ export function Dashboard() {
     } catch {
       setArchiveSummary(null);
     }
-  }, [crisisId]);
+  }, [crisisId, isAdmin, opsUser]);
 
   useEffect(() => {
     if (!savedFromUrl) return;
@@ -368,7 +370,7 @@ export function Dashboard() {
         )}
       </section>
 
-      {activeCrisis && archiveSummary && (
+      {activeCrisis && canViewArchiveForCrisis && archiveSummary && (
         <section className="ops-dash-section ops-archive-status-section">
           <h2>{t('dashboard.archiveStatusTitle')}</h2>
           <p className="muted">{t('dashboard.archiveStatusHint')}</p>

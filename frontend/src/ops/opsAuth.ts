@@ -91,6 +91,18 @@ export function opsCanOpenStaffPanel(user: OpsUserSession | null): boolean {
   return (user.crisis_lead_assignments?.length ?? 0) > 0;
 }
 
+/** Work mode: crisis switching, zone drawing, archive — Lead / admin only. */
+export function opsCanUseWorkMode(user: OpsUserSession | null): boolean {
+  if (!user) return false;
+  if (opsIsSystemAdmin(user)) return true;
+  return (user.crisis_lead_assignments?.length ?? 0) > 0;
+}
+
+/** Browse view=all / unspecified — Lead / admin only. Coordinators use view=crisis in assigned zones. */
+export function opsCanBrowseWideViews(user: OpsUserSession | null): boolean {
+  return opsCanUseWorkMode(user);
+}
+
 export function opsHasStaffAccess(user: OpsUserSession | null): boolean {
   if (!user) return false;
   if (opsIsSystemAdmin(user)) return true;

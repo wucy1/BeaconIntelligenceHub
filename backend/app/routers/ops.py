@@ -890,6 +890,8 @@ def ops_list_reports(
         saved = db.query(OpsSavedReport).filter(OpsSavedReport.id == saved_report_id).first()
         if not saved:
             raise HTTPException(status_code=404, detail="Saved report not found")
+        if not principal.can_access_saved_report(saved):
+            raise HTTPException(status_code=403, detail="Cannot access this saved report")
         saved_name = saved.name
         view = saved.report_view
         crisis_id = saved.crisis_id
@@ -903,6 +905,8 @@ def ops_list_reports(
         if str(exc) == "zone_not_allowed":
             raise HTTPException(status_code=403, detail="Zone not in your assignment") from exc
         raise
+    if view in ("all", "unspecified") and not principal.can_browse_wide_views():
+        raise HTTPException(status_code=403, detail="Wide browse views require crisis lead or admin")
     if view == "unspecified":
         ids = report_ids_unspecified_scoped(
             db,
@@ -999,6 +1003,8 @@ def ops_crisis_archive_summary(
         raise HTTPException(status_code=404, detail="Crisis not found")
     if _is_system_unspecified(crisis):
         raise HTTPException(status_code=422, detail="System unspecified crisis")
+    if not principal.can_view_crisis_archive_summary(crisis_id):
+        raise HTTPException(status_code=403, detail="Crisis archive summary requires crisis lead or admin")
     return _archive_summary(db, crisis)
 
 
@@ -1389,6 +1395,19 @@ def ops_list_saved_reports(
     )
     if crisis_id is not None:
         q = q.filter(OpsSavedReport.crisis_id == crisis_id)
+    if principal.is_system_admin():
+        pass
+    elif principal.crisis_lead_ids:
+        from sqlalchemy import or_
+
+        q = q.filter(
+            or_(
+                OpsSavedReport.crisis_id.in_(principal.crisis_lead_ids),
+                OpsSavedReport.created_by == principal.user_id,
+            )
+        )
+    else:
+        q = q.filter(OpsSavedReport.created_by == principal.user_id)
     rows = q.order_by(OpsSavedReport.updated_at.desc()).limit(limit).all()
     return {
         "items": [_saved_report_out(row, email) for row, email in rows],
@@ -1403,6 +1422,8 @@ def ops_create_saved_report(
 ) -> dict:
     if body.report_view == "crisis" and not body.crisis_id:
         raise HTTPException(status_code=422, detail="crisis_id required for crisis view")
+    if body.report_view in ("all", "unspecified") and not principal.can_browse_wide_views():
+        raise HTTPException(status_code=403, detail="Wide browse views require crisis lead or admin")
     zone_snapshots = None
     if body.zone_snapshots:
         zone_snapshots = [s.model_dump(mode="json") for s in body.zone_snapshots]
@@ -1443,6 +1464,8 @@ def ops_get_saved_report(
     row = db.query(OpsSavedReport).filter(OpsSavedReport.id == report_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Saved report not found")
+    if not principal.can_access_saved_report(row):
+        raise HTTPException(status_code=403, detail="Cannot access this saved report")
     creator = db.query(OpsUser.email).filter(OpsUser.id == row.created_by).scalar()
     return _saved_report_out(row, creator)
 

@@ -1979,16 +1979,59 @@ button.danger {
   border: none;
 }
 
-.ops-map-view-panel {
+.ops-map-bottom-chrome {
   position: absolute;
   left: 50%;
-  bottom: 0.65rem;
-  transform: translateX(-50%);
+  bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(calc(-50% - var(--ops-map-rail-right, 3.25rem) / 2));
   z-index: 600;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: min(calc(100% - 1rem - var(--ops-map-rail-right, 3.25rem)), 56rem);
+  width: 100%;
+  pointer-events: none;
+}
+
+.ops-map-bottom-chrome > * {
+  pointer-events: auto;
+}
+
+.ops-map-shell-toggle {
+  position: static;
+  transform: none;
+  flex-shrink: 0;
+}
+
+.ops-map-work-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+}
+
+.ops-map-work-hint {
+  flex: 1 1 8rem;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  align-self: center;
+}
+
+.ops-map-view-panel {
+  position: static;
+  transform: none;
+  display: flex;
+  flex-direction: column;
   gap: 0.3rem;
-  max-width: min(calc(100% - 1rem), 56rem);
+  width: 100%;
   padding: 0.4rem 0.55rem;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid #e2e8f0;
@@ -2095,19 +2138,17 @@ button.danger {
 
 /* 視角面板高度 + 右側縮放欄寬度 */
 .ops-map-page {
-  --ops-view-panel-clearance: 8.5rem;
   --ops-map-rail-right: 3.25rem;
+  --ops-view-panel-clearance: 5.5rem;
+}
+
+.ops-map-page.ops-shell-view {
+  --ops-view-panel-clearance: 9.5rem;
 }
 
 .ops-map-page .map-rail-zoom {
   bottom: calc(var(--ops-view-panel-clearance) + env(safe-area-inset-bottom, 0px));
   z-index: 650;
-}
-
-/* 版權維持 Leaflet 預設右下；視角面板略向左偏，右側留給縮放鈕 */
-.ops-map-page .ops-map-view-panel {
-  transform: translateX(calc(-50% - var(--ops-map-rail-right) / 2));
-  max-width: min(calc(100% - 1rem - var(--ops-map-rail-right)), 56rem);
 }
 
 .ops-map-page .leaflet-bottom.leaflet-right {
@@ -2125,8 +2166,12 @@ button.danger {
 }
 
 @media (max-width: 640px) {
-  .ops-map-page {
-    --ops-view-panel-clearance: 9rem;
+  .ops-map-page.ops-shell-view {
+    --ops-view-panel-clearance: 10.5rem;
+  }
+
+  .ops-map-page.ops-shell-work {
+    --ops-view-panel-clearance: 6.5rem;
   }
 
   .ops-map-report-count {

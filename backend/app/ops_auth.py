@@ -116,6 +116,22 @@ class OpsPrincipal:
             return crisis_id in self.crisis_lead_ids
         return bool(self.crisis_lead_ids)
 
+    def can_browse_wide_views(self) -> bool:
+        """view=all / unspecified — Lead and system admin only."""
+        return self.is_system_admin() or bool(self.crisis_lead_ids)
+
+    def can_view_crisis_archive_summary(self, crisis_id: UUID) -> bool:
+        return self.can_manage_crisis(crisis_id)
+
+    def can_access_saved_report(self, row) -> bool:
+        if self.is_system_admin():
+            return True
+        if row.created_by == self.user_id:
+            return True
+        if row.crisis_id and self.is_crisis_lead(row.crisis_id):
+            return True
+        return False
+
     def visible_crisis_ids(self) -> list[UUID] | None:
         """None = all crises (admin)."""
         if self.is_system_admin():

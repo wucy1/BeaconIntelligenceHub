@@ -37,7 +37,9 @@ import {
   getOpsUser,
   opsCanCreateZones,
   opsCanEditZone,
+  opsCanBrowseWideViews,
   opsCanRunArchive,
+  opsCanUseWorkMode,
   opsIsSystemAdmin,
   setOpsSession,
   type OpsUserSession,
@@ -49,6 +51,7 @@ import { applyOpsProfileLocaleIfSet } from '../ops/applyOpsLocale';
 import { OsmTileLayer } from '../components/map/CachedOsmTileLayer';
 import { MapRailZoom } from '../components/map/MapRailZoom';
 import { OpsMapClearSelection } from '../components/ops/OpsMapClearSelection';
+import { OpsMapShellToggle, type OpsMapShellMode } from '../components/ops/OpsMapShellToggle';
 import { OpsPolygonEditor } from '../components/ops/OpsPolygonEditor';
 import { useI18n } from '../i18n/I18nContext';
 import {
@@ -111,13 +114,14 @@ export function OpsMapPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlBrowse = parseOpsBrowseSearchParams(searchParams);
   const crisisFromUrl = urlBrowse.crisisId ?? searchParams.get('crisis_id') ?? '';
+  const shellFromUrl = searchParams.get('shell');
   const reportFromUrl = urlBrowse.reportId ?? searchParams.get('report_id');
   const latFromUrl = urlBrowse.lat ?? searchParams.get('lat');
   const lngFromUrl = urlBrowse.lng ?? searchParams.get('lng');
   const [user, setUser] = useState<OpsUserSession | null>(() => getOpsUser());
   const isAdmin = opsIsSystemAdmin(user);
-  const hasZoneDrawRole =
-    isAdmin || ((user?.crisis_lead_assignments?.length ?? 0) > 0);
+  const canUseWorkMode = opsCanUseWorkMode(user);
+  const canBrowseWideViews = opsCanBrowseWideViews(user);
   const [activeCrisisId, setActiveCrisisId] = useState<string>(crisisFromUrl);
   const [zones, setZones] = useState<OpsZone[]>([]);
   const [reports, setReports] = useState<OpsReport[]>([]);
@@ -143,9 +147,16 @@ export function OpsMapPage() {
 
   const [browseFrom, setBrowseFrom] = useState(urlBrowse.browseFrom ?? '');
   const [browseTo, setBrowseTo] = useState(urlBrowse.browseTo ?? '');
-  const [reportView, setReportView] = useState<'crisis' | 'unspecified' | 'all'>(
-    urlBrowse.view ?? 'all',
-  );
+  const [shellMode, setShellMode] = useState<OpsMapShellMode>(() => {
+    if (!opsCanUseWorkMode(getOpsUser())) return 'view';
+    return shellFromUrl === 'view' ? 'view' : 'work';
+  });
+  const [reportView, setReportView] = useState<'crisis' | 'unspecified' | 'all'>(() => {
+    const fromUrl = urlBrowse.view ?? 'all';
+    if (!opsCanBrowseWideViews(getOpsUser()) && fromUrl !== 'crisis') return 'crisis';
+    return fromUrl;
+  });
+  const effectiveReportView = shellMode === 'work' ? 'all' : reportView;
   const [unlinkOutOfScope, setUnlinkOutOfScope] = useState(true);
   const [draftWindowOpen, setDraftWindowOpen] = useState(false);
   const [draftWindowStart, setDraftWindowStart] = useState('');
@@ -237,9 +248,9 @@ export function OpsMapPage() {
   }, [isAdmin]);
 
   const loadReports = useCallback(() => {
-    const q = new URLSearchParams({ limit: '300', view: reportView });
+    const q = new URLSearchParams({ limit: '300', view: effectiveReportView });
     if (activeCrisisId) q.set('crisis_id', activeCrisisId);
-    if (selectedZoneId) q.set('zone_id', selectedZoneId);
+    if (shellMode === 'view' && selectedZoneId) q.set('zone_id', selectedZoneId);
     const from = fromDatetimeLocalValue(browseFrom);
     const to = fromDatetimeLocalValue(browseTo);
     if (from) q.set('captured_from', from);
@@ -262,7 +273,7 @@ export function OpsMapPage() {
         setCrisisCandidateCount(0);
         setCrisisOtherLinkedCount(0);
       });
-  }, [selectedZoneId, browseFrom, browseTo, reportView, activeCrisisId]);
+  }, [shellMode, selectedZoneId, browseFrom, browseTo, effectiveReportView, activeCrisisId]);
 
   useEffect(() => {
     apiGet<{ default_ops_view_months?: number }>('/v1/public/settings')
@@ -271,6 +282,17 @@ export function OpsMapPage() {
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!opsCanUseWorkMode(user)) {
+      setShellMode('view');
+      setPanel((p) => (p === 'crisis' ? null : p));
+      setPreview(null);
+    }
+    if (!opsCanBrowseWideViews(user)) {
+      setReportView((v) => (v === 'crisis' ? v : 'crisis'));
+    }
+  }, [user]);
 
   useEffect(() => {
     void wakeApiBackend();
@@ -330,13 +352,15 @@ export function OpsMapPage() {
 
   useEffect(() => {
     const browse: OpsBrowseParams = {
-      view: reportView,
+      view: effectiveReportView,
       crisisId: activeCrisisId,
-      zoneId: selectedZoneId ?? '',
+      zoneId: shellMode === 'view' ? selectedZoneId ?? '' : '',
       browseFrom,
       browseTo,
     };
     const next = applyBrowseToSearchParams(new URLSearchParams(), browse);
+    if (shellMode === 'view') next.set('shell', 'view');
+    else next.delete('shell');
     const keep = new URLSearchParams(window.location.search);
     for (const key of ['report_id', 'lat', 'lng'] as const) {
       const v = keep.get(key);
@@ -346,7 +370,7 @@ export function OpsMapPage() {
     const cur = new URLSearchParams(window.location.search).toString();
     const nxt = next.toString();
     if (cur !== nxt) setSearchParams(next, { replace: true });
-  }, [reportView, activeCrisisId, selectedZoneId, browseFrom, browseTo, setSearchParams]);
+  }, [effectiveReportView, shellMode, activeCrisisId, selectedZoneId, browseFrom, browseTo, setSearchParams]);
 
   const clearZoneSelection = useCallback(() => {
     setSelectedZoneId(null);
@@ -636,8 +660,22 @@ export function OpsMapPage() {
     if (key === 'audit') loadAudit();
   };
 
+  const onShellModeChange = (next: OpsMapShellMode) => {
+    if (next === 'work' && !canUseWorkMode) return;
+    if (next === 'view') {
+      setPanel((p) => (p === 'crisis' ? null : p));
+      setPreview(null);
+      if (mapMode === 'draw' || mapMode === 'edit') resetDraft();
+    } else {
+      setSelectedZoneId(null);
+      setSaveReportOpen(false);
+      setViewHelpOpen(false);
+    }
+    setShellMode(next);
+  };
+
   return (
-    <div className="map-page ops-map-page">
+    <div className={`map-page ops-map-page ops-shell-${shellMode}`}>
       <MapContainer
         center={DEFAULT_CENTER}
         zoom={DEFAULT_ZOOM}
@@ -765,146 +803,194 @@ export function OpsMapPage() {
         </div>
       </div>
 
-      <div className="ops-map-fab-col">
-        {hasZoneDrawRole && (
-          <button
-            type="button"
-            className={`ops-map-fab ${mapMode === 'draw' ? 'active' : ''}`}
-            onClick={startDraw}
-            title={!canCreateZones && activeCrisisId ? t('ops.map.drawZoneDenied') : undefined}
-          >
-            {t('ops.map.drawZone')}
-          </button>
-        )}
-        {canArchive && (
-          <button type="button" className={`ops-map-fab ${panel === 'crisis' ? 'active' : ''}`} onClick={() => togglePanel('crisis')}>
-            {t('ops.map.archiveFab')}
-          </button>
-        )}
-        {isAdmin && (
-          <button type="button" className={`ops-map-fab ${panel === 'audit' ? 'active' : ''}`} onClick={() => togglePanel('audit')}>
-            {t('ops.tab.audit')}
-          </button>
-        )}
-      </div>
-
-      <div className="ops-map-view-panel">
-        <div className="ops-map-view-row">
-          <label className="ops-map-chip ops-map-view-field">
-            <span className="ops-map-view-label">{t('ops.map.queryPanel')}</span>
-            <select
-              value={reportView}
-              onChange={(e) => setReportView(e.target.value as 'crisis' | 'unspecified' | 'all')}
-              aria-label={t('dashboard.viewMode')}
+      {canUseWorkMode && shellMode === 'work' && (
+        <div className="ops-map-fab-col">
+          {canUseWorkMode && (
+            <button
+              type="button"
+              className={`ops-map-fab ${mapMode === 'draw' ? 'active' : ''}`}
+              onClick={startDraw}
+              title={!canCreateZones && activeCrisisId ? t('ops.map.drawZoneDenied') : undefined}
             >
-              <option value="all">{t('dashboard.view.all')}</option>
-              <option value="unspecified">{t('dashboard.view.unspecified')}</option>
-              <option value="crisis">{t('dashboard.view.crisis')}</option>
-            </select>
-          </label>
-          {manageableCrises.length > 0 ? (
-            <label className="ops-map-chip ops-map-crisis-select ops-map-view-field">
-              <span className="ops-map-view-label">{t('ops.map.workCrisis')}</span>
-              <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
-                {manageableCrises.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {crisisName(c.name, c.slug)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <span className="ops-map-chip muted ops-map-view-field">{t('ops.map.noCrisis')}</span>
+              {t('ops.map.drawZone')}
+            </button>
           )}
-          <span className="ops-map-chip muted ops-map-view-field ops-map-view-hint">
-            {t(`ops.map.viewHint.${reportView}`)}
-          </span>
-          {zones.length > 0 ? (
-            <label className="ops-map-chip ops-map-view-field">
-              <span className="ops-map-view-label">{t('ops.map.zone')}</span>
-              <select
-                value={selectedZoneId ?? ''}
-                onChange={(e) => {
-                  const id = e.target.value || null;
-                  setSelectedZoneId(id);
-                  if (!id) {
-                    setPanel((p) => (p === 'zone' ? null : p));
-                    return;
-                  }
-                  const z = zones.find((x) => x.id === id);
-                  if (z) {
-                    setPanel('zone');
-                    setFlyZone(z);
-                    setTimeout(() => setFlyZone(null), 100);
-                  }
-                }}
-              >
-                <option value="">{t('ops.map.allZones')}</option>
-                {zones.map((z) => (
-                  <option key={z.id} value={z.id}>
-                    {z.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <span className="ops-map-chip muted ops-map-view-field">—</span>
+          {canArchive && (
+            <button
+              type="button"
+              className={`ops-map-fab ${panel === 'crisis' ? 'active' : ''}`}
+              onClick={() => togglePanel('crisis')}
+            >
+              {t('ops.map.archiveFab')}
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              type="button"
+              className={`ops-map-fab ${panel === 'audit' ? 'active' : ''}`}
+              onClick={() => togglePanel('audit')}
+            >
+              {t('ops.tab.audit')}
+            </button>
           )}
         </div>
-        <div className="ops-map-view-row">
-          <label className="ops-map-chip ops-map-view-field">
-            <span className="ops-map-view-label">{t('ops.map.browseTimeFrom')}</span>
-            <input type="datetime-local" value={browseFrom} onChange={(e) => setBrowseFrom(e.target.value)} />
-          </label>
-          <label className="ops-map-chip ops-map-view-field">
-            <span className="ops-map-view-label">{t('ops.map.browseTimeTo')}</span>
-            <input type="datetime-local" value={browseTo} onChange={(e) => setBrowseTo(e.target.value)} />
-          </label>
-          <div ref={viewHelpRef} className="ops-map-chip ops-map-view-field ops-map-report-count-wrap">
-            <span className="ops-map-report-count">
-              {reportView === 'all' && activeCrisisId
+      )}
+
+      <div className="ops-map-bottom-chrome">
+        {shellMode === 'work' && (
+          <div className="ops-map-work-bar">
+            {manageableCrises.length > 0 ? (
+              <label className="ops-map-chip ops-map-crisis-select ops-map-view-field">
+                <span className="ops-map-view-label">{t('ops.map.workCrisis')}</span>
+                <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
+                  {manageableCrises.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {crisisName(c.name, c.slug)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <span className="ops-map-chip muted ops-map-view-field">{t('ops.map.noCrisis')}</span>
+            )}
+            <span className="ops-map-chip muted ops-map-work-hint">{t('ops.map.workBarHint')}</span>
+            <span className="ops-map-chip ops-map-report-count">
+              {activeCrisisId
                 ? t('ops.map.reportCountCrisis', {
                     total: reports.length,
                     linked: crisisLinkedCount,
                     other: crisisOtherLinkedCount,
                     candidate: crisisCandidateCount,
                   })
-                : reportView === 'crisis'
-                  ? t('ops.map.reportCountLinked', { count: reports.length })
-                  : t('ops.map.reportCount', { count: reports.length })}
+                : t('ops.map.reportCount', { count: reports.length })}
             </span>
-            <button
-              type="button"
-              className="ops-map-help-btn"
-              aria-expanded={viewHelpOpen}
-              aria-label={t('ops.map.viewHelp.button')}
-              onClick={() => setViewHelpOpen((v) => !v)}
-            >
-              ?
-            </button>
-            {viewHelpOpen && (
-              <div className="ops-map-help-popover" role="dialog" aria-labelledby="ops-map-view-help-title">
-                <header className="ops-map-help-popover-header">
-                  <strong id="ops-map-view-help-title">{t('ops.map.viewHelp.title')}</strong>
-                  <button type="button" className="icon-btn" onClick={() => setViewHelpOpen(false)} aria-label={t('common.cancel')}>
-                    ×
-                  </button>
-                </header>
-                <p>{t(`ops.map.viewHelp.${reportView}`)}</p>
-              </div>
-            )}
           </div>
-        </div>
-        <div className="ops-map-view-actions">
-          <button type="button" className="ops-map-chip ops-map-btn" onClick={() => setSaveReportOpen(true)}>
-            {t('ops.map.saveReport')}
-          </button>
-          {selectedZone && (
-            <button type="button" className="ops-map-chip ops-map-btn secondary" onClick={clearZoneSelection}>
-              {t('ops.map.clearZone')}
-            </button>
-          )}
-        </div>
+        )}
+
+        {shellMode === 'view' && (
+          <div className="ops-map-view-panel">
+            <div className="ops-map-view-row">
+              <label className="ops-map-chip ops-map-view-field">
+                <span className="ops-map-view-label">{t('ops.map.queryPanel')}</span>
+                <select
+                  value={reportView}
+                  onChange={(e) => setReportView(e.target.value as 'crisis' | 'unspecified' | 'all')}
+                  aria-label={t('dashboard.viewMode')}
+                >
+                  {canBrowseWideViews && <option value="all">{t('dashboard.view.all')}</option>}
+                  {canBrowseWideViews && (
+                    <option value="unspecified">{t('dashboard.view.unspecified')}</option>
+                  )}
+                  <option value="crisis">{t('dashboard.view.crisis')}</option>
+                </select>
+              </label>
+              {manageableCrises.length > 0 ? (
+                <label className="ops-map-chip ops-map-crisis-select ops-map-view-field">
+                  <span className="ops-map-view-label">{t('ops.map.workCrisis')}</span>
+                  <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
+                    {manageableCrises.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {crisisName(c.name, c.slug)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <span className="ops-map-chip muted ops-map-view-field">{t('ops.map.noCrisis')}</span>
+              )}
+              <span className="ops-map-chip muted ops-map-view-field ops-map-view-hint">
+                {t(`ops.map.viewHint.${reportView}`)}
+              </span>
+              {zones.length > 0 ? (
+                <label className="ops-map-chip ops-map-view-field">
+                  <span className="ops-map-view-label">{t('ops.map.zone')}</span>
+                  <select
+                    value={selectedZoneId ?? ''}
+                    onChange={(e) => {
+                      const id = e.target.value || null;
+                      setSelectedZoneId(id);
+                      if (!id) {
+                        setPanel((p) => (p === 'zone' ? null : p));
+                        return;
+                      }
+                      const z = zones.find((x) => x.id === id);
+                      if (z) {
+                        setPanel('zone');
+                        setFlyZone(z);
+                        setTimeout(() => setFlyZone(null), 100);
+                      }
+                    }}
+                  >
+                    <option value="">{t('ops.map.allZones')}</option>
+                    {zones.map((z) => (
+                      <option key={z.id} value={z.id}>
+                        {z.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <span className="ops-map-chip muted ops-map-view-field">—</span>
+              )}
+            </div>
+            <div className="ops-map-view-row">
+              <label className="ops-map-chip ops-map-view-field">
+                <span className="ops-map-view-label">{t('ops.map.browseTimeFrom')}</span>
+                <input type="datetime-local" value={browseFrom} onChange={(e) => setBrowseFrom(e.target.value)} />
+              </label>
+              <label className="ops-map-chip ops-map-view-field">
+                <span className="ops-map-view-label">{t('ops.map.browseTimeTo')}</span>
+                <input type="datetime-local" value={browseTo} onChange={(e) => setBrowseTo(e.target.value)} />
+              </label>
+              <div ref={viewHelpRef} className="ops-map-chip ops-map-view-field ops-map-report-count-wrap">
+                <span className="ops-map-report-count">
+                  {reportView === 'all' && activeCrisisId
+                    ? t('ops.map.reportCountCrisis', {
+                        total: reports.length,
+                        linked: crisisLinkedCount,
+                        other: crisisOtherLinkedCount,
+                        candidate: crisisCandidateCount,
+                      })
+                    : reportView === 'crisis'
+                      ? t('ops.map.reportCountLinked', { count: reports.length })
+                      : t('ops.map.reportCount', { count: reports.length })}
+                </span>
+                <button
+                  type="button"
+                  className="ops-map-help-btn"
+                  aria-expanded={viewHelpOpen}
+                  aria-label={t('ops.map.viewHelp.button')}
+                  onClick={() => setViewHelpOpen((v) => !v)}
+                >
+                  ?
+                </button>
+                {viewHelpOpen && (
+                  <div className="ops-map-help-popover" role="dialog" aria-labelledby="ops-map-view-help-title">
+                    <header className="ops-map-help-popover-header">
+                      <strong id="ops-map-view-help-title">{t('ops.map.viewHelp.title')}</strong>
+                      <button type="button" className="icon-btn" onClick={() => setViewHelpOpen(false)} aria-label={t('common.cancel')}>
+                        ×
+                      </button>
+                    </header>
+                    <p>{t(`ops.map.viewHelp.${reportView}`)}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="ops-map-view-actions">
+              <button type="button" className="ops-map-chip ops-map-btn" onClick={() => setSaveReportOpen(true)}>
+                {t('ops.map.saveReport')}
+              </button>
+              {selectedZone && (
+                <button type="button" className="ops-map-chip ops-map-btn secondary" onClick={clearZoneSelection}>
+                  {t('ops.map.clearZone')}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {canUseWorkMode && <OpsMapShellToggle mode={shellMode} onChange={onShellModeChange} />}
       </div>
 
       {err && (
@@ -1000,7 +1086,7 @@ export function OpsMapPage() {
         </div>
       )}
 
-      {panel === 'crisis' && canArchive && (
+      {shellMode === 'work' && panel === 'crisis' && canArchive && (
         <div className="ops-map-card ops-map-card-wide">
           <button type="button" className="ops-map-card-close" onClick={() => setPanel(null)}>
             ×
