@@ -70,15 +70,13 @@ def principal_can_access_report(
 ) -> bool:
     if principal.is_system_admin():
         return True
+    from app.ops_reports_query import report_ids_for_crisis_scoped
+
+    for cid in principal.crisis_lead_ids:
+        if report_id in report_ids_for_crisis_scoped(db, cid, None, None, None, 5000):
+            return True
     zone_ids = resolve_zone_filter_ids(principal, None, crisis_id)
     if zone_ids is None:
-        if not principal.crisis_lead_ids:
-            return True
-        from app.ops_reports_query import report_ids_for_crisis_scoped
-
-        for cid in principal.crisis_lead_ids:
-            if report_id in report_ids_for_crisis_scoped(db, cid, None, None, None, 5000):
-                return True
         return False
     visible = report_ids_in_zones(db, None, list(zone_ids), None, None, 5000)
     return report_id in visible

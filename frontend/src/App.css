@@ -1973,6 +1973,15 @@ button.danger {
   border-color: #1d4ed8;
 }
 
+.ops-map-page .ops-map-fab.ops-map-fab-icon {
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  font-size: 0.98rem;
+  line-height: 1;
+  text-align: center;
+}
+
 .ops-map-page .ops-map-card-actions button:not(.secondary):not(.danger) {
   background: #1d4ed8;
   color: #fff;

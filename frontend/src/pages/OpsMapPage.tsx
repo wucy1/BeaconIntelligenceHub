@@ -109,6 +109,19 @@ function FlyToPoint({ point }: { point: [number, number] | null }) {
   return null;
 }
 
+function FitVisibleZones({ zones, tick }: { zones: OpsZone[]; tick: number }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!tick || zones.length === 0) return;
+    const bounds = L.latLngBounds([]);
+    for (const z of zones) {
+      z.geom.coordinates[0].forEach(([lng, lat]) => bounds.extend([lat, lng]));
+    }
+    if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+  }, [map, zones, tick]);
+  return null;
+}
+
 export function OpsMapPage() {
   const { t, crisisName, setLocale } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -171,7 +184,10 @@ export function OpsMapPage() {
   const [flyZone, setFlyZone] = useState<OpsZone | null>(null);
   const [flyPoint, setFlyPoint] = useState<[number, number] | null>(null);
   const [zonesRevision, setZonesRevision] = useState(0);
+  const [zoneFitTick, setZoneFitTick] = useState(0);
   const [defaultOpsMonths, setDefaultOpsMonths] = useState(2);
+
+  const zonesToFit = useMemo(() => zones, [zones]);
 
   const selectedZone = zones.find((z) => z.id === selectedZoneId) ?? null;
   const canEditSelectedZone = selectedZone ? opsCanEditZone(user, selectedZone.crisis_id ?? undefined) : false;
@@ -692,6 +708,7 @@ export function OpsMapPage() {
         <OpsMapClearSelection enabled={mapMode === 'browse' && Boolean(selectedZoneId)} onClear={clearZoneSelection} />
         <FlyToZone zone={flyZone} />
         <FlyToPoint point={flyPoint} />
+        <FitVisibleZones zones={zonesToFit} tick={zoneFitTick} />
         {isEditingShape && (mapMode === 'draw' ? canCreateZones : editingZoneId != null) && (
           <OpsPolygonEditor
             vertices={vertices}
@@ -807,35 +824,48 @@ export function OpsMapPage() {
         </div>
       </div>
 
-      {canUseWorkMode && shellMode === 'work' && (
+      {(zones.length > 0 || (canUseWorkMode && shellMode === 'work')) && (
         <div className="ops-map-fab-col">
-          {canUseWorkMode && (
+          {zones.length > 0 && (
             <button
               type="button"
-              className={`ops-map-fab ${mapMode === 'draw' ? 'active' : ''}`}
-              onClick={startDraw}
-              title={!canCreateZones && activeCrisisId ? t('ops.map.drawZoneDenied') : undefined}
+              className="ops-map-fab ops-map-fab-icon"
+              title={t('map.crisis.showZones')}
+              aria-label={t('map.crisis.showZones')}
+              onClick={() => setZoneFitTick((n) => n + 1)}
             >
-              {t('ops.map.drawZone')}
+              ⊞
             </button>
           )}
-          {canArchive && (
-            <button
-              type="button"
-              className={`ops-map-fab ${panel === 'crisis' ? 'active' : ''}`}
-              onClick={() => togglePanel('crisis')}
-            >
-              {t('ops.map.archiveFab')}
-            </button>
-          )}
-          {isAdmin && (
-            <button
-              type="button"
-              className={`ops-map-fab ${panel === 'audit' ? 'active' : ''}`}
-              onClick={() => togglePanel('audit')}
-            >
-              {t('ops.tab.audit')}
-            </button>
+          {canUseWorkMode && shellMode === 'work' && (
+            <>
+              <button
+                type="button"
+                className={`ops-map-fab ${mapMode === 'draw' ? 'active' : ''}`}
+                onClick={startDraw}
+                title={!canCreateZones && activeCrisisId ? t('ops.map.drawZoneDenied') : undefined}
+              >
+                {t('ops.map.drawZone')}
+              </button>
+              {canArchive && (
+                <button
+                  type="button"
+                  className={`ops-map-fab ${panel === 'crisis' ? 'active' : ''}`}
+                  onClick={() => togglePanel('crisis')}
+                >
+                  {t('ops.map.archiveFab')}
+                </button>
+              )}
+              {isAdmin && (
+                <button
+                  type="button"
+                  className={`ops-map-fab ${panel === 'audit' ? 'active' : ''}`}
+                  onClick={() => togglePanel('audit')}
+                >
+                  {t('ops.tab.audit')}
+                </button>
+              )}
+            </>
           )}
         </div>
       )}

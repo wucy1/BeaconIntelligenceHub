@@ -95,7 +95,7 @@ class OpsPrincipal:
             return False
         if crisis_id is not None and self.is_crisis_lead(crisis_id):
             return False
-        if crisis_id is None and self.crisis_lead_ids:
+        if not self.zone_ids:
             return False
         return True
 
