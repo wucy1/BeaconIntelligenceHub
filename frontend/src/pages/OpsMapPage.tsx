@@ -8,6 +8,17 @@ import { isManageableCrisis } from '../ops/crisisUtils';
 import { CircleMarker, GeoJSON, MapContainer, useMap } from 'react-leaflet';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
+import {
+  applyBrowseToSearchParams,
+  archiveTimesDifferFromBrowse,
+  defaultBrowseRange,
+  eventArchiveRange,
+  parseOpsBrowseSearchParams,
+  rollingArchiveRange,
+  type ArchiveTimeMode,
+  type OpsBrowseParams,
+} from '../ops/opsBrowseParams';
+
 import 'leaflet/dist/leaflet.css';
 
 import { apiGet, wakeApiBackend } from '../api';
@@ -47,7 +58,6 @@ import {
   fromDatetimeLocalValue,
   polygonAreaKm2,
   polygonToVertices,
-  toDatetimeLocalValue,
   verticesToPolygon,
   type LatLng,
 } from '../ops/polygonUtils';
@@ -100,11 +110,12 @@ function FlyToPoint({ point }: { point: [number, number] | null }) {
 
 export function OpsMapPage() {
   const { t, crisisName, setLocale } = useI18n();
-  const [searchParams] = useSearchParams();
-  const crisisFromUrl = searchParams.get('crisis_id') ?? '';
-  const reportFromUrl = searchParams.get('report_id');
-  const latFromUrl = searchParams.get('lat');
-  const lngFromUrl = searchParams.get('lng');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlBrowse = parseOpsBrowseSearchParams(searchParams);
+  const crisisFromUrl = urlBrowse.crisisId ?? searchParams.get('crisis_id') ?? '';
+  const reportFromUrl = urlBrowse.reportId ?? searchParams.get('report_id');
+  const latFromUrl = urlBrowse.lat ?? searchParams.get('lat');
+  const lngFromUrl = urlBrowse.lng ?? searchParams.get('lng');
   const [user, setUser] = useState<OpsUserSession | null>(() => getOpsUser());
   const isAdmin = opsIsSystemAdmin(user);
   const hasZoneDrawRole =
@@ -120,7 +131,7 @@ export function OpsMapPage() {
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [preview, setPreview] = useState<ArchivePreview | null>(null);
 
-  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(urlBrowse.zoneId || null);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [panel, setPanel] = useState<PanelKey>(null);
   const [mapMode, setMapMode] = useState<MapMode>('browse');
@@ -131,9 +142,15 @@ export function OpsMapPage() {
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
   const [selectedVertex, setSelectedVertex] = useState<number | null>(null);
 
-  const [filterFrom, setFilterFrom] = useState('');
-  const [filterTo, setFilterTo] = useState('');
-  const [reportView, setReportView] = useState<'crisis' | 'unspecified' | 'all'>('crisis');
+  const [browseFrom, setBrowseFrom] = useState(urlBrowse.browseFrom ?? '');
+  const [browseTo, setBrowseTo] = useState(urlBrowse.browseTo ?? '');
+  const [reportView, setReportView] = useState<'crisis' | 'unspecified' | 'all'>(
+    urlBrowse.view ?? 'crisis',
+  );
+  const [archiveTimeMode, setArchiveTimeMode] = useState<ArchiveTimeMode>('event');
+  const [archiveFrom, setArchiveFrom] = useState('');
+  const [archiveTo, setArchiveTo] = useState('');
+  const [unlinkOutOfScope, setUnlinkOutOfScope] = useState(true);
 
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -215,8 +232,8 @@ export function OpsMapPage() {
     const q = new URLSearchParams({ limit: '300', view: reportView });
     if (reportView === 'crisis' && activeCrisisId) q.set('crisis_id', activeCrisisId);
     if (selectedZoneId) q.set('zone_id', selectedZoneId);
-    const from = fromDatetimeLocalValue(filterFrom);
-    const to = fromDatetimeLocalValue(filterTo);
+    const from = fromDatetimeLocalValue(browseFrom);
+    const to = fromDatetimeLocalValue(browseTo);
     if (from) q.set('captured_from', from);
     if (to) q.set('captured_to', to);
     opsGet<{
@@ -234,7 +251,7 @@ export function OpsMapPage() {
         setCrisisLinkedCount(0);
         setCrisisCandidateCount(0);
       });
-  }, [selectedZoneId, filterFrom, filterTo, reportView, activeCrisisId]);
+  }, [selectedZoneId, browseFrom, browseTo, reportView, activeCrisisId]);
 
   useEffect(() => {
     apiGet<{ default_ops_view_months?: number }>('/v1/public/settings')
@@ -294,23 +311,71 @@ export function OpsMapPage() {
   }, [reportFromUrl, latFromUrl, lngFromUrl]);
 
   useEffect(() => {
-    if (!activeCrisis) return;
-    if (activeCrisis.archive_window_start || activeCrisis.archive_window_end) {
-      setFilterFrom(toDatetimeLocalValue(activeCrisis.archive_window_start));
-      setFilterTo(toDatetimeLocalValue(activeCrisis.archive_window_end));
-      return;
+    if (browseFrom || browseTo) return;
+    const { browseFrom: from, browseTo: to } = defaultBrowseRange(activeCrisis, defaultOpsMonths);
+    setBrowseFrom(from);
+    setBrowseTo(to);
+  }, [activeCrisis?.id, activeCrisis?.archive_window_start, activeCrisis?.archive_window_end, defaultOpsMonths, browseFrom, browseTo]);
+
+  useEffect(() => {
+    const browse: OpsBrowseParams = {
+      view: reportView,
+      crisisId: activeCrisisId,
+      zoneId: selectedZoneId ?? '',
+      browseFrom,
+      browseTo,
+    };
+    const next = applyBrowseToSearchParams(new URLSearchParams(), browse);
+    const keep = new URLSearchParams(window.location.search);
+    for (const key of ['report_id', 'lat', 'lng'] as const) {
+      const v = keep.get(key);
+      if (v) next.set(key, v);
+      else next.delete(key);
     }
-    const end = new Date();
-    const start = new Date(end);
-    start.setMonth(start.getMonth() - defaultOpsMonths);
-    setFilterFrom(toDatetimeLocalValue(start.toISOString()));
-    setFilterTo(toDatetimeLocalValue(end.toISOString()));
-  }, [
-    activeCrisis?.id,
-    activeCrisis?.archive_window_start,
-    activeCrisis?.archive_window_end,
-    defaultOpsMonths,
-  ]);
+    const cur = new URLSearchParams(window.location.search).toString();
+    const nxt = next.toString();
+    if (cur !== nxt) setSearchParams(next, { replace: true });
+  }, [reportView, activeCrisisId, selectedZoneId, browseFrom, browseTo, setSearchParams]);
+
+  const resolveArchiveCaptured = useCallback(() => {
+    if (archiveTimeMode === 'event') {
+      const ev = eventArchiveRange(activeCrisis);
+      return {
+        captured_from: fromDatetimeLocalValue(ev.archiveFrom) || null,
+        captured_to: fromDatetimeLocalValue(ev.archiveTo) || null,
+      };
+    }
+    if (archiveTimeMode === 'rolling') {
+      const roll = rollingArchiveRange(defaultOpsMonths);
+      return {
+        captured_from: fromDatetimeLocalValue(roll.archiveFrom) || null,
+        captured_to: fromDatetimeLocalValue(roll.archiveTo) || null,
+      };
+    }
+    return {
+      captured_from: fromDatetimeLocalValue(archiveFrom) || null,
+      captured_to: fromDatetimeLocalValue(archiveTo) || null,
+    };
+  }, [archiveTimeMode, archiveFrom, archiveTo, activeCrisis, defaultOpsMonths]);
+
+  const displayArchiveFrom = useMemo(() => {
+    if (archiveTimeMode === 'event') return eventArchiveRange(activeCrisis).archiveFrom;
+    if (archiveTimeMode === 'rolling') return rollingArchiveRange(defaultOpsMonths).archiveFrom;
+    return archiveFrom;
+  }, [archiveTimeMode, archiveFrom, activeCrisis, defaultOpsMonths]);
+
+  const displayArchiveTo = useMemo(() => {
+    if (archiveTimeMode === 'event') return eventArchiveRange(activeCrisis).archiveTo;
+    if (archiveTimeMode === 'rolling') return rollingArchiveRange(defaultOpsMonths).archiveTo;
+    return archiveTo;
+  }, [archiveTimeMode, archiveTo, activeCrisis, defaultOpsMonths]);
+
+  const archiveDiffersFromBrowse = archiveTimesDifferFromBrowse(
+    browseFrom,
+    browseTo,
+    displayArchiveFrom,
+    displayArchiveTo,
+  );
 
   const clearZoneSelection = useCallback(() => {
     setSelectedZoneId(null);
@@ -456,17 +521,35 @@ export function OpsMapPage() {
     }
   };
 
+  const initArchivePanel = () => {
+    const hasOfficial =
+      Boolean(activeCrisis?.archive_window_start) || Boolean(activeCrisis?.archive_window_end);
+    if (hasOfficial) {
+      setArchiveTimeMode('event');
+      const ev = eventArchiveRange(activeCrisis);
+      setArchiveFrom(ev.archiveFrom);
+      setArchiveTo(ev.archiveTo);
+    } else {
+      setArchiveTimeMode('rolling');
+      const roll = rollingArchiveRange(defaultOpsMonths);
+      setArchiveFrom(roll.archiveFrom);
+      setArchiveTo(roll.archiveTo);
+    }
+    setUnlinkOutOfScope(activeCrisis?.archive_status !== 'draft');
+    setPreview(null);
+  };
+
   const runArchivePreview = async () => {
     if (!activeCrisisId) return;
     setBusy(true);
     try {
-      const from = fromDatetimeLocalValue(filterFrom);
-      const to = fromDatetimeLocalValue(filterTo);
+      const { captured_from, captured_to } = resolveArchiveCaptured();
       const body = {
         zone_ids: selectedZoneId ? [selectedZoneId] : null,
         limit: 500,
-        captured_from: from || null,
-        captured_to: to || null,
+        captured_from,
+        captured_to,
+        unlink_out_of_scope: unlinkOutOfScope,
       };
       const p = await opsPost<ArchivePreview>(`/v1/ops/crises/${activeCrisisId}/archive-preview`, body);
       setPreview(p);
@@ -479,16 +562,18 @@ export function OpsMapPage() {
   };
 
   const runArchive = async () => {
-    if (!activeCrisisId || !window.confirm(t('ops.map.archiveConfirm'))) return;
+    if (!activeCrisisId) return;
+    const confirmKey = unlinkOutOfScope ? 'ops.map.archiveConfirmFull' : 'ops.map.archiveConfirmLinkOnly';
+    if (!window.confirm(t(confirmKey))) return;
     setBusy(true);
     try {
-      const from = fromDatetimeLocalValue(filterFrom);
-      const to = fromDatetimeLocalValue(filterTo);
+      const { captured_from, captured_to } = resolveArchiveCaptured();
       const body = {
         zone_ids: selectedZoneId ? [selectedZoneId] : null,
         limit: 500,
-        captured_from: from || null,
-        captured_to: to || null,
+        captured_from,
+        captured_to,
+        unlink_out_of_scope: unlinkOutOfScope,
       };
       const r = await opsPost<ArchiveRunResult>(`/v1/ops/crises/${activeCrisisId}/archive-run`, body);
       setPreview(null);
@@ -512,6 +597,7 @@ export function OpsMapPage() {
   };
 
   const togglePanel = (key: PanelKey) => {
+    if (key === 'crisis' && panel !== 'crisis') initArchivePanel();
     setPanel((p) => (p === key ? null : key));
     if (key === 'audit') loadAudit();
   };
@@ -620,12 +706,25 @@ export function OpsMapPage() {
           <Link to="/ops" className="ops-map-chip ops-map-link">
             {t('ops.nav.console')}
           </Link>
-          <Link to="/dashboard" className="ops-map-chip ops-map-link">
+          <Link
+            to={(() => {
+              const q = applyBrowseToSearchParams(new URLSearchParams(), {
+                view: reportView,
+                crisisId: activeCrisisId,
+                zoneId: selectedZoneId ?? '',
+                browseFrom,
+                browseTo,
+              });
+              const s = q.toString();
+              return s ? `/dashboard?${s}` : '/dashboard';
+            })()}
+            className="ops-map-chip ops-map-link"
+          >
             {t('ops.nav.dashboard')}
           </Link>
         </div>
         <div className="ops-map-top-right">
-          <LanguageSwitcher />
+          <LanguageSwitcher compact />
           <OpsUserMenu className="ops-map-user-menu" compact />
         </div>
       </div>
@@ -717,12 +816,12 @@ export function OpsMapPage() {
         </div>
         <div className="ops-map-view-row">
           <label className="ops-map-chip ops-map-view-field">
-            <span className="ops-map-view-label">{t('ops.map.timeFrom')}</span>
-            <input type="datetime-local" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} />
+            <span className="ops-map-view-label">{t('ops.map.browseTimeFrom')}</span>
+            <input type="datetime-local" value={browseFrom} onChange={(e) => setBrowseFrom(e.target.value)} />
           </label>
           <label className="ops-map-chip ops-map-view-field">
-            <span className="ops-map-view-label">{t('ops.map.timeTo')}</span>
-            <input type="datetime-local" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
+            <span className="ops-map-view-label">{t('ops.map.browseTimeTo')}</span>
+            <input type="datetime-local" value={browseTo} onChange={(e) => setBrowseTo(e.target.value)} />
           </label>
           <div ref={viewHelpRef} className="ops-map-chip ops-map-view-field ops-map-report-count-wrap">
             <span className="ops-map-report-count">
@@ -866,19 +965,108 @@ export function OpsMapPage() {
           {activeCrisis && (
             <p className="muted">
               {crisisName(activeCrisis.name, activeCrisis.slug)} · {activeCrisis.archive_status}
+              {activeCrisis.archive_status === 'draft' && (
+                <span className="ops-archive-draft-hint"> · {t('ops.map.archiveDraftHint')}</span>
+              )}
+            </p>
+          )}
+          {archiveDiffersFromBrowse && (
+            <p className="ops-archive-warn" role="status">
+              {t('ops.map.archiveBrowseDiffers')}
             </p>
           )}
           <div className="ops-archive-window-block">
-            <p className="ops-archive-window-label">{t('ops.map.archiveWindow')}</p>
-            <p className="ops-archive-window-range">
-              {t('ops.map.archiveWindowRange', {
-                from: formatPanelTime(filterFrom),
-                to: formatPanelTime(filterTo),
-              })}
-            </p>
+            <p className="ops-archive-window-label">{t('ops.map.archiveTimeMode')}</p>
+            <div className="ops-archive-mode-row">
+              <label className="ops-archive-mode-opt">
+                <input
+                  type="radio"
+                  name="archiveTimeMode"
+                  checked={archiveTimeMode === 'event'}
+                  onChange={() => {
+                    setArchiveTimeMode('event');
+                    const ev = eventArchiveRange(activeCrisis);
+                    setArchiveFrom(ev.archiveFrom);
+                    setArchiveTo(ev.archiveTo);
+                  }}
+                />
+                {t('ops.map.archiveModeEvent')}
+              </label>
+              <label className="ops-archive-mode-opt">
+                <input
+                  type="radio"
+                  name="archiveTimeMode"
+                  checked={archiveTimeMode === 'rolling'}
+                  onChange={() => {
+                    setArchiveTimeMode('rolling');
+                    const roll = rollingArchiveRange(defaultOpsMonths);
+                    setArchiveFrom(roll.archiveFrom);
+                    setArchiveTo(roll.archiveTo);
+                  }}
+                />
+                {t('ops.map.archiveModeRolling', { months: defaultOpsMonths })}
+              </label>
+              <label className="ops-archive-mode-opt">
+                <input
+                  type="radio"
+                  name="archiveTimeMode"
+                  checked={archiveTimeMode === 'custom'}
+                  onChange={() => setArchiveTimeMode('custom')}
+                />
+                {t('ops.map.archiveModeCustom')}
+              </label>
+            </div>
+            {archiveTimeMode === 'custom' ? (
+              <div className="ops-archive-custom-times">
+                <label className="ops-field">
+                  <span>{t('ops.map.timeFrom')}</span>
+                  <input
+                    type="datetime-local"
+                    value={archiveFrom}
+                    onChange={(e) => setArchiveFrom(e.target.value)}
+                  />
+                </label>
+                <label className="ops-field">
+                  <span>{t('ops.map.timeTo')}</span>
+                  <input
+                    type="datetime-local"
+                    value={archiveTo}
+                    onChange={(e) => setArchiveTo(e.target.value)}
+                  />
+                </label>
+              </div>
+            ) : (
+              <p className="ops-archive-window-range">
+                {t('ops.map.archiveWindowRange', {
+                  from: formatPanelTime(displayArchiveFrom),
+                  to: formatPanelTime(displayArchiveTo),
+                })}
+              </p>
+            )}
             <p className="muted ops-archive-window-zone">
               {t('ops.map.archiveWindowZone', { zone: archiveZoneLabel })}
             </p>
+            <p className="ops-archive-window-label">{t('ops.map.archiveStrategy')}</p>
+            <div className="ops-archive-mode-row">
+              <label className="ops-archive-mode-opt">
+                <input
+                  type="radio"
+                  name="archiveStrategy"
+                  checked={unlinkOutOfScope}
+                  onChange={() => setUnlinkOutOfScope(true)}
+                />
+                {t('ops.map.archiveStrategyFull')}
+              </label>
+              <label className="ops-archive-mode-opt">
+                <input
+                  type="radio"
+                  name="archiveStrategy"
+                  checked={!unlinkOutOfScope}
+                  onChange={() => setUnlinkOutOfScope(false)}
+                />
+                {t('ops.map.archiveStrategyLinkOnly')}
+              </label>
+            </div>
             <p className="muted ops-archive-window-note">{t('ops.map.archiveWindowNote')}</p>
           </div>
           <div className="ops-map-card-actions">
@@ -899,11 +1087,16 @@ export function OpsMapPage() {
                 })}
               </p>
               <p>
-                {t('ops.map.archivePreviewCounts', {
-                  matched: preview.matched_count,
-                  unlinked: preview.unlinked_count,
-                  kept: preview.linked_in_scope_count,
-                })}
+                {unlinkOutOfScope
+                  ? t('ops.map.archivePreviewCounts', {
+                      matched: preview.matched_count,
+                      unlinked: preview.unlinked_count,
+                      kept: preview.linked_in_scope_count,
+                    })
+                  : t('ops.map.archivePreviewCountsLinkOnly', {
+                      matched: preview.matched_count,
+                      kept: preview.linked_in_scope_count,
+                    })}
               </p>
               {preview.sample_report_ids.length > 0 && (
                 <p className="muted">

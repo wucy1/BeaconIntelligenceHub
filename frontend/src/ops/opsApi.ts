@@ -124,6 +124,7 @@ export type ArchiveRunResult = {
   linked_count: number;
   unlinked_count: number;
   crisis_id: string;
+  unlink_out_of_scope?: boolean;
 };
 
 export type OpsUserRecord = {

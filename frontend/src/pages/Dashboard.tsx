@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import { apiBase } from '../api';
 import { DashboardReviewModal } from '../components/ops/DashboardReviewModal';
 import { useI18n } from '../i18n/I18nContext';
 import { isManageableCrisis } from '../ops/crisisUtils';
+import {
+  applyBrowseToSearchParams,
+  buildOpsMapHref,
+  defaultBrowseRange,
+  parseOpsBrowseSearchParams,
+  type OpsBrowseParams,
+} from '../ops/opsBrowseParams';
+import { fromDatetimeLocalValue } from '../ops/polygonUtils';
 import { opsGet, opsPatch, opsPost, type OpsCrisis, type OpsZone } from '../ops/opsApi';
 import {
   getOpsUser,
@@ -29,7 +37,13 @@ type ReportSummary = {
   infrastructure_types?: string[];
 };
 
-type ListResp = { items: ReportSummary[]; nextCursor?: string | null; zone_scope?: string[] | null };
+type ListResp = {
+  items: ReportSummary[];
+  nextCursor?: string | null;
+  zone_scope?: string[] | null;
+  crisis_linked_count?: number | null;
+  crisis_candidate_count?: number | null;
+};
 
 type ReviewFilter = 'all' | 'pending' | 'flagged' | 'reviewed';
 type ReportView = 'crisis' | 'unspecified' | 'all';
@@ -39,12 +53,17 @@ export function Dashboard() {
   const opsUser = getOpsUser()!;
   const isAdmin = opsIsSystemAdmin(opsUser);
   const isLead = (opsUser.crisis_lead_assignments?.length ?? 0) > 0;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlBrowse = parseOpsBrowseSearchParams(searchParams);
   const [data, setData] = useState<ListResp | null>(null);
   const [zones, setZones] = useState<OpsZone[]>([]);
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
-  const [crisisId, setCrisisId] = useState('');
-  const [zoneId, setZoneId] = useState('');
-  const [reportView, setReportView] = useState<ReportView>('crisis');
+  const [crisisId, setCrisisId] = useState(urlBrowse.crisisId ?? '');
+  const [zoneId, setZoneId] = useState(urlBrowse.zoneId ?? '');
+  const [reportView, setReportView] = useState<ReportView>(urlBrowse.view ?? 'crisis');
+  const [browseFrom, setBrowseFrom] = useState(urlBrowse.browseFrom ?? '');
+  const [browseTo, setBrowseTo] = useState(urlBrowse.browseTo ?? '');
+  const [defaultOpsMonths, setDefaultOpsMonths] = useState(2);
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('pending');
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -53,6 +72,18 @@ export function Dashboard() {
   const [reviewId, setReviewId] = useState<string | null>(null);
 
   const manageableCrises = useMemo(() => crises.filter(isManageableCrisis), [crises]);
+  const activeCrisis = manageableCrises.find((c) => c.id === crisisId);
+
+  const browseParams = useMemo(
+    (): OpsBrowseParams => ({
+      view: reportView,
+      crisisId,
+      zoneId,
+      browseFrom,
+      browseTo,
+    }),
+    [reportView, crisisId, zoneId, browseFrom, browseTo],
+  );
 
   const loadReports = useCallback(async () => {
     if (reportView === 'crisis' && !crisisId) {
@@ -63,14 +94,32 @@ export function Dashboard() {
       const q = new URLSearchParams({ limit: '200', view: reportView });
       if (reportView === 'crisis' && crisisId) q.set('crisis_id', crisisId);
       if (zoneId) q.set('zone_id', zoneId);
+      const from = fromDatetimeLocalValue(browseFrom);
+      const to = fromDatetimeLocalValue(browseTo);
+      if (from) q.set('captured_from', from);
+      if (to) q.set('captured_to', to);
       const d = await opsGet<ListResp>(`/v1/ops/reports?${q}`);
-      setData({ items: d.items, nextCursor: null, zone_scope: d.zone_scope });
+      setData({
+        items: d.items,
+        nextCursor: null,
+        zone_scope: d.zone_scope,
+        crisis_linked_count: d.crisis_linked_count,
+        crisis_candidate_count: d.crisis_candidate_count,
+      });
       setSelectedIds(new Set());
       setErr(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
-  }, [crisisId, zoneId, reportView]);
+  }, [crisisId, zoneId, reportView, browseFrom, browseTo]);
+
+  useEffect(() => {
+    opsGet<{ default_ops_view_months?: number }>('/v1/public/settings')
+      .then((s) => {
+        if (s.default_ops_view_months) setDefaultOpsMonths(s.default_ops_view_months);
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises')
@@ -93,6 +142,27 @@ export function Dashboard() {
       .then((d) => setZones(d.items))
       .catch(() => setZones([]));
   }, [crisisId, reportView]);
+
+  useEffect(() => {
+    if (browseFrom || browseTo) return;
+    const { browseFrom: from, browseTo: to } = defaultBrowseRange(activeCrisis, defaultOpsMonths);
+    setBrowseFrom(from);
+    setBrowseTo(to);
+  }, [
+    activeCrisis?.id,
+    activeCrisis?.archive_window_start,
+    activeCrisis?.archive_window_end,
+    defaultOpsMonths,
+    browseFrom,
+    browseTo,
+  ]);
+
+  useEffect(() => {
+    const next = applyBrowseToSearchParams(new URLSearchParams(), browseParams);
+    const cur = new URLSearchParams(window.location.search).toString();
+    const nxt = next.toString();
+    if (cur !== nxt) setSearchParams(next, { replace: true });
+  }, [browseParams, setSearchParams]);
 
   useEffect(() => {
     void loadReports();
@@ -171,6 +241,7 @@ export function Dashboard() {
   const reviewRow = reviewId ? data?.items.find((r) => r.id === reviewId) : null;
   const damageMax = Math.max(1, ...Object.values(listStats?.damage_counts ?? {}));
   const crisisTypeMax = Math.max(1, ...Object.values(listStats?.crisis_type_counts ?? {}));
+  const mapHref = buildOpsMapHref(browseParams);
 
   if (!opsHasStaffAccess(opsUser)) {
     return (
@@ -193,7 +264,6 @@ export function Dashboard() {
   if (!data) return <p className="muted">{t('common.loading')}</p>;
 
   const api = apiBase();
-  const activeCrisis = manageableCrises.find((c) => c.id === crisisId);
 
   return (
     <section className="card ops-dashboard">
@@ -207,6 +277,9 @@ export function Dashboard() {
             {!isAdmin && !isLead && ` · ${t('dashboard.scopeCoord')}`}
           </p>
         </div>
+        <Link to={mapHref} className="ops-dash-map-link">
+          {t('dashboard.openMapView')}
+        </Link>
       </header>
 
       <section className="ops-dash-banner">
@@ -273,6 +346,36 @@ export function Dashboard() {
               ))}
             </select>
           </label>
+        )}
+        <div className="ops-dash-browse-times">
+          <label className="ops-field">
+            {t('dashboard.browseTimeFrom')}
+            <input
+              className="ops-input"
+              type="datetime-local"
+              value={browseFrom}
+              onChange={(e) => setBrowseFrom(e.target.value)}
+            />
+          </label>
+          <label className="ops-field">
+            {t('dashboard.browseTimeTo')}
+            <input
+              className="ops-input"
+              type="datetime-local"
+              value={browseTo}
+              onChange={(e) => setBrowseTo(e.target.value)}
+            />
+          </label>
+        </div>
+        <p className="muted">{t('dashboard.browseTimeHint')}</p>
+        {reportView === 'crisis' && crisisId && (
+          <p className="muted">
+            {t('dashboard.crisisLinkCounts', {
+              linked: data.crisis_linked_count ?? 0,
+              candidate: data.crisis_candidate_count ?? 0,
+              total: data.items.length,
+            })}
+          </p>
         )}
         <div className="ops-review-tabs">
           {(['pending', 'flagged', 'reviewed', 'all'] as const).map((f) => (
@@ -395,13 +498,12 @@ export function Dashboard() {
             </thead>
             <tbody>
               {filteredItems.map((r) => {
-                const mapQ = new URLSearchParams();
-                if (crisisId) mapQ.set('crisis_id', crisisId);
-                mapQ.set('report_id', r.id);
+                const extra: Record<string, string> = { report_id: r.id };
                 if (r.geom) {
-                  mapQ.set('lat', String(r.geom.coordinates[1]));
-                  mapQ.set('lng', String(r.geom.coordinates[0]));
+                  extra.lat = String(r.geom.coordinates[1]);
+                  extra.lng = String(r.geom.coordinates[0]);
                 }
+                const rowMapHref = buildOpsMapHref(browseParams, extra);
                 return (
                   <tr key={r.id}>
                     <td>
@@ -428,7 +530,7 @@ export function Dashboard() {
                       <button type="button" className="small" onClick={() => setReviewId(r.id)}>
                         {t('dashboard.openReview')}
                       </button>
-                      <Link to={`/ops/map?${mapQ}`} className="ops-dash-inline-link">
+                      <Link to={rowMapHref} className="ops-dash-inline-link">
                         {t('dashboard.openOnMap')}
                       </Link>
                     </td>

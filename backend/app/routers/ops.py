@@ -100,6 +100,7 @@ class ArchiveRunBody(BaseModel):
     limit: int = Field(500, ge=1, le=2000)
     captured_from: datetime | None = None
     captured_to: datetime | None = None
+    unlink_out_of_scope: bool = True
 
 
 class ProfilePatchBody(BaseModel):
@@ -608,13 +609,17 @@ def ops_archive_preview(
         body.limit,
         exclude_already_linked=True,
     )
-    to_unlink = report_ids_to_unlink(
-        db,
-        crisis_id,
-        zone_ids,
-        win_start,
-        win_end,
-        _ARCHIVE_UNLINK_LIMIT,
+    to_unlink = (
+        report_ids_to_unlink(
+            db,
+            crisis_id,
+            zone_ids,
+            win_start,
+            win_end,
+            _ARCHIVE_UNLINK_LIMIT,
+        )
+        if body.unlink_out_of_scope
+        else []
     )
     linked_in_scope = count_linked_in_scope(db, crisis_id, zone_ids, win_start, win_end)
     total_linked = db.query(ReportCrisisLink).filter(ReportCrisisLink.crisis_id == crisis_id).count()
@@ -622,6 +627,7 @@ def ops_archive_preview(
         "crisis_id": str(crisis_id),
         "matched_count": len(to_link),
         "unlinked_count": len(to_unlink),
+        "unlink_out_of_scope": body.unlink_out_of_scope,
         "linked_in_scope_count": linked_in_scope,
         "sample_report_ids": [str(i) for i in to_link[:20]],
         "sample_unlink_report_ids": [str(i) for i in to_unlink[:20]],
@@ -660,13 +666,17 @@ def ops_archive_run(
         body.limit,
         exclude_already_linked=True,
     )
-    to_unlink = report_ids_to_unlink(
-        db,
-        crisis_id,
-        zone_ids,
-        win_start,
-        win_end,
-        _ARCHIVE_UNLINK_LIMIT,
+    to_unlink = (
+        report_ids_to_unlink(
+            db,
+            crisis_id,
+            zone_ids,
+            win_start,
+            win_end,
+            _ARCHIVE_UNLINK_LIMIT,
+        )
+        if body.unlink_out_of_scope
+        else []
     )
     removed = 0
     if to_unlink:
@@ -703,6 +713,7 @@ def ops_archive_run(
             "zone_ids": [str(z) for z in zone_ids] if zone_ids else None,
             "archive_window_start": win_start.isoformat() if win_start else None,
             "archive_window_end": win_end.isoformat() if win_end else None,
+            "unlink_out_of_scope": body.unlink_out_of_scope,
         },
     )
     db.commit()
@@ -711,6 +722,7 @@ def ops_archive_run(
         "linked_count": created,
         "unlinked_count": removed,
         "crisis_id": str(crisis_id),
+        "unlink_out_of_scope": body.unlink_out_of_scope,
     }
 
 

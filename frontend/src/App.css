@@ -2093,8 +2093,10 @@ button.danger {
   color: #475569;
 }
 
+/* 視角面板高度 + 右側縮放欄寬度 */
 .ops-map-page {
-  --ops-view-panel-clearance: 10rem;
+  --ops-view-panel-clearance: 8.5rem;
+  --ops-map-rail-right: 3.25rem;
 }
 
 .ops-map-page .map-rail-zoom {
@@ -2102,61 +2104,36 @@ button.danger {
   z-index: 650;
 }
 
+/* 版權維持 Leaflet 預設右下；視角面板略向左偏，右側留給縮放鈕 */
+.ops-map-page .ops-map-view-panel {
+  transform: translateX(calc(-50% - var(--ops-map-rail-right) / 2));
+  max-width: min(calc(100% - 1rem - var(--ops-map-rail-right)), 56rem);
+}
+
 .ops-map-page .leaflet-bottom.leaflet-right {
-  bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
-  right: 0.35rem;
-  z-index: 500;
-  max-width: calc(100% - 4.5rem);
+  bottom: env(safe-area-inset-bottom, 0px);
+  z-index: 400;
 }
 
-.ops-map-page .leaflet-control-attribution {
-  font-size: 0.62rem;
-  line-height: 1.25;
-  white-space: normal;
-  max-width: 12rem;
-}
-
-.ops-map-top-right .lang-switcher {
+.ops-map-top-right .lang-switcher,
+.ops-map-top-right .lang-switcher-compact {
   font-size: 0.72rem;
+}
+
+.lang-switcher-compact {
+  gap: 0;
 }
 
 @media (max-width: 640px) {
   .ops-map-page {
-    --ops-view-panel-clearance: 11.5rem;
-  }
-
-  .ops-map-page .leaflet-bottom.leaflet-right {
-    bottom: calc(var(--ops-view-panel-clearance) - 4.75rem + env(safe-area-inset-bottom, 0px));
-    max-width: calc(100% - 3.5rem);
-  }
-
-  .ops-map-view-panel {
-    max-width: calc(100% - 0.5rem);
-    padding: 0.35rem 0.45rem;
-  }
-
-  .ops-map-view-row {
-    flex-wrap: wrap;
-    gap: 0.3rem;
-  }
-
-  .ops-map-view-field {
-    flex: 1 1 calc(33% - 0.3rem);
-    min-width: 5.25rem;
-  }
-
-  .ops-map-report-count-wrap {
-    flex: 1 1 100%;
-    min-width: 0;
-    justify-content: center;
+    --ops-view-panel-clearance: 9rem;
   }
 
   .ops-map-report-count {
-    white-space: normal;
-    text-align: center;
-    font-size: 0.62rem;
-    line-height: 1.35;
-    word-break: break-word;
+    font-size: 0.68rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
 
   .ops-map-top-right {
@@ -2193,6 +2170,61 @@ button.danger {
 .ops-archive-window-note {
   margin: 0.25rem 0 0;
   font-size: 0.75rem;
+}
+
+.ops-archive-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.ops-archive-mode-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.ops-archive-custom-times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin: 0.35rem 0;
+}
+
+.ops-archive-warn {
+  margin: 0.35rem 0;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.78rem;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+}
+
+.ops-archive-draft-hint {
+  color: #0369a1;
+}
+
+.ops-dash-browse-times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.ops-dash-map-link {
+  align-self: flex-start;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .ops-archive-custom-times,
+  .ops-dash-browse-times {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ops-user-menu-dropdown {
