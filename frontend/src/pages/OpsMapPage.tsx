@@ -129,7 +129,9 @@ export function OpsMapPage() {
   const [crisisCandidateCount, setCrisisCandidateCount] = useState(0);
   const [crisisOtherLinkedCount, setCrisisOtherLinkedCount] = useState(0);
   const [viewHelpOpen, setViewHelpOpen] = useState(false);
+  const [workHelpOpen, setWorkHelpOpen] = useState(false);
   const viewHelpRef = useRef<HTMLDivElement>(null);
+  const workHelpRef = useRef<HTMLDivElement>(null);
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [preview, setPreview] = useState<ArchivePreview | null>(null);
@@ -208,13 +210,15 @@ export function OpsMapPage() {
   }, [setLocale]);
 
   useEffect(() => {
-    if (!viewHelpOpen) return;
+    if (!viewHelpOpen && !workHelpOpen) return;
     const onDoc = (e: MouseEvent) => {
-      if (!viewHelpRef.current?.contains(e.target as Node)) setViewHelpOpen(false);
+      const t = e.target as Node;
+      if (!viewHelpRef.current?.contains(t)) setViewHelpOpen(false);
+      if (!workHelpRef.current?.contains(t)) setWorkHelpOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
-  }, [viewHelpOpen]);
+  }, [viewHelpOpen, workHelpOpen]);
 
   const loadZones = useCallback(async () => {
     const q = activeCrisisId ? `?crisis_id=${activeCrisisId}` : '';
@@ -838,9 +842,9 @@ export function OpsMapPage() {
 
       <div className="ops-map-bottom-chrome">
         {shellMode === 'work' && (
-          <div className="ops-map-work-bar">
+          <div className="ops-map-work-bar ops-map-panel-compact">
             {manageableCrises.length > 0 ? (
-              <label className="ops-map-chip ops-map-crisis-select ops-map-view-field">
+              <label className="ops-map-chip ops-map-crisis-select ops-map-view-field ops-map-work-crisis">
                 <span className="ops-map-view-label">{t('ops.map.workCrisis')}</span>
                 <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
                   {manageableCrises.map((c) => (
@@ -853,17 +857,44 @@ export function OpsMapPage() {
             ) : (
               <span className="ops-map-chip muted ops-map-view-field">{t('ops.map.noCrisis')}</span>
             )}
-            <span className="ops-map-chip muted ops-map-work-hint">{t('ops.map.workBarHint')}</span>
-            <span className="ops-map-chip ops-map-report-count">
-              {activeCrisisId
-                ? t('ops.map.reportCountCrisis', {
-                    total: reports.length,
-                    linked: crisisLinkedCount,
-                    other: crisisOtherLinkedCount,
-                    candidate: crisisCandidateCount,
-                  })
-                : t('ops.map.reportCount', { count: reports.length })}
-            </span>
+            <div ref={workHelpRef} className="ops-map-chip ops-map-report-count-wrap ops-map-work-stats">
+              <span className="ops-map-report-count">
+                {activeCrisisId
+                  ? t('ops.map.reportCountCrisis', {
+                      total: reports.length,
+                      linked: crisisLinkedCount,
+                      other: crisisOtherLinkedCount,
+                      candidate: crisisCandidateCount,
+                    })
+                  : t('ops.map.reportCount', { count: reports.length })}
+              </span>
+              <button
+                type="button"
+                className="ops-map-help-btn"
+                aria-expanded={workHelpOpen}
+                aria-label={t('ops.map.workHelp.button')}
+                onClick={() => setWorkHelpOpen((v) => !v)}
+              >
+                ?
+              </button>
+              {workHelpOpen && (
+                <div className="ops-map-help-popover" role="dialog" aria-labelledby="ops-map-work-help-title">
+                  <header className="ops-map-help-popover-header">
+                    <strong id="ops-map-work-help-title">{t('ops.map.workHelp.title')}</strong>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() => setWorkHelpOpen(false)}
+                      aria-label={t('common.cancel')}
+                    >
+                      ×
+                    </button>
+                  </header>
+                  <p className="ops-map-help-summary">{t('ops.map.workBarHint')}</p>
+                  <p>{t('ops.map.workHelp.body')}</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -898,9 +929,6 @@ export function OpsMapPage() {
               ) : (
                 <span className="ops-map-chip muted ops-map-view-field">{t('ops.map.noCrisis')}</span>
               )}
-              <span className="ops-map-chip muted ops-map-view-field ops-map-view-hint">
-                {t(`ops.map.viewHint.${reportView}`)}
-              </span>
               {zones.length > 0 ? (
                 <label className="ops-map-chip ops-map-view-field">
                   <span className="ops-map-view-label">{t('ops.map.zone')}</span>
@@ -972,6 +1000,7 @@ export function OpsMapPage() {
                         ×
                       </button>
                     </header>
+                    <p className="ops-map-help-summary">{t(`ops.map.viewHint.${reportView}`)}</p>
                     <p>{t(`ops.map.viewHelp.${reportView}`)}</p>
                   </div>
                 )}

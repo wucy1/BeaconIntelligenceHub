@@ -42,12 +42,13 @@ def geom_scope_clause(snapshots: list[dict[str, Any]] | None) -> tuple[str, dict
 def resolve_zone_filter_ids(
     principal: OpsPrincipal,
     requested_zone_id: UUID | None,
+    crisis_id: UUID | None = None,
 ) -> list[UUID] | None:
     """
-    Returns zone id list to filter by, or None meaning all reports (unscoped).
-    Empty list means no visible zones.
+    Returns zone id list to filter by, or None meaning crisis-wide / unscoped browse.
+    Empty list means no visible zones (coordinator with no assignments).
     """
-    if principal.sees_all_zones():
+    if not principal.uses_coordinator_zone_filter(crisis_id):
         if requested_zone_id:
             return [requested_zone_id]
         return None
@@ -59,6 +60,28 @@ def resolve_zone_filter_ids(
             raise ValueError("zone_not_allowed")
         return [requested_zone_id]
     return list(allowed)
+
+
+def principal_can_access_report(
+    db: Session,
+    principal: OpsPrincipal,
+    report_id: UUID,
+    crisis_id: UUID | None = None,
+) -> bool:
+    if principal.is_system_admin():
+        return True
+    zone_ids = resolve_zone_filter_ids(principal, None, crisis_id)
+    if zone_ids is None:
+        if not principal.crisis_lead_ids:
+            return True
+        from app.ops_reports_query import report_ids_for_crisis_scoped
+
+        for cid in principal.crisis_lead_ids:
+            if report_id in report_ids_for_crisis_scoped(db, cid, None, None, None, 5000):
+                return True
+        return False
+    visible = report_ids_in_zones(db, None, list(zone_ids), None, None, 5000)
+    return report_id in visible
 
 
 def report_ids_in_zones(

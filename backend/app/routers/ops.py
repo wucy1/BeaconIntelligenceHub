@@ -50,7 +50,7 @@ from app.ops_auth import (
 )
 from app.schemas import OpsReportSummary
 from app.validation import site_status_from_appendix
-from app.zone_scope import report_ids_in_zones, resolve_zone_filter_ids
+from app.zone_scope import principal_can_access_report, resolve_zone_filter_ids
 
 router = APIRouter(prefix="/v1/ops", tags=["ops"])
 
@@ -900,7 +900,7 @@ def ops_list_reports(
         geom_snapshots = saved.zone_snapshots
         zone_id = saved.zone_id if not geom_snapshots else None
     try:
-        zone_ids = resolve_zone_filter_ids(principal, zone_id)
+        zone_ids = resolve_zone_filter_ids(principal, zone_id, crisis_id)
     except ValueError as exc:
         if str(exc) == "zone_not_allowed":
             raise HTTPException(status_code=403, detail="Zone not in your assignment") from exc
@@ -1016,14 +1016,9 @@ def ops_batch_review_reports(
 ) -> dict:
     if not body.report_ids:
         return {"ok": True, "updated": 0}
-    visible: set[UUID] | None = None
-    if not principal.sees_all_zones():
-        visible = set(
-            report_ids_in_zones(db, None, list(principal.zone_ids), None, None, 2000)
-        )
     updated = 0
     for rid in body.report_ids:
-        if visible is not None and rid not in visible:
+        if not principal_can_access_report(db, principal, rid):
             continue
         r = db.query(Report).filter(Report.id == rid).first()
         if not r:
@@ -1059,10 +1054,8 @@ def ops_patch_report(
     r = q.first()
     if not r:
         raise HTTPException(status_code=404, detail="Report not found")
-    if not principal.sees_all_zones():
-        visible = report_ids_in_zones(db, None, principal.zone_ids, None, None, 500)
-        if r.id not in visible:
-            raise HTTPException(status_code=403, detail="Report outside your zones")
+    if not principal_can_access_report(db, principal, r.id, crisis_id):
+        raise HTTPException(status_code=403, detail="Report outside your zones")
     if body.reviewed is not None:
         r.admin_reviewed = body.reviewed
     if body.flagged is not None:

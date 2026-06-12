@@ -89,6 +89,16 @@ class OpsPrincipal:
     def sees_all_zones(self) -> bool:
         return self.is_system_admin()
 
+    def uses_coordinator_zone_filter(self, crisis_id: UUID | None = None) -> bool:
+        """Coordinators are limited to assigned zones; leads/admins use crisis-wide scope."""
+        if self.is_system_admin():
+            return False
+        if crisis_id is not None and self.is_crisis_lead(crisis_id):
+            return False
+        if crisis_id is None and self.crisis_lead_ids:
+            return False
+        return True
+
     def can_manage_users(self) -> bool:
         return self.is_system_admin()
 
