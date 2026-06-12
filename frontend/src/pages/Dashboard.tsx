@@ -10,10 +10,19 @@ import {
   buildOpsMapHref,
   defaultBrowseRange,
   parseOpsBrowseSearchParams,
+  savedReportToBrowseParams,
   type OpsBrowseParams,
 } from '../ops/opsBrowseParams';
 import { fromDatetimeLocalValue } from '../ops/polygonUtils';
-import { opsGet, opsPatch, opsPost, type OpsCrisis, type OpsZone } from '../ops/opsApi';
+import {
+  opsDelete,
+  opsGet,
+  opsPatch,
+  opsPost,
+  type OpsCrisis,
+  type OpsSavedReport,
+  type OpsZone,
+} from '../ops/opsApi';
 import {
   getOpsUser,
   opsHasStaffAccess,
@@ -70,6 +79,13 @@ export function Dashboard() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
   const [reviewId, setReviewId] = useState<string | null>(null);
+  const [savedReports, setSavedReports] = useState<OpsSavedReport[]>([]);
+  const [archiveStatus, setArchiveStatus] = useState<{
+    linked: number;
+    candidate: number;
+    total: number;
+  } | null>(null);
+  const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
 
   const manageableCrises = useMemo(() => crises.filter(isManageableCrisis), [crises]);
   const activeCrisis = manageableCrises.find((c) => c.id === crisisId);
@@ -164,9 +180,68 @@ export function Dashboard() {
     if (cur !== nxt) setSearchParams(next, { replace: true });
   }, [browseParams, setSearchParams]);
 
+  const loadSavedReports = useCallback(async () => {
+    try {
+      const d = await opsGet<{ items: OpsSavedReport[] }>('/v1/ops/saved-reports?limit=100');
+      setSavedReports(d.items);
+    } catch {
+      setSavedReports([]);
+    }
+  }, []);
+
+  const loadArchiveStatus = useCallback(async () => {
+    if (reportView !== 'crisis' || !crisisId || !activeCrisis) {
+      setArchiveStatus(null);
+      return;
+    }
+    try {
+      const q = new URLSearchParams({ limit: '500', view: 'crisis', crisis_id: crisisId });
+      if (activeCrisis.archive_window_start) q.set('captured_from', activeCrisis.archive_window_start);
+      if (activeCrisis.archive_window_end) q.set('captured_to', activeCrisis.archive_window_end);
+      const d = await opsGet<ListResp>(`/v1/ops/reports?${q}`);
+      setArchiveStatus({
+        linked: d.crisis_linked_count ?? 0,
+        candidate: d.crisis_candidate_count ?? 0,
+        total: (d.crisis_linked_count ?? 0) + (d.crisis_candidate_count ?? 0),
+      });
+    } catch {
+      setArchiveStatus(null);
+    }
+  }, [reportView, crisisId, activeCrisis]);
+
   useEffect(() => {
     void loadReports();
   }, [loadReports]);
+
+  useEffect(() => {
+    void loadSavedReports();
+  }, [loadSavedReports]);
+
+  useEffect(() => {
+    void loadArchiveStatus();
+  }, [loadArchiveStatus]);
+
+  const applySavedReport = (saved: OpsSavedReport) => {
+    const p = savedReportToBrowseParams(saved);
+    setReportView(p.view);
+    setCrisisId(p.crisisId);
+    setZoneId(p.zoneId);
+    setBrowseFrom(p.browseFrom);
+    setBrowseTo(p.browseTo);
+    setReviewFilter(saved.review_filter);
+    setActiveSavedId(saved.id);
+  };
+
+  const deleteSavedReport = async (id: string) => {
+    if (!window.confirm(t('dashboard.savedReportDeleteConfirm'))) return;
+    try {
+      await opsDelete(`/v1/ops/saved-reports/${id}`);
+      setSavedReports((prev) => prev.filter((r) => r.id !== id));
+      if (activeSavedId === id) setActiveSavedId(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const listStats = useMemo(() => {
     if (!data) return null;
@@ -290,11 +365,91 @@ export function Dashboard() {
             map: t('ops.nav.map'),
           })}
         </p>
-        <p className="muted">{t('dashboard.archiveScopeHint')}</p>
+        <p className="muted">{t('dashboard.rolesHint')}</p>
+      </section>
+
+      {reportView === 'crisis' && activeCrisis && (
+        <section className="ops-dash-section ops-archive-status-section">
+          <h2>{t('dashboard.archiveStatusTitle')}</h2>
+          <p className="muted">{t('dashboard.archiveStatusHint')}</p>
+          <div className="ops-archive-status-grid">
+            <div>
+              <span className="ops-stat-label">{t('dashboard.officialWindow')}</span>
+              <p>
+                {t('ops.map.archiveWindowRange', {
+                  from: activeCrisis.archive_window_start
+                    ? new Date(activeCrisis.archive_window_start).toLocaleString()
+                    : '—',
+                  to: activeCrisis.archive_window_end
+                    ? new Date(activeCrisis.archive_window_end).toLocaleString()
+                    : t('dashboard.openEnded'),
+                })}
+              </p>
+            </div>
+            <div>
+              <span className="ops-stat-label">{t('dashboard.officialZones')}</span>
+              <p>{t('dashboard.zoneCount', { count: zones.length })}</p>
+            </div>
+            {archiveStatus && (
+              <div>
+                <span className="ops-stat-label">{t('dashboard.officialLinkCounts')}</span>
+                <p>
+                  {t('dashboard.crisisLinkCounts', {
+                    total: archiveStatus.total,
+                    linked: archiveStatus.linked,
+                    candidate: archiveStatus.candidate,
+                  })}
+                </p>
+              </div>
+            )}
+          </div>
+          <Link to={`/ops/map?crisis_id=${crisisId}`} className="ops-dash-inline-link">
+            {t('dashboard.openArchiveOnMap')}
+          </Link>
+        </section>
+      )}
+
+      <section className="ops-dash-section">
+        <h2>{t('dashboard.savedReportsTitle')}</h2>
+        <p className="muted">{t('dashboard.savedReportsHint')}</p>
+        {savedReports.length === 0 ? (
+          <p className="muted">{t('dashboard.savedReportsEmpty')}</p>
+        ) : (
+          <ul className="ops-saved-reports-list">
+            {savedReports.map((saved) => {
+              const official = saved.crisis_id
+                ? crises.find((c) => c.id === saved.crisis_id)
+                : null;
+              return (
+                <li key={saved.id} className={activeSavedId === saved.id ? 'active' : ''}>
+                  <button type="button" className="ops-saved-report-btn" onClick={() => applySavedReport(saved)}>
+                    <strong>{saved.name}</strong>
+                    <span className="muted">
+                      {t(`dashboard.view.${saved.report_view}`)}
+                      {official && ` · ${crisisName(official.name, official.slug)}`}
+                      {saved.snapshot_total != null && ` · ${saved.snapshot_total} ${t('dashboard.savedAtCount')}`}
+                    </span>
+                    <span className="muted ops-saved-report-meta">
+                      {saved.updated_at ? new Date(saved.updated_at).toLocaleString() : ''}
+                      {saved.creator_email ? ` · ${saved.creator_email}` : ''}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="small secondary"
+                    onClick={() => void deleteSavedReport(saved.id)}
+                  >
+                    {t('dashboard.savedReportDelete')}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
 
       <section className="ops-dash-section">
-        <h2>{t('dashboard.filterTitle')}</h2>
+        <h2>{t('dashboard.queryTitle')}</h2>
         <div className="ops-review-tabs ops-dash-view-tabs">
           {(['crisis', 'unspecified', 'all'] as const).map((v) => (
             <button
@@ -367,7 +522,7 @@ export function Dashboard() {
             />
           </label>
         </div>
-        <p className="muted">{t('dashboard.browseTimeHint')}</p>
+        <p className="muted">{t('dashboard.queryTimeHint')}</p>
         {reportView === 'crisis' && crisisId && (
           <p className="muted">
             {t('dashboard.crisisLinkCounts', {

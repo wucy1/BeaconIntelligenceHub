@@ -142,6 +142,25 @@ class ReportCrisisLink(Base):
     link_source = Column(String, nullable=False, default="batch_archive")
 
 
+class OpsSavedReport(Base):
+    __tablename__ = "ops_saved_reports"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(Text, nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("ops_users.id", ondelete="SET NULL"), nullable=True)
+    report_view = Column(String, nullable=False, default="crisis")
+    crisis_id = Column(UUID(as_uuid=True), ForeignKey("crises.id", ondelete="CASCADE"), nullable=True)
+    zone_id = Column(UUID(as_uuid=True), ForeignKey("zones.id", ondelete="SET NULL"), nullable=True)
+    browse_from = Column(DateTime(timezone=True), nullable=True)
+    browse_to = Column(DateTime(timezone=True), nullable=True)
+    review_filter = Column(String, nullable=False, default="all")
+    snapshot_total = Column(Integer, nullable=True)
+    snapshot_linked = Column(Integer, nullable=True)
+    snapshot_candidate = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 class OpsAuditLog(Base):
     __tablename__ = "ops_audit_log"
 

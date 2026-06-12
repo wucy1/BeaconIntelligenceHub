@@ -31,6 +31,7 @@ from app.models import (
     Crisis,
     CrisisLeadAssignment,
     OpsAuditLog,
+    OpsSavedReport,
     OpsUser,
     Report,
     ReportCrisisLink,
@@ -96,11 +97,21 @@ class CrisisPatchBody(BaseModel):
 
 
 class ArchiveRunBody(BaseModel):
-    zone_ids: list[UUID] | None = None
     limit: int = Field(500, ge=1, le=2000)
-    captured_from: datetime | None = None
-    captured_to: datetime | None = None
     unlink_out_of_scope: bool = True
+
+
+class SavedReportCreateBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    report_view: str = Field("crisis", pattern="^(crisis|unspecified|all)$")
+    crisis_id: UUID | None = None
+    zone_id: UUID | None = None
+    browse_from: datetime | None = None
+    browse_to: datetime | None = None
+    review_filter: str = Field("all", pattern="^(all|pending|flagged|reviewed)$")
+    snapshot_total: int | None = None
+    snapshot_linked: int | None = None
+    snapshot_candidate: int | None = None
 
 
 class ProfilePatchBody(BaseModel):
@@ -236,10 +247,40 @@ def _user_out(db: Session, user: OpsUser) -> dict:
     }
 
 
-def _archive_window(crisis: Crisis, body: ArchiveRunBody) -> tuple[datetime | None, datetime | None]:
-    start = body.captured_from if body.captured_from is not None else crisis.archive_window_start
-    end = body.captured_to if body.captured_to is not None else crisis.archive_window_end
-    return start, end
+def _official_archive_scope(db: Session, crisis: Crisis) -> tuple[datetime | None, datetime | None, list[UUID]]:
+    zone_rows = db.query(Zone.id).filter(Zone.crisis_id == crisis.id).all()
+    zone_ids = [row[0] for row in zone_rows]
+    if not zone_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="Crisis has no zones; create zones before archiving",
+        )
+    if crisis.archive_status == "draft" and crisis.archive_window_start is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Draft crisis requires archive_window_start before archiving",
+        )
+    return crisis.archive_window_start, crisis.archive_window_end, zone_ids
+
+
+def _saved_report_out(row: OpsSavedReport, creator_email: str | None = None) -> dict:
+    return {
+        "id": str(row.id),
+        "name": row.name,
+        "created_by": str(row.created_by) if row.created_by else None,
+        "creator_email": creator_email,
+        "report_view": row.report_view,
+        "crisis_id": str(row.crisis_id) if row.crisis_id else None,
+        "zone_id": str(row.zone_id) if row.zone_id else None,
+        "browse_from": row.browse_from.isoformat() if row.browse_from else None,
+        "browse_to": row.browse_to.isoformat() if row.browse_to else None,
+        "review_filter": row.review_filter,
+        "snapshot_total": row.snapshot_total,
+        "snapshot_linked": row.snapshot_linked,
+        "snapshot_candidate": row.snapshot_candidate,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
 
 
 def _report_geom_json(db: Session, report_id: UUID, building_id: UUID | None):
@@ -595,11 +636,7 @@ def ops_archive_preview(
         raise HTTPException(status_code=422, detail="System unspecified crisis cannot be archived")
     if not principal.can_run_archive(crisis_id):
         raise HTTPException(status_code=403, detail="Cannot archive this crisis")
-    zone_ids = body.zone_ids
-    if zone_ids is None and not principal.is_system_admin():
-        zone_rows = db.query(Zone.id).filter(Zone.crisis_id == crisis_id).all()
-        zone_ids = [row[0] for row in zone_rows] if zone_rows else list(principal.zone_ids)
-    win_start, win_end = _archive_window(crisis, body)
+    win_start, win_end, zone_ids = _official_archive_scope(db, crisis)
     to_link = report_ids_for_archive(
         db,
         crisis_id,
@@ -634,7 +671,8 @@ def ops_archive_preview(
         "already_linked_count": total_linked,
         "archive_window_start": win_start.isoformat() if win_start else None,
         "archive_window_end": win_end.isoformat() if win_end else None,
-        "zone_ids": [str(z) for z in zone_ids] if zone_ids else None,
+        "zone_ids": [str(z) for z in zone_ids],
+        "zone_count": len(zone_ids),
     }
 
 
@@ -652,11 +690,7 @@ def ops_archive_run(
         raise HTTPException(status_code=422, detail="System unspecified crisis cannot be archived")
     if not principal.can_run_archive(crisis_id):
         raise HTTPException(status_code=403, detail="Cannot archive this crisis")
-    zone_ids = body.zone_ids
-    if zone_ids is None and not principal.is_system_admin():
-        zone_rows = db.query(Zone.id).filter(Zone.crisis_id == crisis_id).all()
-        zone_ids = [row[0] for row in zone_rows] if zone_rows else list(principal.zone_ids)
-    win_start, win_end = _archive_window(crisis, body)
+    win_start, win_end, zone_ids = _official_archive_scope(db, crisis)
     to_link = report_ids_for_archive(
         db,
         crisis_id,
@@ -710,7 +744,8 @@ def ops_archive_run(
         detail={
             "linked_count": created,
             "unlinked_count": removed,
-            "zone_ids": [str(z) for z in zone_ids] if zone_ids else None,
+            "zone_ids": [str(z) for z in zone_ids],
+            "zone_count": len(zone_ids),
             "archive_window_start": win_start.isoformat() if win_start else None,
             "archive_window_end": win_end.isoformat() if win_end else None,
             "unlink_out_of_scope": body.unlink_out_of_scope,
@@ -1211,6 +1246,96 @@ def ops_patch_settings(
         "default_ops_view_months": ops_months,
         "show_demo_cold_start_hint": demo_hint,
     }
+
+
+@router.get("/saved-reports")
+def ops_list_saved_reports(
+    limit: int = Query(50, ge=1, le=200),
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = (
+        db.query(OpsSavedReport, OpsUser.email)
+        .outerjoin(OpsUser, OpsUser.id == OpsSavedReport.created_by)
+        .order_by(OpsSavedReport.updated_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "items": [_saved_report_out(row, email) for row, email in rows],
+    }
+
+
+@router.post("/saved-reports")
+def ops_create_saved_report(
+    body: SavedReportCreateBody,
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    if body.report_view == "crisis" and not body.crisis_id:
+        raise HTTPException(status_code=422, detail="crisis_id required for crisis view")
+    row = OpsSavedReport(
+        name=body.name.strip(),
+        created_by=principal.user_id,
+        report_view=body.report_view,
+        crisis_id=body.crisis_id,
+        zone_id=body.zone_id,
+        browse_from=body.browse_from,
+        browse_to=body.browse_to,
+        review_filter=body.review_filter,
+        snapshot_total=body.snapshot_total,
+        snapshot_linked=body.snapshot_linked,
+        snapshot_candidate=body.snapshot_candidate,
+    )
+    db.add(row)
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="saved_report.create",
+        entity_type="saved_report",
+        entity_id=row.id,
+        detail={"name": row.name, "report_view": row.report_view},
+    )
+    db.commit()
+    db.refresh(row)
+    return _saved_report_out(row, principal.user.email)
+
+
+@router.get("/saved-reports/{report_id}")
+def ops_get_saved_report(
+    report_id: UUID,
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = db.query(OpsSavedReport).filter(OpsSavedReport.id == report_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Saved report not found")
+    creator = db.query(OpsUser.email).filter(OpsUser.id == row.created_by).scalar()
+    return _saved_report_out(row, creator)
+
+
+@router.delete("/saved-reports/{report_id}")
+def ops_delete_saved_report(
+    report_id: UUID,
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = db.query(OpsSavedReport).filter(OpsSavedReport.id == report_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Saved report not found")
+    if row.created_by != principal.user_id and not principal.is_system_admin():
+        raise HTTPException(status_code=403, detail="Cannot delete this saved report")
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="saved_report.delete",
+        entity_type="saved_report",
+        entity_id=report_id,
+        detail={"name": row.name},
+    )
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/bootstrap-admin")

@@ -10,12 +10,10 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 import {
   applyBrowseToSearchParams,
-  archiveTimesDifferFromBrowse,
   defaultBrowseRange,
   eventArchiveRange,
+  officialTimesDifferFromBrowse,
   parseOpsBrowseSearchParams,
-  rollingArchiveRange,
-  type ArchiveTimeMode,
   type OpsBrowseParams,
 } from '../ops/opsBrowseParams';
 
@@ -147,10 +145,12 @@ export function OpsMapPage() {
   const [reportView, setReportView] = useState<'crisis' | 'unspecified' | 'all'>(
     urlBrowse.view ?? 'crisis',
   );
-  const [archiveTimeMode, setArchiveTimeMode] = useState<ArchiveTimeMode>('event');
-  const [archiveFrom, setArchiveFrom] = useState('');
-  const [archiveTo, setArchiveTo] = useState('');
   const [unlinkOutOfScope, setUnlinkOutOfScope] = useState(true);
+  const [draftWindowOpen, setDraftWindowOpen] = useState(false);
+  const [draftWindowStart, setDraftWindowStart] = useState('');
+  const [draftWindowEnd, setDraftWindowEnd] = useState('');
+  const [saveReportOpen, setSaveReportOpen] = useState(false);
+  const [saveReportName, setSaveReportName] = useState('');
 
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -175,9 +175,16 @@ export function OpsMapPage() {
   const canSaveZone =
     zoneName.trim().length > 0 && vertices.length >= 3 && (mapMode === 'edit' || closed);
 
-  const archiveZoneLabel = selectedZone
-    ? (zones.find((z) => z.id === selectedZoneId)?.name ?? selectedZoneId ?? '—')
-    : t('ops.map.allZones');
+  const officialRange = eventArchiveRange(activeCrisis);
+  const browseDiffersFromOfficial = officialTimesDifferFromBrowse(
+    browseFrom,
+    browseTo,
+    officialRange.archiveFrom,
+    officialRange.archiveTo,
+  );
+  const archiveNeedsOfficialStart =
+    activeCrisis?.archive_status === 'draft' && !activeCrisis.archive_window_start;
+  const archiveMissingZones = zones.length === 0;
 
   useEffect(() => {
     if (!getOpsToken()) return;
@@ -337,46 +344,6 @@ export function OpsMapPage() {
     if (cur !== nxt) setSearchParams(next, { replace: true });
   }, [reportView, activeCrisisId, selectedZoneId, browseFrom, browseTo, setSearchParams]);
 
-  const resolveArchiveCaptured = useCallback(() => {
-    if (archiveTimeMode === 'event') {
-      const ev = eventArchiveRange(activeCrisis);
-      return {
-        captured_from: fromDatetimeLocalValue(ev.archiveFrom) || null,
-        captured_to: fromDatetimeLocalValue(ev.archiveTo) || null,
-      };
-    }
-    if (archiveTimeMode === 'rolling') {
-      const roll = rollingArchiveRange(defaultOpsMonths);
-      return {
-        captured_from: fromDatetimeLocalValue(roll.archiveFrom) || null,
-        captured_to: fromDatetimeLocalValue(roll.archiveTo) || null,
-      };
-    }
-    return {
-      captured_from: fromDatetimeLocalValue(archiveFrom) || null,
-      captured_to: fromDatetimeLocalValue(archiveTo) || null,
-    };
-  }, [archiveTimeMode, archiveFrom, archiveTo, activeCrisis, defaultOpsMonths]);
-
-  const displayArchiveFrom = useMemo(() => {
-    if (archiveTimeMode === 'event') return eventArchiveRange(activeCrisis).archiveFrom;
-    if (archiveTimeMode === 'rolling') return rollingArchiveRange(defaultOpsMonths).archiveFrom;
-    return archiveFrom;
-  }, [archiveTimeMode, archiveFrom, activeCrisis, defaultOpsMonths]);
-
-  const displayArchiveTo = useMemo(() => {
-    if (archiveTimeMode === 'event') return eventArchiveRange(activeCrisis).archiveTo;
-    if (archiveTimeMode === 'rolling') return rollingArchiveRange(defaultOpsMonths).archiveTo;
-    return archiveTo;
-  }, [archiveTimeMode, archiveTo, activeCrisis, defaultOpsMonths]);
-
-  const archiveDiffersFromBrowse = archiveTimesDifferFromBrowse(
-    browseFrom,
-    browseTo,
-    displayArchiveFrom,
-    displayArchiveTo,
-  );
-
   const clearZoneSelection = useCallback(() => {
     setSelectedZoneId(null);
     setFlyZone(null);
@@ -522,33 +489,85 @@ export function OpsMapPage() {
   };
 
   const initArchivePanel = () => {
-    const hasOfficial =
-      Boolean(activeCrisis?.archive_window_start) || Boolean(activeCrisis?.archive_window_end);
-    if (hasOfficial) {
-      setArchiveTimeMode('event');
-      const ev = eventArchiveRange(activeCrisis);
-      setArchiveFrom(ev.archiveFrom);
-      setArchiveTo(ev.archiveTo);
-    } else {
-      setArchiveTimeMode('rolling');
-      const roll = rollingArchiveRange(defaultOpsMonths);
-      setArchiveFrom(roll.archiveFrom);
-      setArchiveTo(roll.archiveTo);
-    }
     setUnlinkOutOfScope(activeCrisis?.archive_status !== 'draft');
     setPreview(null);
+    if (archiveNeedsOfficialStart) {
+      setDraftWindowStart('');
+      setDraftWindowEnd('');
+      setDraftWindowOpen(true);
+    }
+  };
+
+  const ensureArchiveReady = (): boolean => {
+    if (archiveMissingZones) {
+      setErr(t('ops.map.archiveNoZones'));
+      return false;
+    }
+    if (archiveNeedsOfficialStart) {
+      setDraftWindowOpen(true);
+      return false;
+    }
+    return true;
+  };
+
+  const saveDraftOfficialWindow = async () => {
+    if (!activeCrisisId || !draftWindowStart.trim()) {
+      setErr(t('ops.map.draftWindowStartRequired'));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const updated = await opsPatch<OpsCrisis>(`/v1/ops/crises/${activeCrisisId}`, {
+        archive_window_start: fromDatetimeLocalValue(draftWindowStart) || null,
+        archive_window_end: fromDatetimeLocalValue(draftWindowEnd) || null,
+      });
+      setCrises((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      setDraftWindowOpen(false);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveNamedReport = async () => {
+    const name = saveReportName.trim();
+    if (!name) {
+      setErr(t('ops.map.saveReportNameRequired'));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await opsPost('/v1/ops/saved-reports', {
+        name,
+        report_view: reportView,
+        crisis_id: reportView === 'crisis' ? activeCrisisId || null : null,
+        zone_id: selectedZoneId,
+        browse_from: fromDatetimeLocalValue(browseFrom) || null,
+        browse_to: fromDatetimeLocalValue(browseTo) || null,
+        review_filter: 'all',
+        snapshot_total: reports.length,
+        snapshot_linked: crisisLinkedCount,
+        snapshot_candidate: crisisCandidateCount,
+      });
+      setSaveReportOpen(false);
+      setSaveReportName('');
+      alert(t('ops.map.saveReportDone'));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const runArchivePreview = async () => {
-    if (!activeCrisisId) return;
+    if (!activeCrisisId || !ensureArchiveReady()) return;
     setBusy(true);
     try {
-      const { captured_from, captured_to } = resolveArchiveCaptured();
       const body = {
-        zone_ids: selectedZoneId ? [selectedZoneId] : null,
         limit: 500,
-        captured_from,
-        captured_to,
         unlink_out_of_scope: unlinkOutOfScope,
       };
       const p = await opsPost<ArchivePreview>(`/v1/ops/crises/${activeCrisisId}/archive-preview`, body);
@@ -562,17 +581,13 @@ export function OpsMapPage() {
   };
 
   const runArchive = async () => {
-    if (!activeCrisisId) return;
+    if (!activeCrisisId || !ensureArchiveReady()) return;
     const confirmKey = unlinkOutOfScope ? 'ops.map.archiveConfirmFull' : 'ops.map.archiveConfirmLinkOnly';
     if (!window.confirm(t(confirmKey))) return;
     setBusy(true);
     try {
-      const { captured_from, captured_to } = resolveArchiveCaptured();
       const body = {
-        zone_ids: selectedZoneId ? [selectedZoneId] : null,
         limit: 500,
-        captured_from,
-        captured_to,
         unlink_out_of_scope: unlinkOutOfScope,
       };
       const r = await opsPost<ArchiveRunResult>(`/v1/ops/crises/${activeCrisisId}/archive-run`, body);
@@ -755,7 +770,7 @@ export function OpsMapPage() {
       <div className="ops-map-view-panel">
         <div className="ops-map-view-row">
           <label className="ops-map-chip ops-map-view-field">
-            <span className="ops-map-view-label">{t('ops.map.viewPanel')}</span>
+            <span className="ops-map-view-label">{t('ops.map.queryPanel')}</span>
             <select
               value={reportView}
               onChange={(e) => setReportView(e.target.value as 'crisis' | 'unspecified' | 'all')}
@@ -855,11 +870,16 @@ export function OpsMapPage() {
             )}
           </div>
         </div>
-        {selectedZone && (
-          <button type="button" className="ops-map-chip ops-map-btn secondary" onClick={clearZoneSelection}>
-            {t('ops.map.clearZone')}
+        <div className="ops-map-view-actions">
+          <button type="button" className="ops-map-chip ops-map-btn" onClick={() => setSaveReportOpen(true)}>
+            {t('ops.map.saveReport')}
           </button>
-        )}
+          {selectedZone && (
+            <button type="button" className="ops-map-chip ops-map-btn secondary" onClick={clearZoneSelection}>
+              {t('ops.map.clearZone')}
+            </button>
+          )}
+        </div>
       </div>
 
       {err && (
@@ -970,81 +990,34 @@ export function OpsMapPage() {
               )}
             </p>
           )}
-          {archiveDiffersFromBrowse && (
+          {browseDiffersFromOfficial && (
             <p className="ops-archive-warn" role="status">
-              {t('ops.map.archiveBrowseDiffers')}
+              {t('ops.map.queryDiffersFromOfficial')}
+            </p>
+          )}
+          {archiveNeedsOfficialStart && (
+            <p className="ops-archive-warn" role="status">
+              {t('ops.map.archiveNeedsOfficialStart')}
+              <button type="button" className="linkish" onClick={() => setDraftWindowOpen(true)}>
+                {t('ops.map.setOfficialWindow')}
+              </button>
+            </p>
+          )}
+          {archiveMissingZones && (
+            <p className="ops-archive-warn" role="status">
+              {t('ops.map.archiveNoZones')}
             </p>
           )}
           <div className="ops-archive-window-block">
-            <p className="ops-archive-window-label">{t('ops.map.archiveTimeMode')}</p>
-            <div className="ops-archive-mode-row">
-              <label className="ops-archive-mode-opt">
-                <input
-                  type="radio"
-                  name="archiveTimeMode"
-                  checked={archiveTimeMode === 'event'}
-                  onChange={() => {
-                    setArchiveTimeMode('event');
-                    const ev = eventArchiveRange(activeCrisis);
-                    setArchiveFrom(ev.archiveFrom);
-                    setArchiveTo(ev.archiveTo);
-                  }}
-                />
-                {t('ops.map.archiveModeEvent')}
-              </label>
-              <label className="ops-archive-mode-opt">
-                <input
-                  type="radio"
-                  name="archiveTimeMode"
-                  checked={archiveTimeMode === 'rolling'}
-                  onChange={() => {
-                    setArchiveTimeMode('rolling');
-                    const roll = rollingArchiveRange(defaultOpsMonths);
-                    setArchiveFrom(roll.archiveFrom);
-                    setArchiveTo(roll.archiveTo);
-                  }}
-                />
-                {t('ops.map.archiveModeRolling', { months: defaultOpsMonths })}
-              </label>
-              <label className="ops-archive-mode-opt">
-                <input
-                  type="radio"
-                  name="archiveTimeMode"
-                  checked={archiveTimeMode === 'custom'}
-                  onChange={() => setArchiveTimeMode('custom')}
-                />
-                {t('ops.map.archiveModeCustom')}
-              </label>
-            </div>
-            {archiveTimeMode === 'custom' ? (
-              <div className="ops-archive-custom-times">
-                <label className="ops-field">
-                  <span>{t('ops.map.timeFrom')}</span>
-                  <input
-                    type="datetime-local"
-                    value={archiveFrom}
-                    onChange={(e) => setArchiveFrom(e.target.value)}
-                  />
-                </label>
-                <label className="ops-field">
-                  <span>{t('ops.map.timeTo')}</span>
-                  <input
-                    type="datetime-local"
-                    value={archiveTo}
-                    onChange={(e) => setArchiveTo(e.target.value)}
-                  />
-                </label>
-              </div>
-            ) : (
-              <p className="ops-archive-window-range">
-                {t('ops.map.archiveWindowRange', {
-                  from: formatPanelTime(displayArchiveFrom),
-                  to: formatPanelTime(displayArchiveTo),
-                })}
-              </p>
-            )}
+            <p className="ops-archive-window-label">{t('ops.map.officialArchiveWindow')}</p>
+            <p className="ops-archive-window-range">
+              {t('ops.map.archiveWindowRange', {
+                from: formatPanelTime(officialRange.archiveFrom),
+                to: formatPanelTime(officialRange.archiveTo),
+              })}
+            </p>
             <p className="muted ops-archive-window-zone">
-              {t('ops.map.archiveWindowZone', { zone: archiveZoneLabel })}
+              {t('ops.map.archiveAllZones', { count: zones.length })}
             </p>
             <p className="ops-archive-window-label">{t('ops.map.archiveStrategy')}</p>
             <div className="ops-archive-mode-row">
@@ -1070,10 +1043,18 @@ export function OpsMapPage() {
             <p className="muted ops-archive-window-note">{t('ops.map.archiveWindowNote')}</p>
           </div>
           <div className="ops-map-card-actions">
-            <button type="button" onClick={runArchivePreview} disabled={busy}>
+            <button
+              type="button"
+              onClick={runArchivePreview}
+              disabled={busy || archiveNeedsOfficialStart || archiveMissingZones}
+            >
               {t('ops.map.archivePreview')}
             </button>
-            <button type="button" onClick={runArchive} disabled={busy}>
+            <button
+              type="button"
+              onClick={runArchive}
+              disabled={busy || archiveNeedsOfficialStart || archiveMissingZones}
+            >
               {t('ops.map.archiveRun')}
             </button>
           </div>
@@ -1133,6 +1114,79 @@ export function OpsMapPage() {
             ))}
           </ul>
           {audit.length === 0 && <p className="muted">尚無紀錄</p>}
+        </div>
+      )}
+
+      {draftWindowOpen && (
+        <div className="ops-map-modal-backdrop" role="presentation" onClick={() => setDraftWindowOpen(false)}>
+          <div
+            className="ops-map-modal"
+            role="dialog"
+            aria-labelledby="ops-draft-window-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="ops-draft-window-title">{t('ops.map.draftWindowTitle')}</h3>
+            <p className="muted">{t('ops.map.draftWindowHint')}</p>
+            <label className="ops-field">
+              <span>{t('ops.map.officialStart')}</span>
+              <input
+                className="ops-input"
+                type="datetime-local"
+                value={draftWindowStart}
+                onChange={(e) => setDraftWindowStart(e.target.value)}
+                required
+              />
+            </label>
+            <label className="ops-field">
+              <span>{t('ops.map.officialEnd')}</span>
+              <input
+                className="ops-input"
+                type="datetime-local"
+                value={draftWindowEnd}
+                onChange={(e) => setDraftWindowEnd(e.target.value)}
+              />
+            </label>
+            <p className="muted">{t('ops.map.officialEndOptional')}</p>
+            <div className="ops-map-card-actions">
+              <button type="button" onClick={saveDraftOfficialWindow} disabled={busy}>
+                {t('ops.map.draftWindowSave')}
+              </button>
+              <button type="button" className="secondary" onClick={() => setDraftWindowOpen(false)}>
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {saveReportOpen && (
+        <div className="ops-map-modal-backdrop" role="presentation" onClick={() => setSaveReportOpen(false)}>
+          <div
+            className="ops-map-modal"
+            role="dialog"
+            aria-labelledby="ops-save-report-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="ops-save-report-title">{t('ops.map.saveReportTitle')}</h3>
+            <p className="muted">{t('ops.map.saveReportHint')}</p>
+            <label className="ops-field">
+              <span>{t('ops.map.saveReportName')}</span>
+              <input
+                className="ops-input"
+                value={saveReportName}
+                onChange={(e) => setSaveReportName(e.target.value)}
+                placeholder={t('ops.map.saveReportNamePlaceholder')}
+              />
+            </label>
+            <div className="ops-map-card-actions">
+              <button type="button" onClick={saveNamedReport} disabled={busy}>
+                {t('ops.map.saveReportConfirm')}
+              </button>
+              <button type="button" className="secondary" onClick={() => setSaveReportOpen(false)}>
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

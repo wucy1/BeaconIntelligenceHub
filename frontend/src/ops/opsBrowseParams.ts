@@ -11,31 +11,10 @@ export type OpsBrowseParams = {
   browseTo: string;
 };
 
-export type ArchiveTimeMode = 'event' | 'custom' | 'rolling';
-
-export function rollingArchiveRange(defaultOpsMonths: number): {
-  archiveFrom: string;
-  archiveTo: string;
+export function rollingBrowseRange(defaultOpsMonths: number): {
+  browseFrom: string;
+  browseTo: string;
 } {
-  const end = new Date();
-  const start = new Date(end);
-  start.setMonth(start.getMonth() - defaultOpsMonths);
-  return {
-    archiveFrom: toDatetimeLocalValue(start.toISOString()),
-    archiveTo: toDatetimeLocalValue(end.toISOString()),
-  };
-}
-
-export function defaultBrowseRange(
-  crisis: OpsCrisis | null | undefined,
-  defaultOpsMonths: number,
-): { browseFrom: string; browseTo: string } {
-  if (crisis?.archive_window_start || crisis?.archive_window_end) {
-    return {
-      browseFrom: toDatetimeLocalValue(crisis.archive_window_start),
-      browseTo: toDatetimeLocalValue(crisis.archive_window_end),
-    };
-  }
   const end = new Date();
   const start = new Date(end);
   start.setMonth(start.getMonth() - defaultOpsMonths);
@@ -43,6 +22,13 @@ export function defaultBrowseRange(
     browseFrom: toDatetimeLocalValue(start.toISOString()),
     browseTo: toDatetimeLocalValue(end.toISOString()),
   };
+}
+
+export function defaultBrowseRange(
+  _crisis: OpsCrisis | null | undefined,
+  defaultOpsMonths: number,
+): { browseFrom: string; browseTo: string } {
+  return rollingBrowseRange(defaultOpsMonths);
 }
 
 export function eventArchiveRange(crisis: OpsCrisis | null | undefined): {
@@ -135,11 +121,29 @@ export function buildDashboardHref(p: OpsBrowseParams): string {
   return s ? `/dashboard?${s}` : '/dashboard';
 }
 
-export function archiveTimesDifferFromBrowse(
+export function officialTimesDifferFromBrowse(
   browseFrom: string,
   browseTo: string,
-  archiveFrom: string,
-  archiveTo: string,
+  officialFrom: string,
+  officialTo: string,
 ): boolean {
-  return browseFrom !== archiveFrom || browseTo !== archiveTo;
+  return browseFrom !== officialFrom || browseTo !== officialTo;
+}
+
+export function savedReportToBrowseParams(
+  saved: {
+    report_view: OpsReportView;
+    crisis_id: string | null;
+    zone_id: string | null;
+    browse_from: string | null;
+    browse_to: string | null;
+  },
+): OpsBrowseParams {
+  return {
+    view: saved.report_view,
+    crisisId: saved.crisis_id ?? '',
+    zoneId: saved.zone_id ?? '',
+    browseFrom: saved.browse_from ? isoToDatetimeLocal(saved.browse_from) : '',
+    browseTo: saved.browse_to ? isoToDatetimeLocal(saved.browse_to) : '',
+  };
 }

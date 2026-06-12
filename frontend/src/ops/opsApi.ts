@@ -117,6 +117,25 @@ export type ArchivePreview = {
   archive_window_start: string | null;
   archive_window_end: string | null;
   zone_ids: string[] | null;
+  zone_count?: number;
+};
+
+export type OpsSavedReport = {
+  id: string;
+  name: string;
+  created_by: string | null;
+  creator_email?: string | null;
+  report_view: 'crisis' | 'unspecified' | 'all';
+  crisis_id: string | null;
+  zone_id: string | null;
+  browse_from: string | null;
+  browse_to: string | null;
+  review_filter: 'all' | 'pending' | 'flagged' | 'reviewed';
+  snapshot_total: number | null;
+  snapshot_linked: number | null;
+  snapshot_candidate: number | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 export type ArchiveRunResult = {

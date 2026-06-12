@@ -2220,6 +2220,74 @@ button.danger {
   white-space: nowrap;
 }
 
+.ops-map-view-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.ops-map-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.ops-map-modal {
+  width: min(420px, 100%);
+  padding: 1rem;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.2);
+}
+
+.ops-archive-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.ops-saved-reports-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ops-saved-reports-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.ops-saved-reports-list li.active {
+  background: #f8fafc;
+}
+
+.ops-saved-report-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ops-saved-report-meta {
+  font-size: 0.78rem;
+}
+
 @media (max-width: 640px) {
   .ops-archive-custom-times,
   .ops-dash-browse-times {
