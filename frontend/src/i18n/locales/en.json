@@ -389,6 +389,8 @@
   "ops.map.viewHint.unspecified": "Unlinked: in range, not archived to any crisis",
   "ops.map.viewHint.crisis": "Archived: only reports linked to this work crisis",
   "ops.map.reportCountLinked": "{{count}} archived",
+  "ops.map.reportCountThisCrisis": "{{count}} this crisis",
+  "ops.map.reportCountMeta": "{{total}} total · {{other}} other · {{candidate}} unlinked",
   "ops.map.noCrisis": "No crisis ·",
   "ops.map.timeFrom": "From",
   "ops.map.timeTo": "To",

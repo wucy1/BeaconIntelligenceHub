@@ -389,6 +389,8 @@
   "ops.map.viewHint.unspecified": "未歸檔：同上範圍內尚未連結至任何危機",
   "ops.map.viewHint.crisis": "已歸檔：僅顯示已連結至此工作危機的回報",
   "ops.map.reportCountLinked": "已歸檔 {{count}} 筆",
+  "ops.map.reportCountThisCrisis": "此危機 {{count}} 筆",
+  "ops.map.reportCountMeta": "共 {{total}} · 他 {{other}} · 未歸檔 {{candidate}}",
   "ops.map.noCrisis": "尚無危機 ·",
   "ops.map.timeFrom": "時間起",
   "ops.map.timeTo": "時間迄",
