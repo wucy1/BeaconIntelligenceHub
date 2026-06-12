@@ -144,7 +144,10 @@ async function probeApiReady(): Promise<boolean> {
 }
 
 /** 提交回報／同步佇列前：等待 API + Neon 就緒（冷啟動可能需 1–2 分鐘） */
-export async function ensureApiReady(timeoutMs = 90_000): Promise<void> {
+export async function ensureApiReady(
+  timeoutMs = 90_000,
+  opts?: { soft?: boolean },
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let delay = 2000;
   while (Date.now() < deadline) {
@@ -152,6 +155,7 @@ export async function ensureApiReady(timeoutMs = 90_000): Promise<void> {
     await sleep(delay);
     delay = Math.min(delay + 1000, 8000);
   }
+  if (opts?.soft) return;
   throw new Error(
     '後端尚在喚醒中（Render + Neon 常需 1–2 分鐘）。請稍後再按「立即同步」或「重新連線」。',
   );

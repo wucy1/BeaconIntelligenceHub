@@ -68,7 +68,8 @@ export function OpsDashboard() {
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserName, setNewUserName] = useState('');
   const [newUserRole, setNewUserRole] = useState<'coordinator' | 'system_admin'>('coordinator');
-  const [resetPasswordByUser, setResetPasswordByUser] = useState<Record<string, string>>({});
+  const [resetPwdUser, setResetPwdUser] = useState<OpsUserRecord | null>(null);
+  const [resetPwdValue, setResetPwdValue] = useState('');
   const [assignLeadUserId, setAssignLeadUserId] = useState('');
   const [assignLeadCrisisId, setAssignLeadCrisisId] = useState('');
   const [assignCoordCrisisId, setAssignCoordCrisisId] = useState('');
@@ -86,7 +87,7 @@ export function OpsDashboard() {
 
   const selectedCrisis = crises.find((c) => c.id === selectedCrisisId) ?? null;
   const assignLeadCrisis = crises.find((c) => c.id === assignLeadCrisisId) ?? null;
-  const coordCrisisId = isAdmin ? assignCoordCrisisId : selectedCrisisId;
+  const coordCrisisId = assignCoordCrisisId || selectedCrisisId;
   const crisisZones = zones.filter((z) => z.crisis_id === coordCrisisId);
   const canAssignCoord = selectedCrisisId ? opsCanAssignCoordinator(user, selectedCrisisId) : false;
   const isLeadForSelected = selectedCrisisId ? opsIsCrisisLead(user, selectedCrisisId) : false;
@@ -357,8 +358,9 @@ export function OpsDashboard() {
     }
   };
 
-  const resetUserPassword = async (userId: string) => {
-    const password = resetPasswordByUser[userId]?.trim() ?? '';
+  const resetUserPassword = async () => {
+    if (!resetPwdUser) return;
+    const password = resetPwdValue.trim();
     if (password.length < 8) {
       setUserFormMsg(t('ops.team.needUserFields'));
       return;
@@ -366,9 +368,10 @@ export function OpsDashboard() {
     setBusy(true);
     setUserFormMsg(null);
     try {
-      await opsPatch(`/v1/ops/users/${userId}`, { password });
-      setResetPasswordByUser((prev) => ({ ...prev, [userId]: '' }));
-      setUserFormMsg(t('ops.team.passwordReset'));
+      await opsPatch(`/v1/ops/users/${resetPwdUser.id}`, { password });
+      setResetPwdUser(null);
+      setResetPwdValue('');
+      setUserFormMsg(t('ops.team.passwordResetFor', { email: resetPwdUser.email }));
       loadAudit();
     } catch (e) {
       setUserFormMsg(e instanceof Error ? e.message : String(e));
@@ -391,6 +394,10 @@ export function OpsDashboard() {
   };
 
   const manageableCrises = useMemo(() => crises.filter(isManageableCrisis), [crises]);
+  const coordAssignableCrises = useMemo(
+    () => manageableCrises.filter((c) => opsCanAssignCoordinator(user, c.id)),
+    [manageableCrises, user],
+  );
 
   const workflowSteps = isAdmin
     ? [
@@ -700,27 +707,24 @@ export function OpsDashboard() {
             <div className="ops-dash-form">
               <h3>指派分區 Coordinator</h3>
               <p className="muted">請先於營運地圖畫好分區，再指派人員。</p>
-              {isAdmin && crises.length > 0 && (
+              {coordAssignableCrises.length > 0 && (
                 <label className="ops-field">
-                  危機
+                  {t('ops.crises.select')}
                   <select
                     className="ops-input"
-                    value={assignCoordCrisisId}
+                    value={coordCrisisId}
                     onChange={(e) => {
                       setAssignCoordCrisisId(e.target.value);
                       setAssignZoneId('');
                     }}
                   >
-                    {manageableCrises.map((c) => (
+                    {coordAssignableCrises.map((c) => (
                       <option key={c.id} value={c.id}>
                         {crisisName(c.name, c.slug)}
                       </option>
                     ))}
                   </select>
                 </label>
-              )}
-              {!isAdmin && selectedCrisis && (
-                <p className="muted">危機：{crisisName(selectedCrisis.name, selectedCrisis.slug)}</p>
               )}
               <select className="ops-input" value={assignUserId} onChange={(e) => setAssignUserId(e.target.value)}>
                 <option value="">選擇人員</option>
@@ -783,20 +787,18 @@ export function OpsDashboard() {
                       ))}
                     </ul>
                   )}
-                  <div className="ops-user-reset-password">
-                    <input
-                      className="ops-input"
-                      type="password"
-                      placeholder={t('ops.team.resetPasswordPlaceholder')}
-                      value={resetPasswordByUser[u.id] ?? ''}
-                      onChange={(e) =>
-                        setResetPasswordByUser((prev) => ({ ...prev, [u.id]: e.target.value }))
-                      }
-                    />
-                    <button type="button" disabled={busy} onClick={() => resetUserPassword(u.id)}>
-                      {t('ops.team.resetPassword')}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className="linkish"
+                    disabled={busy}
+                    onClick={() => {
+                      setResetPwdUser(u);
+                      setResetPwdValue('');
+                      setUserFormMsg(null);
+                    }}
+                  >
+                    {t('ops.team.resetPassword')}
+                  </button>
                 </li>
               ))}
             </ul>
@@ -818,6 +820,47 @@ export function OpsDashboard() {
           </ul>
           {audit.length === 0 && <p className="muted">尚無紀錄</p>}
         </section>
+      )}
+      {resetPwdUser && (
+        <div
+          className="ops-review-modal-backdrop"
+          role="presentation"
+          onClick={() => setResetPwdUser(null)}
+        >
+          <div
+            className="ops-review-modal card ops-dash-form"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ops-reset-pwd-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="ops-review-modal-header">
+              <h2 id="ops-reset-pwd-title">{t('ops.team.resetPasswordTitle')}</h2>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setResetPwdUser(null)}
+                aria-label={t('common.cancel')}
+              >
+                ×
+              </button>
+            </header>
+            <p className="muted">{t('ops.team.resetPasswordHint', { email: resetPwdUser.email })}</p>
+            <label className="ops-field">
+              {t('ops.team.resetPasswordPlaceholder')}
+              <input
+                className="ops-input"
+                type="password"
+                autoComplete="new-password"
+                value={resetPwdValue}
+                onChange={(e) => setResetPwdValue(e.target.value)}
+              />
+            </label>
+            <button type="button" disabled={busy || resetPwdValue.length < 8} onClick={() => void resetUserPassword()}>
+              {busy ? t('ops.profile.passwordSaving') : t('ops.team.resetPasswordConfirm')}
+            </button>
+          </div>
+        </div>
       )}
     </section>
   );

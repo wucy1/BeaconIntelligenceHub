@@ -34,7 +34,9 @@ import {
   type OpsUserSession,
 } from '../ops/opsAuth';
 import { BihLogo } from '../components/BihLogo';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { OpsUserMenu } from '../components/OpsUserMenu';
+import { applyOpsProfileLocaleIfSet } from '../ops/applyOpsLocale';
 import { OsmTileLayer } from '../components/map/CachedOsmTileLayer';
 import { MapRailZoom } from '../components/map/MapRailZoom';
 import { OpsMapClearSelection } from '../components/ops/OpsMapClearSelection';
@@ -97,7 +99,7 @@ function FlyToPoint({ point }: { point: [number, number] | null }) {
 }
 
 export function OpsMapPage() {
-  const { t, crisisName } = useI18n();
+  const { t, crisisName, setLocale } = useI18n();
   const [searchParams] = useSearchParams();
   const crisisFromUrl = searchParams.get('crisis_id') ?? '';
   const reportFromUrl = searchParams.get('report_id');
@@ -159,6 +161,15 @@ export function OpsMapPage() {
   const archiveZoneLabel = selectedZone
     ? (zones.find((z) => z.id === selectedZoneId)?.name ?? selectedZoneId ?? '—')
     : t('ops.map.allZones');
+
+  useEffect(() => {
+    if (!getOpsToken()) return;
+    opsGet<{ locale?: string | null }>('/v1/ops/me')
+      .then((me) => {
+        applyOpsProfileLocaleIfSet(me.locale, setLocale);
+      })
+      .catch(() => undefined);
+  }, [setLocale]);
 
   useEffect(() => {
     if (!viewHelpOpen) return;
@@ -614,6 +625,7 @@ export function OpsMapPage() {
           </Link>
         </div>
         <div className="ops-map-top-right">
+          <LanguageSwitcher />
           <OpsUserMenu className="ops-map-user-menu" compact />
         </div>
       </div>
@@ -624,14 +636,14 @@ export function OpsMapPage() {
             type="button"
             className={`ops-map-fab ${mapMode === 'draw' ? 'active' : ''}`}
             onClick={startDraw}
-            title={!canCreateZones && activeCrisisId ? '此危機無畫分區權限' : undefined}
+            title={!canCreateZones && activeCrisisId ? t('ops.map.drawZoneDenied') : undefined}
           >
-            ＋ 畫分區
+            {t('ops.map.drawZone')}
           </button>
         )}
         {canArchive && (
           <button type="button" className={`ops-map-fab ${panel === 'crisis' ? 'active' : ''}`} onClick={() => togglePanel('crisis')}>
-            危機歸檔
+            {t('ops.map.archiveFab')}
           </button>
         )}
         {isAdmin && (

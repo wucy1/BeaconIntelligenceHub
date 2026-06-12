@@ -84,7 +84,7 @@ function htmlLang(locale: UiLocale): string {
 
 
 
-function detectDeviceLocale(): UiLocale {
+export function detectDeviceLocale(): UiLocale {
 
   if (typeof navigator === 'undefined') return 'en';
 

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 
-import { UI_LOCALES, useI18n, type UiLocale } from '../i18n/I18nContext';
+import { UI_LOCALES, useI18n } from '../i18n/I18nContext';
+import { applyOpsProfileLocale } from '../ops/applyOpsLocale';
 import { LOCALE_LABELS } from '../i18n/localeLabels';
 import { opsGet, opsPatch } from '../ops/opsApi';
 import { getOpsUser, setOpsSession, getOpsToken } from '../ops/opsAuth';
@@ -36,7 +37,7 @@ export function OpsProfile() {
   const [pwdErr, setPwdErr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
     opsGet<MeProfile>('/v1/ops/me')
       .then((me) => {
         setDisplayName(me.display_name ?? '');
@@ -46,7 +47,7 @@ export function OpsProfile() {
         setOrgUnit(me.org_unit ?? '');
       })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, [user]);
+  }, [user?.id]);
 
   if (!user) return <Navigate to="/ops/login" replace />;
 
@@ -97,12 +98,15 @@ export function OpsProfile() {
         title: title.trim() || null,
         org_unit: orgUnit.trim() || null,
       });
+      setProfileLocale(saved.locale ?? '');
       setOpsSession(token, {
         ...user,
         display_name: saved.display_name,
       });
-      if (saved.locale && UI_LOCALES.includes(saved.locale as UiLocale)) {
-        setLocale(saved.locale as UiLocale);
+      applyOpsProfileLocale(saved.locale, setLocale);
+      if (profileLocale && !saved.locale) {
+        setErr(t('ops.profile.localeSaveFailed'));
+        return;
       }
       setMsg(t('ops.profile.saved'));
     } catch (e) {

@@ -1,4 +1,10 @@
 import { apiGet, apiPost, apiPutRaw, ensureApiReady, sha256Hex, SUBMIT_TIMEOUT_MS } from '../api';
+import {
+  clearApiUploadPreference,
+  rememberApiUploadPreferred,
+  shouldSoftWakeApi,
+  shouldTryApiUploadFirst,
+} from '../utils/browserUpload';
 import { UNSPECIFIED_CRISIS_ID } from '../constants/crisis';
 import { openOfflineDb } from './openDb';
 
@@ -169,23 +175,48 @@ function isDirectR2PutFailure(err: unknown): boolean {
   return false;
 }
 
+async function putViaPresign(
+  uploadCrisisId: string,
+  file: File,
+  checksum: string,
+  viaApi: boolean,
+): Promise<{ putUrl: string; objectKey: string }> {
+  const presign = await presignUpload(uploadCrisisId, file, checksum, viaApi);
+  const mime = file.type || 'image/jpeg';
+  await apiPutRaw(presign.putUrl, file, mime, { timeoutMs: SUBMIT_TIMEOUT_MS });
+  return presign;
+}
+
 async function putUploadFile(
   uploadCrisisId: string,
   file: File,
   checksum: string,
 ): Promise<{ putUrl: string; objectKey: string }> {
-  let presign = await presignUpload(uploadCrisisId, file, checksum, false);
-  const mime = file.type || 'image/jpeg';
-  try {
-    await apiPutRaw(presign.putUrl, file, mime, { timeoutMs: SUBMIT_TIMEOUT_MS });
-    return presign;
-  } catch (e) {
-    if (!isDirectR2PutFailure(e) || presign.putUrl.includes('/v1/uploads/receive/')) {
-      throw e;
+  const tryApiFirst = await shouldTryApiUploadFirst();
+
+  if (tryApiFirst) {
+    try {
+      const result = await putViaPresign(uploadCrisisId, file, checksum, true);
+      return result;
+    } catch (apiErr) {
+      try {
+        const result = await putViaPresign(uploadCrisisId, file, checksum, false);
+        clearApiUploadPreference();
+        return result;
+      } catch {
+        throw apiErr;
+      }
     }
-    presign = await presignUpload(uploadCrisisId, file, checksum, true);
-    await apiPutRaw(presign.putUrl, file, mime, { timeoutMs: SUBMIT_TIMEOUT_MS });
-    return presign;
+  }
+
+  try {
+    const result = await putViaPresign(uploadCrisisId, file, checksum, false);
+    clearApiUploadPreference();
+    return result;
+  } catch (e) {
+    if (!isDirectR2PutFailure(e)) throw e;
+    rememberApiUploadPreferred();
+    return putViaPresign(uploadCrisisId, file, checksum, true);
   }
 }
 
@@ -195,7 +226,10 @@ export async function submitReportOnline(
   file: File,
   opts?: { skipWake?: boolean },
 ): Promise<SubmitReportResult> {
-  if (!opts?.skipWake) await ensureApiReady();
+  if (!opts?.skipWake) {
+    const soft = await shouldSoftWakeApi();
+    await ensureApiReady(soft ? 30_000 : 90_000, { soft });
+  }
   if (!globalThis.crypto?.subtle) {
     throw new Error('此瀏覽器環境無法計算檔案雜湊，請使用 HTTPS 或更換瀏覽器。');
   }
@@ -208,7 +242,7 @@ export async function submitReportOnline(
     const msg = e instanceof Error ? e.message : String(e);
     if (msg.includes('上傳圖片失敗') || msg.includes('R2 CORS') || msg.includes('無法連到上傳端點')) {
       throw new Error(
-        `${msg} 若使用 Brave，請暫時關閉此站的「盾牌」後重試。`,
+        `${msg} 系統已嘗試改走 API 代理；若仍失敗請檢查網路、稍後重試，或關閉瀏覽器隱私阻擋（Brave 盾牌、Safari 跨站追蹤等）。`,
       );
     }
     throw new Error(`上傳圖片失敗：${msg}`);
@@ -240,7 +274,8 @@ export async function submitReportOnline(
 export async function syncQueue(): Promise<{ synced: number; failed: number }> {
   if (!navigator.onLine) return { synced: 0, failed: 0 };
   await resetStuckSyncing();
-  await ensureApiReady();
+  const soft = await shouldSoftWakeApi();
+  await ensureApiReady(soft ? 30_000 : 90_000, { soft });
   const items = await listPending();
   let synced = 0;
   let failed = 0;
