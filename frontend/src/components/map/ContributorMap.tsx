@@ -17,6 +17,7 @@ import 'leaflet/dist/leaflet.css';
 
 import { useI18n } from '../../i18n/I18nContext';
 import { centroidOfFeature } from '../../utils/buildingAtPoint';
+import { normalizeBboxString } from '../../utils/mapBbox';
 import { buildingDisplayById, buildingFootprintStyle, resolveGroupDisplay } from '../../utils/mapMarkers';
 import {
   MapZoomLimits,
@@ -147,7 +148,7 @@ function BboxWatcher({ onBboxChange }: { onBboxChange: (bbox: string) => void })
 
   const emit = () => {
     const b = map.getBounds();
-    const s = `${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`;
+    const s = normalizeBboxString(`${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`);
     onBboxChange(s);
   };
 
@@ -465,6 +466,7 @@ export function ContributorMap({
       zoom={initialZoom}
       scrollWheelZoom
       zoomControl={false}
+      worldCopyJump={false}
     >
       {!online ? (
         <>

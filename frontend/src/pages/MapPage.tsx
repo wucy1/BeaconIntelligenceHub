@@ -470,7 +470,7 @@ export function MapPage() {
           if (cancelled || bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
           setBuildingsError(e instanceof Error ? e.message : String(e));
         } finally {
-          if (!cancelled && bboxRef.current === requestedBbox && scopeRef.current === requestedScope) {
+          if (bboxRef.current === requestedBbox && scopeRef.current === requestedScope) {
             setBuildingsLoading(false);
           }
         }
@@ -545,7 +545,7 @@ export function MapPage() {
           setAllMarkers([]);
           setMarkersError(e instanceof Error ? e.message : String(e));
         } finally {
-          if (!cancelled && bboxRef.current === requestedBbox && scopeRef.current === requestedScope) {
+          if (bboxRef.current === requestedBbox && scopeRef.current === requestedScope) {
             setMarkersLoading(false);
           }
         }

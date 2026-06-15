@@ -1,6 +1,21 @@
 import type { MapMarker } from '../components/map/ContributorMap';
 import { centroidOfFeature } from './buildingAtPoint';
 
+/** Leaflet world-copy bounds can use lng > 180; API expects WGS84 [-180, 180]. */
+export function normalizeLng(lng: number): number {
+  let x = lng;
+  while (x > 180) x -= 360;
+  while (x < -180) x += 360;
+  return x;
+}
+
+export function normalizeBboxString(bbox: string): string {
+  const box = parseBbox(bbox);
+  if (!box) return bbox;
+  const [w, s, e, n] = box;
+  return `${normalizeLng(w)},${s},${normalizeLng(e)},${n}`;
+}
+
 export function parseBbox(bbox: string): [number, number, number, number] | null {
   const parts = bbox.split(',').map(Number);
   if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return null;
@@ -8,7 +23,7 @@ export function parseBbox(bbox: string): [number, number, number, number] | null
 }
 
 function pointInBbox(lng: number, lat: number, bbox: string): boolean {
-  const box = parseBbox(bbox);
+  const box = parseBbox(normalizeBboxString(bbox));
   if (!box) return true;
   const [minLng, minLat, maxLng, maxLat] = box;
   return lng >= minLng && lng <= maxLng && lat >= minLat && lat <= maxLat;
