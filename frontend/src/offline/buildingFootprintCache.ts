@@ -38,6 +38,40 @@ export async function saveRegionFootprints(bundle: OfflineFootprintBundle): Prom
   });
 }
 
+export function viewportBundleId(fetchKey: string): string {
+  return `viewport:${fetchKey}`;
+}
+
+export async function saveViewportFootprints(
+  fetchKey: string,
+  bbox: string,
+  collection: GeoJSON.FeatureCollection,
+): Promise<void> {
+  const box = parseBbox(bbox);
+  if (!box) return;
+  const { west, south, east, north } = box;
+  const bundle: OfflineFootprintBundle = {
+    regionId: viewportBundleId(fetchKey),
+    center: { lat: (south + north) / 2, lng: (west + east) / 2 },
+    radiusKm: 0,
+    bbox: box,
+    downloadedAt: new Date().toISOString(),
+    featureCount: collection.features.length,
+    collection,
+  };
+  await saveRegionFootprints(bundle);
+}
+
+export async function getViewportFootprints(fetchKey: string): Promise<OfflineFootprintBundle | null> {
+  const db = await openOfflineDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).get(viewportBundleId(fetchKey));
+    req.onsuccess = () => resolve((req.result as OfflineFootprintBundle) ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 export async function listOfflineFootprintBundles(): Promise<OfflineFootprintBundle[]> {
   const db = await openOfflineDb();
   return new Promise((resolve, reject) => {
@@ -55,6 +89,7 @@ export async function loadFootprintsForBbox(bbox: string): Promise<GeoJSON.Featu
   const seen = new Set<string>();
   const features: GeoJSON.Feature[] = [];
   for (const bundle of bundles) {
+    if (bundle.regionId.startsWith('viewport:')) continue;
     if (!bboxesOverlap(box, bundle.bbox)) continue;
     for (const f of bundle.collection.features) {
       const bid = (f.properties?.building_id as string) ?? '';

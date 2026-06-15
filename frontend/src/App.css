@@ -1433,6 +1433,12 @@ button.danger {
   font-weight: 700;
 }
 
+.map-offline-footprints-viewport {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e2e8f0;
+}
+
 .map-offline-download-meta {
   margin: 0.15rem 0;
   color: #334155;

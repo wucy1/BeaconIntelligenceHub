@@ -1,4 +1,5 @@
 import { apiGet, BUILDINGS_FETCH_TIMEOUT_MS } from '../api';
+import { normalizeBboxString } from '../utils/mapBbox';
 import {
   footprintBboxForRegion,
   MAX_OFFLINE_FOOTPRINT_FEATURES,
@@ -56,4 +57,37 @@ export async function prefetchRegionFootprints(opts: {
   };
   await saveRegionFootprints(bundle);
   return { featureCount: merged.features.length, skipped: false };
+}
+
+/** Fetch building footprints for the current map viewport (manual download). */
+export async function fetchViewportFootprints(
+  bbox: string,
+  crisisIds: string[],
+): Promise<{ collection: GeoJSON.FeatureCollection; failures: number }> {
+  if (crisisIds.length === 0) {
+    return {
+      collection: { type: 'FeatureCollection', features: [] },
+      failures: 0,
+    };
+  }
+  const q = encodeURIComponent(normalizeBboxString(bbox));
+  const results = await Promise.allSettled(
+    crisisIds.map((id) =>
+      apiGet<GeoJSON.FeatureCollection>(`/v1/crises/${id}/buildings?bbox=${q}`, {
+        timeoutMs: BUILDINGS_FETCH_TIMEOUT_MS,
+        maxAttempts: 3,
+      }),
+    ),
+  );
+  const collections: GeoJSON.FeatureCollection[] = [];
+  let failures = 0;
+  for (const result of results) {
+    if (result.status !== 'fulfilled') {
+      failures += 1;
+      collections.push({ type: 'FeatureCollection', features: [] });
+    } else {
+      collections.push(result.value);
+    }
+  }
+  return { collection: mergeCrisisFootprints(collections, crisisIds), failures };
 }
