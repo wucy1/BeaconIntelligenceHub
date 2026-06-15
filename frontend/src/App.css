@@ -1983,14 +1983,14 @@ button.danger {
   position: absolute;
   left: 50%;
   bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
-  transform: translateX(calc(-50% - var(--ops-map-rail-right, 3.25rem) / 2));
+  transform: translateX(-50%);
   z-index: 600;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
-  max-width: min(calc(100% - 1rem - var(--ops-map-rail-right, 3.25rem)), 56rem);
-  width: 100%;
+  gap: 0.35rem;
+  width: min(calc(100% - 1rem), 24rem);
+  max-width: 24rem;
   pointer-events: none;
 }
 
@@ -2005,9 +2005,13 @@ button.danger {
 }
 
 .ops-map-panel-compact {
-  width: auto;
-  max-width: min(calc(100vw - 1rem - var(--ops-map-rail-right, 3.25rem)), 22rem);
-  align-self: center;
+  width: 100%;
+  max-width: 24rem;
+  align-self: stretch;
+}
+
+.ops-map-view-panel.ops-map-panel-compact {
+  max-width: 24rem;
 }
 
 .ops-map-work-bar {
@@ -2183,22 +2187,61 @@ button.danger {
   color: #334155 !important;
 }
 
-/* 視角面板高度 + 右側縮放欄寬度 */
+/* 視角面板高度 + 右側工具欄 */
 .ops-map-page {
-  --ops-map-rail-right: 3.25rem;
-  --ops-map-rail-zone-fit-extra: 0px;
-  --ops-view-panel-clearance: 5.5rem;
+  --ops-map-rail-top: 5.25rem;
+  --ops-map-rail-top-work: 10.5rem;
+  --ops-view-panel-clearance: 4.5rem;
 }
 
-.ops-map-page[data-zone-rail='1'] {
-  --ops-map-rail-zone-fit-extra: calc(var(--map-rail-btn, 2.625rem) + 0.35rem);
+.ops-map-rail-stack-host {
+  position: absolute;
+  right: 0.5rem;
+  top: var(--ops-map-rail-top);
+  z-index: 650;
+  width: var(--map-rail-btn, 2.625rem);
+  pointer-events: none;
+}
+
+.ops-map-page.ops-shell-work .ops-map-rail-stack-host {
+  top: var(--ops-map-rail-top-work);
+}
+
+.ops-map-rail-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  pointer-events: auto;
+}
+
+.ops-map-rail-stack .map-rail-zoom {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  width: var(--map-rail-btn, 2.625rem);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.18);
+}
+
+.ops-map-rail-stack .map-rail-zone-fit {
+  position: static;
+  width: var(--map-rail-btn, 2.625rem);
+  height: var(--map-rail-btn, 2.625rem);
+}
+
+.ops-map-page.ops-shell-view {
+  --ops-view-panel-clearance: 7.5rem;
+}
+
+.ops-map-page.ops-shell-work {
+  --ops-view-panel-clearance: 4.25rem;
+}
+
+.ops-map-page.ops-shell-work .ops-map-bottom-chrome {
+  max-width: min(calc(100% - 1rem), 24rem);
 }
 
 .map-rail-zone-fit {
-  position: fixed;
-  z-index: 650;
-  width: var(--map-rail-btn, 2.625rem);
-  height: var(--map-rail-btn, 2.625rem);
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   background: #fff;
@@ -2208,30 +2251,6 @@ button.danger {
   cursor: pointer;
   padding: 0;
   box-shadow: 0 3px 10px rgba(15, 23, 42, 0.18);
-}
-
-.ops-map-page .map-rail-zone-fit {
-  right: var(--ops-map-rail-right, 3.25rem);
-  bottom: calc(var(--ops-view-panel-clearance) + env(safe-area-inset-bottom, 0px));
-}
-
-.ops-map-page.ops-shell-view {
-  --ops-view-panel-clearance: 9.5rem;
-}
-
-.ops-map-page.ops-shell-work {
-  --ops-view-panel-clearance: 4.75rem;
-}
-
-.ops-map-page.ops-shell-work .ops-map-bottom-chrome {
-  max-width: min(calc(100% - 1rem - var(--ops-map-rail-right)), 22rem);
-}
-
-.ops-map-page .map-rail-zoom {
-  bottom: calc(
-    var(--ops-view-panel-clearance) + var(--ops-map-rail-zone-fit-extra) + env(safe-area-inset-bottom, 0px)
-  );
-  z-index: 650;
 }
 
 .ops-map-page .leaflet-bottom.leaflet-right {
@@ -2249,12 +2268,27 @@ button.danger {
 }
 
 @media (max-width: 640px) {
+  .ops-map-page {
+    --ops-map-rail-top: 6rem;
+    --ops-map-rail-top-work: 11rem;
+  }
+
   .ops-map-page.ops-shell-view {
-    --ops-view-panel-clearance: 10.5rem;
+    --ops-view-panel-clearance: 8.5rem;
   }
 
   .ops-map-page.ops-shell-work {
-    --ops-view-panel-clearance: 5rem;
+    --ops-view-panel-clearance: 4.75rem;
+  }
+
+  .ops-map-bottom-chrome {
+    width: min(calc(100% - 0.75rem), 100%);
+    max-width: none;
+  }
+
+  .ops-map-panel-compact,
+  .ops-map-view-panel.ops-map-panel-compact {
+    max-width: none;
   }
 
   .ops-map-report-count-primary {
@@ -2347,6 +2381,20 @@ button.danger {
 .ops-dash-map-link {
   align-self: flex-start;
   white-space: nowrap;
+}
+
+.ops-map-view-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  width: 100%;
+}
+
+.ops-map-view-toolbar .ops-map-btn {
+  flex: 0 1 auto;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  padding: 0.35rem 0.55rem;
 }
 
 .ops-map-view-actions {

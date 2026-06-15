@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
 from geoalchemy2.shape import from_shape
@@ -10,6 +11,39 @@ from sqlalchemy.orm import Session
 
 from app.models import Crisis, ReportCrisisLink
 from app.org_settings import effective_capture_window, get_org_settings
+
+logger = logging.getLogger(__name__)
+
+
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _capture_in_crisis_window(
+    captured_at: datetime,
+    event_start: datetime | None,
+    event_end: datetime | None,
+    public_months: int,
+) -> bool:
+    """Match batch-archive semantics: official window when set, else rolling public months."""
+    at = _as_utc(captured_at)
+    if event_start is not None:
+        if at < _as_utc(event_start):
+            return False
+    else:
+        rolling_start, _ = effective_capture_window(
+            months=public_months,
+            event_start=None,
+            event_end=event_end,
+            now=at,
+        )
+        if at < _as_utc(rolling_start):
+            return False
+    if event_end is not None and at > _as_utc(event_end):
+        return False
+    return True
 
 
 def get_unspecified_crisis(db: Session) -> Crisis:
@@ -81,13 +115,12 @@ def resolve_active_crisis_for_report(
         return None
 
     for row in rows:
-        captured_from, captured_to = effective_capture_window(
-            months=org.default_public_report_months,
-            event_start=row.archive_window_start,
-            event_end=row.archive_window_end,
-            now=captured_at,
-        )
-        if captured_at < captured_from or captured_at > captured_to:
+        if not _capture_in_crisis_window(
+            captured_at,
+            row.archive_window_start,
+            row.archive_window_end,
+            org.default_public_report_months,
+        ):
             continue
         crisis = db.query(Crisis).filter(Crisis.id == row.id).first()
         if crisis:

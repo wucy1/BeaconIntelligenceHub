@@ -49,9 +49,8 @@ import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { OpsUserMenu } from '../components/OpsUserMenu';
 import { applyOpsProfileLocaleIfSet } from '../ops/applyOpsLocale';
 import { OsmTileLayer } from '../components/map/CachedOsmTileLayer';
-import { MapRailZoom } from '../components/map/MapRailZoom';
-import { MapRailZoneFit } from '../components/map/MapRailZoneFit';
 import { OpsMapClearSelection } from '../components/ops/OpsMapClearSelection';
+import { OpsMapRailControls } from '../components/ops/OpsMapRailControls';
 import { OpsMapShellToggle, type OpsMapShellMode } from '../components/ops/OpsMapShellToggle';
 import { OpsPolygonEditor } from '../components/ops/OpsPolygonEditor';
 import { useI18n } from '../i18n/I18nContext';
@@ -743,10 +742,7 @@ export function OpsMapPage() {
   };
 
   return (
-    <div
-      className={`map-page ops-map-page ops-shell-${shellMode}`}
-      data-zone-rail={zones.length > 0 ? '1' : undefined}
-    >
+    <div className={`map-page ops-map-page ops-shell-${shellMode}`}>
       <MapContainer
         center={DEFAULT_CENTER}
         zoom={DEFAULT_ZOOM}
@@ -755,7 +751,11 @@ export function OpsMapPage() {
         style={{ cursor: mapMode === 'draw' || mapMode === 'edit' ? 'crosshair' : undefined }}
       >
         <OsmTileLayer />
-        <MapRailZoom />
+        <OpsMapRailControls
+          zoneFitVisible={zones.length > 0}
+          zoneFitTitle={t('map.crisis.showZones')}
+          onZoneFit={() => setZoneFitTick((n) => n + 1)}
+        />
         <OpsMapClearSelection enabled={mapMode === 'browse' && Boolean(selectedZoneId)} onClear={clearZoneSelection} />
         <FlyToZone zone={flyZone} />
         <FlyToPoint point={flyPoint} />
@@ -875,11 +875,7 @@ export function OpsMapPage() {
         </div>
       </div>
 
-      <MapRailZoneFit
-        visible={zones.length > 0}
-        title={t('map.crisis.showZones')}
-        onFit={() => setZoneFitTick((n) => n + 1)}
-      />
+      <div className="ops-map-rail-stack-host" aria-hidden="true" />
 
       {canUseWorkMode && shellMode === 'work' && (
         <div className="ops-map-fab-col">
@@ -969,7 +965,17 @@ export function OpsMapPage() {
         )}
 
         {shellMode === 'view' && (
-          <div className="ops-map-view-panel">
+          <div className="ops-map-view-panel ops-map-panel-compact">
+            <div className="ops-map-view-toolbar">
+              <button type="button" className="ops-map-chip ops-map-btn" onClick={() => setSaveReportOpen(true)}>
+                {t('ops.map.saveReport')}
+              </button>
+              {selectedZone && (
+                <button type="button" className="ops-map-chip ops-map-btn secondary" onClick={clearZoneSelection}>
+                  {t('ops.map.clearZone')}
+                </button>
+              )}
+            </div>
             <div className="ops-map-view-row">
               <label className="ops-map-chip ops-map-view-field">
                 <span className="ops-map-view-label">{t('ops.map.queryPanel')}</span>
@@ -1072,20 +1078,12 @@ export function OpsMapPage() {
                 )}
               </div>
             </div>
-            <div className="ops-map-view-actions">
-              <button type="button" className="ops-map-chip ops-map-btn" onClick={() => setSaveReportOpen(true)}>
-                {t('ops.map.saveReport')}
-              </button>
-              {selectedZone && (
-                <button type="button" className="ops-map-chip ops-map-btn secondary" onClick={clearZoneSelection}>
-                  {t('ops.map.clearZone')}
-                </button>
-              )}
-            </div>
           </div>
         )}
 
-        {canUseWorkMode && <OpsMapShellToggle mode={shellMode} onChange={onShellModeChange} />}
+        {canUseWorkMode ? (
+          <OpsMapShellToggle mode={shellMode} onChange={onShellModeChange} />
+        ) : null}
       </div>
 
       {err && (

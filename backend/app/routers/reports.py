@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 from pathlib import Path
 from uuid import UUID
 
@@ -29,6 +30,7 @@ from app.public_classify import apply_auto_classification, get_unspecified_crisi
 from app.validation import validate_report_payload
 
 router = APIRouter(prefix="/v1/reports", tags=["reports"])
+logger = logging.getLogger(__name__)
 
 
 def _validate_location(payload: ReportCreate) -> None:
@@ -173,7 +175,7 @@ def create_report(
         db.commit()
     except Exception as exc:
         db.rollback()
-        print(f"[BIH] auto_classify best-effort failed for {report.id}: {exc}")
+        logger.exception("auto_classify failed for report %s", report.id)
     return ReportCreated(
         report_id=report.id,
         received_at_server=report.received_at_server,
