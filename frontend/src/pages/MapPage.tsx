@@ -113,6 +113,8 @@ export function MapPage() {
   });
   const [buildingsError, setBuildingsError] = useState<string | null>(null);
   const [buildingsLoading, setBuildingsLoading] = useState(false);
+  const [markersLoading, setMarkersLoading] = useState(false);
+  const [markersError, setMarkersError] = useState<string | null>(null);
   const [markers, setMarkers] = useState<MapMarker[]>([]);
   const [allMarkers, setAllMarkers] = useState<MapMarker[]>([]);
   const [placement, setPlacement] = useState<Placement>(emptyPlacement);
@@ -405,12 +407,10 @@ export function MapPage() {
     const requestedBbox = bbox;
     let cancelled = false;
     const timer = setTimeout(() => {
+      const q = encodeURIComponent(requestedBbox);
+      setBuildingsError(null);
+      setBuildingsLoading(true);
       void (async () => {
-        await ensureApiReady(90_000, { soft: true });
-        if (cancelled) return;
-        const q = encodeURIComponent(requestedBbox);
-        setBuildingsError(null);
-        setBuildingsLoading(true);
         try {
           const fc = await (async (): Promise<GeoJSON.FeatureCollection | null> => {
             if (requestedScope === 'unspecified') {
@@ -427,7 +427,7 @@ export function MapPage() {
               crisisIds.map((id) =>
                 apiGet<GeoJSON.FeatureCollection>(`/v1/crises/${id}/buildings?bbox=${q}`, {
                   timeoutMs: BUILDINGS_FETCH_TIMEOUT_MS,
-                  maxAttempts: 3,
+                  maxAttempts: 4,
                 }),
               ),
             );
@@ -507,9 +507,9 @@ export function MapPage() {
     const requestedScope = mapScope;
     let cancelled = false;
     const timer = setTimeout(() => {
+      setMarkersError(null);
+      setMarkersLoading(true);
       void (async () => {
-        await ensureApiReady(90_000, { soft: true });
-        if (cancelled) return;
         const scopeParam =
           requestedScope === 'all' || requestedScope === 'unspecified'
             ? `scope=${requestedScope}`
@@ -518,7 +518,7 @@ export function MapPage() {
         const fetchMarkers = (mode: MapMode) =>
           apiGet<{ items: MapMarker[] }>(
             `/v1/public/markers?bbox=${bboxQ}&mode=${mode}&${scopeParam}`,
-            { maxAttempts: 3 },
+            { maxAttempts: 4 },
           );
 
         const applyResults = (pinItems: MapMarker[], aggregateItems: MapMarker[]) => {
@@ -539,16 +539,22 @@ export function MapPage() {
             const r = await fetchMarkers(mapMode);
             applyResults(r.items, r.items);
           }
-        } catch {
+        } catch (e: unknown) {
           if (cancelled || bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
           setMarkers([]);
           setAllMarkers([]);
+          setMarkersError(e instanceof Error ? e.message : String(e));
+        } finally {
+          if (!cancelled && bboxRef.current === requestedBbox && scopeRef.current === requestedScope) {
+            setMarkersLoading(false);
+          }
         }
       })();
     }, 350);
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      setMarkersLoading(false);
     };
   }, [online, bbox, mapMode, mapScope, refreshKey, inspectOpen]);
 
@@ -1351,11 +1357,19 @@ export function MapPage() {
         <p className="map-hint map-hint-warn">{t('map.hint.gpsDenied')}</p>
       )}
 
-      {buildingsError && activeTopPanel !== 'legend' && (
+      {buildingsError && (
         <p className="map-hint map-hint-warn">{t('map.err.buildingsLoad', { msg: buildingsError })}</p>
       )}
 
-      {online && mapMode === 'all' && markers.length === 0 && bbox && !buildingsError && (
+      {markersError && (
+        <p className="map-hint map-hint-warn">{t('map.err.markersLoad', { msg: markersError })}</p>
+      )}
+
+      {(buildingsLoading || markersLoading) && !buildingsError && !markersError && (
+        <p className="map-hint">{t('map.legend.buildingsLoading')}</p>
+      )}
+
+      {online && mapMode === 'all' && markers.length === 0 && bbox && !buildingsError && !markersError && !markersLoading && (
         <p className="map-hint map-hint-empty">{t('map.hint.noMarkers')}</p>
       )}
 

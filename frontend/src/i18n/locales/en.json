@@ -303,6 +303,7 @@
   "map.locationPanel.noHistory": "No reports yet here",
   "map.locationPanel.addHere": "Add another report here (opens form)",
   "map.err.buildingsLoad": "Could not load footprints: {{msg}}",
+  "map.err.markersLoad": "Could not load reports on map: {{msg}}",
   "map.err.buildingsPartial": "Some crisis footprint layers failed to load ({{failed}}/{{total}}). Showing partial results.",
   "map.sheet.new": "New report",
   "map.sheet.newFollowUp": "Follow-up report at same location",

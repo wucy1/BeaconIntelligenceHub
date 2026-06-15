@@ -147,6 +147,7 @@
   "map.crisis.zoneHint": "地圖位置不變",
   "map.err.backendSteps": "請啟動 API（8000 埠）並確認資料庫可連線。開發模式下 Vite 會代理 /v1。",
   "map.err.buildingsLoad": "無法載入建物輪廓：{{msg}}",
+  "map.err.markersLoad": "無法載入地圖回報：{{msg}}",
   "map.err.buildingsPartial": "部分危機的 footprint 載入失敗（{{failed}}/{{total}}），僅顯示部分結果。",
   "map.err.noWindow": "目前沒有開放中的回報視窗",
   "map.hint.gpsDenied": "無法取得 GPS。請確認瀏覽器定位權限已允許，或先手動在地圖上放置圖釘。",

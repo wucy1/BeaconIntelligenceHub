@@ -11,7 +11,13 @@ export function LanguageSwitcher({ compact = false }: Props) {
   return (
     <label className={`lang-switcher${compact ? ' lang-switcher-compact' : ''}`}>
       {!compact && <span className="muted">{t('lang.label')}</span>}
-      <select value={locale} onChange={(e) => setLocale(e.target.value as UiLocale)} aria-label={t('lang.label')}>
+      <select
+        id="bih-ui-locale"
+        name="ui-locale"
+        value={locale}
+        onChange={(e) => setLocale(e.target.value as UiLocale)}
+        aria-label={t('lang.label')}
+      >
         {UI_LOCALES.map((l) => (
           <option key={l} value={l}>
             {LOCALE_LABELS[l]}

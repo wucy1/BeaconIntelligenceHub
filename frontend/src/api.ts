@@ -21,16 +21,32 @@ function isLocalDevHost(): boolean {
   return host === 'localhost' || host === '127.0.0.1';
 }
 
-function shouldUseFallbackBase(): boolean {
-  if (API_BASE) return false;
-  if (typeof window === 'undefined') return false;
-  return !isLocalDevHost();
+/** Production static host must not call /v1 on the SPA origin (Worker returns index.html). */
+function remoteApiBase(): string {
+  if (typeof window === 'undefined') {
+    return API_BASE || API_FALLBACK_BASE;
+  }
+  if (API_BASE) {
+    try {
+      const configured = new URL(API_BASE, window.location.origin);
+      if (configured.origin !== window.location.origin) {
+        return configured.origin + configured.pathname.replace(/\/$/, '');
+      }
+    } catch {
+      /* ignore invalid URL */
+    }
+  }
+  return API_FALLBACK_BASE;
 }
 
 export function resolveApiBase(path: string): string {
   if (path.startsWith('http')) return '';
-  if (API_BASE) return API_BASE;
-  if (shouldUseFallbackBase() && path.startsWith('/v1/')) return API_FALLBACK_BASE;
+  if (isLocalDevHost()) {
+    return API_BASE || '';
+  }
+  if (path.startsWith('/v1/') || path.startsWith('/health')) {
+    return remoteApiBase();
+  }
   return '';
 }
 
@@ -122,7 +138,7 @@ export async function wakeApiBackend(): Promise<boolean> {
 }
 
 function wakeProbeBase(): string {
-  return (resolveApiBase('/health/ready') || API_FALLBACK_BASE).replace(/\/$/, '');
+  return remoteApiBase().replace(/\/$/, '');
 }
 
 async function probeApiReady(): Promise<boolean> {
