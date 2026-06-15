@@ -1,4 +1,4 @@
-import { apiGet } from '../api';
+import { apiGet, BUILDINGS_FETCH_TIMEOUT_MS } from '../api';
 import {
   footprintBboxForRegion,
   MAX_OFFLINE_FOOTPRINT_FEATURES,
@@ -31,6 +31,7 @@ export async function prefetchRegionFootprints(opts: {
       if (opts.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
       return apiGet<GeoJSON.FeatureCollection>(
         `/v1/crises/${id}/buildings?bbox=${encodeURIComponent(q)}`,
+        { timeoutMs: BUILDINGS_FETCH_TIMEOUT_MS, maxAttempts: 2 },
       );
     }),
   );

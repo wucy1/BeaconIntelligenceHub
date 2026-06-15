@@ -83,8 +83,10 @@ export function OpsDashboard() {
   const [userFormMsg, setUserFormMsg] = useState<string | null>(null);
   const [leadFormMsg, setLeadFormMsg] = useState<string | null>(null);
   const [coordFormMsg, setCoordFormMsg] = useState<string | null>(null);
-  const [buildingImportMsg, setBuildingImportMsg] = useState<string | null>(null);
-  const [buildingImportOk, setBuildingImportOk] = useState(false);
+  const [demoBuildingMsg, setDemoBuildingMsg] = useState<string | null>(null);
+  const [demoBuildingOk, setDemoBuildingOk] = useState(false);
+  const [officialBuildingMsg, setOfficialBuildingMsg] = useState<string | null>(null);
+  const [officialBuildingOk, setOfficialBuildingOk] = useState(false);
   const [uploadReplace, setUploadReplace] = useState(false);
   const [storedBuildingCount, setStoredBuildingCount] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -279,22 +281,68 @@ export function OpsDashboard() {
   const importDemoBuildings = async (replace: boolean) => {
     if (!selectedCrisisId || !canEditSelectedCrisis) return;
     setBusy(true);
-    setBuildingImportMsg(null);
-    setBuildingImportOk(false);
+    setDemoBuildingMsg(null);
+    setDemoBuildingOk(false);
     try {
       const res = await opsPost<{ imported: number; total: number; source: string }>(
         `/v1/ops/crises/${selectedCrisisId}/buildings/import-demo`,
         { replace },
       );
-      setBuildingImportOk(true);
-      setBuildingImportMsg(
+      setDemoBuildingOk(true);
+      setDemoBuildingMsg(
         t('ops.buildings.imported', { imported: res.imported, total: res.total }),
       );
       loadAudit();
       void loadBuildingCount();
     } catch (e) {
-      setBuildingImportOk(false);
-      setBuildingImportMsg(e instanceof Error ? e.message : t('ops.buildings.importError'));
+      setDemoBuildingOk(false);
+      setDemoBuildingMsg(e instanceof Error ? e.message : t('ops.buildings.importError'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearDemoBuildings = async () => {
+    if (!selectedCrisisId || !canEditSelectedCrisis) return;
+    if (!window.confirm(t('ops.buildings.demoClearConfirm'))) return;
+    setBusy(true);
+    setDemoBuildingMsg(null);
+    setDemoBuildingOk(false);
+    try {
+      const res = await opsPost<{ deleted: number; total: number }>(
+        `/v1/ops/crises/${selectedCrisisId}/buildings/clear`,
+        { scope: 'demo' },
+      );
+      setDemoBuildingOk(true);
+      setDemoBuildingMsg(t('ops.buildings.cleared', { deleted: res.deleted, total: res.total }));
+      loadAudit();
+      void loadBuildingCount();
+    } catch (e) {
+      setDemoBuildingOk(false);
+      setDemoBuildingMsg(e instanceof Error ? e.message : t('ops.buildings.importError'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearAllBuildings = async () => {
+    if (!selectedCrisisId || !canEditSelectedCrisis) return;
+    if (!window.confirm(t('ops.buildings.clearAllConfirm'))) return;
+    setBusy(true);
+    setOfficialBuildingMsg(null);
+    setOfficialBuildingOk(false);
+    try {
+      const res = await opsPost<{ deleted: number; total: number }>(
+        `/v1/ops/crises/${selectedCrisisId}/buildings/clear`,
+        { scope: 'all' },
+      );
+      setOfficialBuildingOk(true);
+      setOfficialBuildingMsg(t('ops.buildings.cleared', { deleted: res.deleted, total: res.total }));
+      loadAudit();
+      void loadBuildingCount();
+    } catch (e) {
+      setOfficialBuildingOk(false);
+      setOfficialBuildingMsg(e instanceof Error ? e.message : t('ops.buildings.importError'));
     } finally {
       setBusy(false);
     }
@@ -305,23 +353,23 @@ export function OpsDashboard() {
     e.target.value = '';
     if (!file || !selectedCrisisId || !canEditSelectedCrisis) return;
     setBusy(true);
-    setBuildingImportMsg(null);
-    setBuildingImportOk(false);
+    setOfficialBuildingMsg(null);
+    setOfficialBuildingOk(false);
     try {
       const res = await opsPostFile<{ imported: number; total: number }>(
         `/v1/ops/crises/${selectedCrisisId}/buildings/import`,
         file,
         { replace: uploadReplace ? 'true' : 'false' },
       );
-      setBuildingImportOk(true);
-      setBuildingImportMsg(
+      setOfficialBuildingOk(true);
+      setOfficialBuildingMsg(
         t('ops.buildings.uploaded', { imported: res.imported, total: res.total }),
       );
       loadAudit();
       void loadBuildingCount();
     } catch (err) {
-      setBuildingImportOk(false);
-      setBuildingImportMsg(err instanceof Error ? err.message : t('ops.buildings.importError'));
+      setOfficialBuildingOk(false);
+      setOfficialBuildingMsg(err instanceof Error ? err.message : t('ops.buildings.importError'));
     } finally {
       setBusy(false);
     }
@@ -615,32 +663,56 @@ export function OpsDashboard() {
                     {crisisEditMsg}
                   </p>
                 )}
-                <div className="ops-dash-form ops-buildings-import">
-                  <h4>{t('ops.buildings.title')}</h4>
+                <div className="ops-dash-form ops-buildings-panel">
+                  <h4>{t('ops.buildings.sectionTitle')}</h4>
                   {storedBuildingCount !== null && (
                     <p className="ops-buildings-stored muted">
                       {t('ops.buildings.storedCount', { count: storedBuildingCount })}
                     </p>
                   )}
-                  <p className="muted">{t('ops.buildings.hint')}</p>
-                  <div className="ops-inline-actions">
-                    <button type="button" onClick={() => void importDemoBuildings(false)} disabled={busy}>
-                      {busy ? t('ops.buildings.importing') : t('ops.buildings.importDemo')}
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => void importDemoBuildings(true)}
-                      disabled={busy}
-                    >
-                      {t('ops.buildings.importReplace')}
-                    </button>
-                  </div>
-                  {buildingImportMsg && (
-                    <p className={buildingImportOk ? 'ops-form-ok' : 'error'}>{buildingImportMsg}</p>
-                  )}
-                  <div className="ops-buildings-upload">
-                    <p className="muted">{t('ops.buildings.uploadHint')}</p>
+
+                  <section className="ops-buildings-section ops-buildings-section--demo">
+                    <h5>{t('ops.buildings.demoSection')}</h5>
+                    <p className="muted">{t('ops.buildings.demoHint')}</p>
+                    <div className="ops-inline-actions">
+                      <button type="button" onClick={() => void importDemoBuildings(false)} disabled={busy}>
+                        {busy ? t('ops.buildings.importing') : t('ops.buildings.importDemo')}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void importDemoBuildings(true)}
+                        disabled={busy}
+                      >
+                        {t('ops.buildings.importReplace')}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void clearDemoBuildings()}
+                        disabled={busy}
+                      >
+                        {t('ops.buildings.demoClear')}
+                      </button>
+                    </div>
+                    {demoBuildingMsg && (
+                      <p className={demoBuildingOk ? 'ops-form-ok' : 'error'}>{demoBuildingMsg}</p>
+                    )}
+                    <p>
+                      <Link
+                        to={`/?crisis=${selectedCrisisId}&fly=demo`}
+                        className="ops-dash-inline-link"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {t('ops.buildings.viewOnMap')}
+                      </Link>
+                    </p>
+                  </section>
+
+                  <section className="ops-buildings-section ops-buildings-section--official">
+                    <h5>{t('ops.buildings.officialSection')}</h5>
+                    <p className="muted">{t('ops.buildings.officialHint')}</p>
                     <label className="ops-field">
                       {t('ops.buildings.uploadLabel')}
                       <input
@@ -660,6 +732,19 @@ export function OpsDashboard() {
                       />
                       <span>{t('ops.buildings.uploadReplace')}</span>
                     </label>
+                    <div className="ops-inline-actions">
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void clearAllBuildings()}
+                        disabled={busy}
+                      >
+                        {t('ops.buildings.clearAll')}
+                      </button>
+                    </div>
+                    {officialBuildingMsg && (
+                      <p className={officialBuildingOk ? 'ops-form-ok' : 'error'}>{officialBuildingMsg}</p>
+                    )}
                     <p className="muted">
                       <a
                         href="/assets/building-footprints.example.geojson"
@@ -671,7 +756,7 @@ export function OpsDashboard() {
                       {' · '}
                       {t('ops.buildings.formatHint')}
                     </p>
-                  </div>
+                  </section>
                 </div>
               </>
             )}

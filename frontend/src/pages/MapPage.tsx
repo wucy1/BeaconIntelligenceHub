@@ -1,7 +1,8 @@
 import L from 'leaflet';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
-import { apiGet } from '../api';
+import { apiGet, BUILDINGS_FETCH_TIMEOUT_MS } from '../api';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { ContributorMap, type MapMarker } from '../components/map/ContributorMap';
 import {
@@ -16,6 +17,7 @@ import { PlacementBar } from '../components/map/PlacementBar';
 import { ReportSheet } from '../components/map/ReportSheet';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { UNSPECIFIED_CRISIS_ID } from '../constants/crisis';
+import { NYC_DEMO_MAP_VIEW } from '../constants/nycDemoFootprints';
 import { usePublicCrises } from '../hooks/usePublicCrises';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useOfflineMapTiles } from '../hooks/useOfflineMapTiles';
@@ -94,6 +96,8 @@ export function MapPage() {
     reload: reloadCrises,
     needsFirstOnline,
   } = usePublicCrises();
+  const [searchParams] = useSearchParams();
+  const urlBootstrappedRef = useRef(false);
   const online = useOnlineStatus();
   const wasOfflineRef = useRef(false);
   const geo = useGeolocation();
@@ -108,6 +112,7 @@ export function MapPage() {
     features: [],
   });
   const [buildingsError, setBuildingsError] = useState<string | null>(null);
+  const [buildingsLoading, setBuildingsLoading] = useState(false);
   const [markers, setMarkers] = useState<MapMarker[]>([]);
   const [placement, setPlacement] = useState<Placement>(emptyPlacement);
   const [inspectOpen, setInspectOpen] = useState(false);
@@ -364,6 +369,23 @@ export function MapPage() {
     return [mapScope];
   }, [mapScope, activeCrises]);
 
+  const flyToDemoFootprints = useCallback(() => {
+    setFlyTarget({ ...NYC_DEMO_MAP_VIEW });
+    setActiveTopPanel('legend');
+  }, []);
+
+  useEffect(() => {
+    if (urlBootstrappedRef.current || crisesLoading) return;
+    const crisisParam = searchParams.get('crisis') ?? searchParams.get('crisis_id');
+    if (crisisParam && publicCrises.some((c) => c.id === crisisParam)) {
+      selectScope(crisisParam);
+    }
+    if (searchParams.get('fly') === 'demo') {
+      flyToDemoFootprints();
+    }
+    urlBootstrappedRef.current = true;
+  }, [crisesLoading, publicCrises, searchParams, selectScope, flyToDemoFootprints]);
+
   useEffect(() => {
     if (!online || !bbox || publicCrises.length === 0 || crisesLoading) return;
     const requestedScope = mapScope;
@@ -371,6 +393,7 @@ export function MapPage() {
     const timer = setTimeout(() => {
       const q = encodeURIComponent(requestedBbox);
       setBuildingsError(null);
+      setBuildingsLoading(true);
       const loadBuildings = async (): Promise<GeoJSON.FeatureCollection | null> => {
         if (requestedScope === 'unspecified') {
           return { type: 'FeatureCollection', features: [] };
@@ -384,7 +407,10 @@ export function MapPage() {
         }
         const results = await Promise.allSettled(
           crisisIds.map((id) =>
-            apiGet<GeoJSON.FeatureCollection>(`/v1/crises/${id}/buildings?bbox=${q}`),
+            apiGet<GeoJSON.FeatureCollection>(`/v1/crises/${id}/buildings?bbox=${q}`, {
+              timeoutMs: BUILDINGS_FETCH_TIMEOUT_MS,
+              maxAttempts: 2,
+            }),
           ),
         );
         const seen = new Set<string>();
@@ -428,9 +454,17 @@ export function MapPage() {
         .catch((e: Error) => {
           if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
           setBuildingsError(e.message);
+        })
+        .finally(() => {
+          if (bboxRef.current === requestedBbox && scopeRef.current === requestedScope) {
+            setBuildingsLoading(false);
+          }
         });
     }, 350);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      setBuildingsLoading(false);
+    };
   }, [online, mapScope, bbox, refreshKey, publicCrises.length, activeCrises, buildingsCacheKey, crisesLoading, t]);
 
   useEffect(() => {
@@ -1159,10 +1193,15 @@ export function MapPage() {
           {activeTopPanel === 'legend' && (
             <MapLegend
               buildingCount={buildings.features.length}
+              buildingsLoading={buildingsLoading}
+              buildingsError={buildingsError}
               markerCount={markers.length}
               mode={mapMode}
               embedded
               reportWindowMonths={reportWindowMonths}
+              onFlyToDemoFootprints={
+                mapScope !== 'unspecified' && !buildingsLoading ? flyToDemoFootprints : undefined
+              }
             />
           )}
         </section>
@@ -1262,7 +1301,7 @@ export function MapPage() {
         <p className="map-hint map-hint-warn">{t('map.hint.gpsDenied')}</p>
       )}
 
-      {buildingsError && (
+      {buildingsError && activeTopPanel !== 'legend' && (
         <p className="map-hint map-hint-warn">{t('map.err.buildingsLoad', { msg: buildingsError })}</p>
       )}
 

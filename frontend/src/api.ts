@@ -4,6 +4,8 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 const API_FALLBACK_BASE = import.meta.env.VITE_API_FALLBACK ?? 'https://beaconintelligencehub.onrender.com';
 const DEFAULT_TIMEOUT_MS = 45_000;
 const SUBMIT_TIMEOUT_MS = 90_000;
+/** GeoJSON footprint 單次請求可能較大（冷啟動 + 數百棟多邊形） */
+export const BUILDINGS_FETCH_TIMEOUT_MS = 120_000;
 const WAKE_PROBE_TIMEOUT_MS = 25_000;
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
 const PROD_RETRY_ATTEMPTS = 4;
@@ -206,8 +208,11 @@ async function fetchApi(
   return apiFetch(path, init, opts);
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetchApi(path, { headers: deviceHeaders() });
+export async function apiGet<T>(
+  path: string,
+  opts?: { timeoutMs?: number; maxAttempts?: number },
+): Promise<T> {
+  const res = await fetchApi(path, { headers: deviceHeaders() }, opts);
   return parseJson<T>(res);
 }
 

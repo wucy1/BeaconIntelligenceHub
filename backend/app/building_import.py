@@ -125,6 +125,13 @@ def import_buildings_geojson(
     return imported
 
 
+def clear_crisis_buildings(db: Session, crisis_id: UUID, *, demo_only: bool = False) -> int:
+    q = db.query(Building).filter(Building.crisis_id == crisis_id)
+    if demo_only:
+        q = q.filter(Building.external_ref.isnot(None), Building.external_ref.like("osm-%"))
+    return q.delete(synchronize_session=False)
+
+
 def import_demo_buildings(db: Session, crisis_id: UUID, *, replace: bool = False) -> dict[str, Any]:
     geojson = load_demo_geojson()
     imported = import_buildings_geojson(db, crisis_id, geojson, replace=replace)

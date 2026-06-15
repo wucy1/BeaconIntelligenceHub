@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.building_import import (
     EXAMPLE_GEOJSON_PATH,
+    clear_crisis_buildings,
     import_buildings_from_bytes,
     import_demo_buildings,
 )
@@ -105,6 +106,10 @@ class CrisisPatchBody(BaseModel):
 
 class BuildingImportBody(BaseModel):
     replace: bool = False
+
+
+class BuildingClearBody(BaseModel):
+    scope: str = Field("all", pattern="^(all|demo)$")
 
 
 class ArchiveRunBody(BaseModel):
@@ -802,6 +807,35 @@ def ops_buildings_stats(
         raise HTTPException(status_code=403, detail="Cannot view buildings for this crisis")
     count = db.query(Building).filter(Building.crisis_id == crisis_id).count()
     return {"crisis_id": str(crisis_id), "count": count}
+
+
+@router.post("/crises/{crisis_id}/buildings/clear")
+def ops_clear_buildings(
+    crisis_id: UUID,
+    body: BuildingClearBody,
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
+    if not crisis:
+        raise HTTPException(status_code=404, detail="Crisis not found")
+    if _is_system_unspecified(crisis):
+        raise HTTPException(status_code=422, detail="Cannot clear buildings for system unspecified crisis")
+    if not principal.can_manage_crisis(crisis_id):
+        raise HTTPException(status_code=403, detail="Cannot clear buildings for this crisis")
+    demo_only = body.scope == "demo"
+    deleted = clear_crisis_buildings(db, crisis_id, demo_only=demo_only)
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="buildings.clear",
+        entity_type="crisis",
+        entity_id=crisis.id,
+        detail={"deleted": deleted, "scope": body.scope},
+    )
+    db.commit()
+    total = db.query(Building).filter(Building.crisis_id == crisis_id).count()
+    return {"deleted": deleted, "total": total, "scope": body.scope}
 
 
 @router.get("/buildings/geojson-example")

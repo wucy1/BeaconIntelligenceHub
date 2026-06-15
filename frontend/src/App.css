@@ -578,6 +578,27 @@ select {
   line-height: 1.3;
 }
 
+.map-legend-footnote-warn {
+  color: #b45309;
+}
+
+.map-legend-fly-btn {
+  margin-top: 0.35rem;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.map-legend-fly-btn:hover {
+  background: #dbeafe;
+}
+
 .form-footprint-note {
   margin: 0.35rem 0 0;
   font-size: 0.78rem;
@@ -3336,6 +3357,36 @@ button.linkish {
   background: #f8fafc;
   border-radius: 8px;
   border: 1px solid #e2e8f0;
+}
+
+.ops-buildings-panel h5 {
+  margin: 0 0 0.35rem;
+  font-size: 0.82rem;
+}
+
+.ops-buildings-section {
+  margin-top: 0.65rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.ops-buildings-section--demo {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.ops-buildings-section--official {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.ops-buildings-stored {
+  margin: 0;
+  font-size: 0.85rem;
 }
 
 .ops-workflow-steps {

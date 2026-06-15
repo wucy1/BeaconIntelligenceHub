@@ -16,19 +16,63 @@ const STATUS_ITEMS = [
 
 type Props = {
   buildingCount: number;
+  buildingsLoading?: boolean;
+  buildingsError?: string | null;
   markerCount: number;
   mode: string;
   embedded?: boolean;
   /** 滾動顯示月數（併入圖例） */
   reportWindowMonths?: number | null;
+  onFlyToDemoFootprints?: () => void;
 };
+
+function BuildingsLegendRows({
+  buildingCount,
+  buildingsLoading,
+  buildingsError,
+  onFlyToDemoFootprints,
+}: Pick<Props, 'buildingCount' | 'buildingsLoading' | 'buildingsError' | 'onFlyToDemoFootprints'>) {
+  const { t } = useI18n();
+
+  return (
+    <>
+      <div className="map-legend-row">
+        <span className="map-legend-swatch building" />
+        <span>
+          {buildingsLoading
+            ? t('map.legend.buildingsLoading')
+            : t('map.legend.buildings', { count: buildingCount })}
+        </span>
+      </div>
+      <p className="map-legend-footnote muted">{t('map.legend.footprintVisualHint')}</p>
+      {buildingsError && (
+        <p className="map-legend-footnote map-legend-footnote-warn">{t('map.err.buildingsLoad', { msg: buildingsError })}</p>
+      )}
+      {buildingCount > 0 ? (
+        <p className="map-legend-footnote muted">{t('map.legend.footprintNote')}</p>
+      ) : !buildingsLoading ? (
+        <>
+          <p className="map-legend-footnote muted">{t('map.legend.noBuildingsHint')}</p>
+          {onFlyToDemoFootprints && (
+            <button type="button" className="map-legend-fly-btn" onClick={onFlyToDemoFootprints}>
+              {t('map.legend.flyToDemoFootprints')}
+            </button>
+          )}
+        </>
+      ) : null}
+    </>
+  );
+}
 
 export function MapLegend({
   buildingCount,
+  buildingsLoading = false,
+  buildingsError = null,
   markerCount,
   mode,
   embedded = false,
   reportWindowMonths = null,
+  onFlyToDemoFootprints,
 }: Props) {
   const { t } = useI18n();
   const preferCollapsed = usePreferCollapsedChrome();
@@ -40,6 +84,15 @@ export function MapLegend({
     }
   }, [preferCollapsed]);
 
+  const buildingRows = (
+    <BuildingsLegendRows
+      buildingCount={buildingCount}
+      buildingsLoading={buildingsLoading}
+      buildingsError={buildingsError}
+      onFlyToDemoFootprints={onFlyToDemoFootprints}
+    />
+  );
+
   if (embedded) {
     return (
       <div className="map-legend map-legend-embedded">
@@ -47,15 +100,7 @@ export function MapLegend({
           <div className="map-legend-row map-legend-title-row">
             <strong>{t('map.legend.title')}</strong>
           </div>
-          <div className="map-legend-row">
-            <span className="map-legend-swatch building" />
-            <span>{t('map.legend.buildings', { count: buildingCount })}</span>
-          </div>
-          {buildingCount > 0 ? (
-            <p className="map-legend-footnote muted">{t('map.legend.footprintNote')}</p>
-          ) : (
-            <p className="map-legend-footnote muted">{t('map.legend.noBuildingsHint')}</p>
-          )}
+          {buildingRows}
           {reportWindowMonths != null && mode !== 'new' && (
             <div className="map-legend-row">
               <span>{t('map.window.recentMonths', { months: reportWindowMonths })}</span>
@@ -91,15 +136,7 @@ export function MapLegend({
         <div className="map-legend-row map-legend-title-row">
           <strong>{t('map.legend.title')}</strong>
         </div>
-        <div className="map-legend-row">
-          <span className="map-legend-swatch building" />
-          <span>{t('map.legend.buildings', { count: buildingCount })}</span>
-        </div>
-        {buildingCount > 0 ? (
-          <p className="map-legend-footnote muted">{t('map.legend.footprintNote')}</p>
-        ) : (
-          <p className="map-legend-footnote muted">{t('map.legend.noBuildingsHint')}</p>
-        )}
+        {buildingRows}
         {reportWindowMonths != null && mode !== 'new' && (
           <div className="map-legend-row">
             <span>{t('map.window.recentMonths', { months: reportWindowMonths })}</span>
