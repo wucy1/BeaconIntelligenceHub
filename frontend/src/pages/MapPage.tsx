@@ -365,13 +365,13 @@ export function MapPage() {
   }, [mapScope, activeCrises]);
 
   useEffect(() => {
-    if (!online || !bbox || publicCrises.length === 0) return;
+    if (!online || !bbox || publicCrises.length === 0 || crisesLoading) return;
     const requestedScope = mapScope;
     const requestedBbox = bbox;
     const timer = setTimeout(() => {
       const q = encodeURIComponent(requestedBbox);
       setBuildingsError(null);
-      const loadBuildings = async (): Promise<GeoJSON.FeatureCollection> => {
+      const loadBuildings = async (): Promise<GeoJSON.FeatureCollection | null> => {
         if (requestedScope === 'unspecified') {
           return { type: 'FeatureCollection', features: [] };
         }
@@ -380,18 +380,25 @@ export function MapPage() {
             ? activeCrises.map((c) => c.id)
             : [requestedScope];
         if (crisisIds.length === 0) {
-          return { type: 'FeatureCollection', features: [] };
+          return null;
         }
-        const collections = await Promise.all(
+        const results = await Promise.allSettled(
           crisisIds.map((id) =>
             apiGet<GeoJSON.FeatureCollection>(`/v1/crises/${id}/buildings?bbox=${q}`),
           ),
         );
         const seen = new Set<string>();
         const features: GeoJSON.Feature[] = [];
-        for (let i = 0; i < collections.length; i++) {
+        let failures = 0;
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          if (result.status !== 'fulfilled') {
+            failures += 1;
+            continue;
+          }
           const cid = crisisIds[i];
-          for (const f of collections[i].features) {
+          const list = result.value.features ?? [];
+          for (const f of list) {
             const bid = (f.properties?.building_id as string) ?? '';
             if (bid && seen.has(bid)) continue;
             if (bid) seen.add(bid);
@@ -401,10 +408,19 @@ export function MapPage() {
             });
           }
         }
+        if (failures > 0 && features.length === 0) {
+          throw new Error(`Failed to load footprints (${failures}/${crisisIds.length} crises)`);
+        }
+        if (failures > 0) {
+          setBuildingsError(
+            t('map.err.buildingsPartial', { failed: failures, total: crisisIds.length }),
+          );
+        }
         return { type: 'FeatureCollection', features };
       };
       void loadBuildings()
         .then((fc) => {
+          if (fc === null) return;
           if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
           buildingsCacheRef.current[buildingsCacheKey] = fc;
           setBuildings(fc);
@@ -415,7 +431,7 @@ export function MapPage() {
         });
     }, 350);
     return () => clearTimeout(timer);
-  }, [online, mapScope, bbox, refreshKey, publicCrises.length, activeCrises, buildingsCacheKey]);
+  }, [online, mapScope, bbox, refreshKey, publicCrises.length, activeCrises, buildingsCacheKey, crisesLoading, t]);
 
   useEffect(() => {
     if (online || !bbox) return;

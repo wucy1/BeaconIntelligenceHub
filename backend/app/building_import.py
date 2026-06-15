@@ -77,6 +77,7 @@ def import_buildings_from_bytes(
 ) -> dict[str, Any]:
     geojson = parse_uploaded_geojson(raw)
     imported = import_buildings_geojson(db, crisis_id, geojson, replace=replace)
+    db.flush()
     total = db.query(Building).filter(Building.crisis_id == crisis_id).count()
     return {
         "imported": imported,
@@ -127,6 +128,7 @@ def import_buildings_geojson(
 def import_demo_buildings(db: Session, crisis_id: UUID, *, replace: bool = False) -> dict[str, Any]:
     geojson = load_demo_geojson()
     imported = import_buildings_geojson(db, crisis_id, geojson, replace=replace)
+    db.flush()
     total = (
         db.query(Building).filter(Building.crisis_id == crisis_id).count()
     )

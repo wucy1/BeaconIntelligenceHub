@@ -86,6 +86,7 @@ export function OpsDashboard() {
   const [buildingImportMsg, setBuildingImportMsg] = useState<string | null>(null);
   const [buildingImportOk, setBuildingImportOk] = useState(false);
   const [uploadReplace, setUploadReplace] = useState(false);
+  const [storedBuildingCount, setStoredBuildingCount] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [activeTab, setActiveTab] = useState<OpsTabId>('overview');
 
@@ -217,6 +218,23 @@ export function OpsDashboard() {
 
   const canEditSelectedCrisis = isAdmin || isLeadForSelected;
 
+  const loadBuildingCount = useCallback(async () => {
+    if (!selectedCrisisId || !selectedCrisis || isUnspecifiedCrisis(selectedCrisis) || !canEditSelectedCrisis) {
+      setStoredBuildingCount(null);
+      return;
+    }
+    try {
+      const d = await opsGet<{ count: number }>(`/v1/ops/crises/${selectedCrisisId}/buildings/stats`);
+      setStoredBuildingCount(d.count);
+    } catch {
+      setStoredBuildingCount(null);
+    }
+  }, [selectedCrisisId, selectedCrisis, canEditSelectedCrisis]);
+
+  useEffect(() => {
+    void loadBuildingCount();
+  }, [loadBuildingCount]);
+
   const createCrisis = async () => {
     if (!isAdmin) {
       setCrisisFormMsg('僅系統管理員可建立危機');
@@ -273,6 +291,7 @@ export function OpsDashboard() {
         t('ops.buildings.imported', { imported: res.imported, total: res.total }),
       );
       loadAudit();
+      void loadBuildingCount();
     } catch (e) {
       setBuildingImportOk(false);
       setBuildingImportMsg(e instanceof Error ? e.message : t('ops.buildings.importError'));
@@ -299,6 +318,7 @@ export function OpsDashboard() {
         t('ops.buildings.uploaded', { imported: res.imported, total: res.total }),
       );
       loadAudit();
+      void loadBuildingCount();
     } catch (err) {
       setBuildingImportOk(false);
       setBuildingImportMsg(err instanceof Error ? err.message : t('ops.buildings.importError'));
@@ -597,6 +617,11 @@ export function OpsDashboard() {
                 )}
                 <div className="ops-dash-form ops-buildings-import">
                   <h4>{t('ops.buildings.title')}</h4>
+                  {storedBuildingCount !== null && (
+                    <p className="ops-buildings-stored muted">
+                      {t('ops.buildings.storedCount', { count: storedBuildingCount })}
+                    </p>
+                  )}
                   <p className="muted">{t('ops.buildings.hint')}</p>
                   <div className="ops-inline-actions">
                     <button type="button" onClick={() => void importDemoBuildings(false)} disabled={busy}>

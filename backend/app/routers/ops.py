@@ -787,6 +787,23 @@ def ops_import_demo_buildings(
     return result
 
 
+@router.get("/crises/{crisis_id}/buildings/stats")
+def ops_buildings_stats(
+    crisis_id: UUID,
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
+    if not crisis:
+        raise HTTPException(status_code=404, detail="Crisis not found")
+    if _is_system_unspecified(crisis):
+        raise HTTPException(status_code=422, detail="System unspecified crisis has no footprints")
+    if not principal.can_manage_crisis(crisis_id):
+        raise HTTPException(status_code=403, detail="Cannot view buildings for this crisis")
+    count = db.query(Building).filter(Building.crisis_id == crisis_id).count()
+    return {"crisis_id": str(crisis_id), "count": count}
+
+
 @router.get("/buildings/geojson-example")
 def ops_buildings_geojson_example(
     principal: OpsPrincipal = Depends(get_ops_principal),
