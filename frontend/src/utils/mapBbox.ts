@@ -9,11 +9,27 @@ export function normalizeLng(lng: number): number {
   return x;
 }
 
+function roundCoord(n: number, decimals = 5): number {
+  const factor = 10 ** decimals;
+  return Math.round(n * factor) / factor;
+}
+
+/** Stable WGS84 bbox string (~1 m precision) for fetch keys and race guards. */
 export function normalizeBboxString(bbox: string): string {
   const box = parseBbox(bbox);
   if (!box) return bbox;
   const [w, s, e, n] = box;
-  return `${normalizeLng(w)},${s},${normalizeLng(e)},${n}`;
+  return [
+    roundCoord(normalizeLng(w)),
+    roundCoord(s),
+    roundCoord(normalizeLng(e)),
+    roundCoord(n),
+  ].join(',');
+}
+
+export function bboxKeysMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return a === b;
+  return normalizeBboxString(a) === normalizeBboxString(b);
 }
 
 export function parseBbox(bbox: string): [number, number, number, number] | null {

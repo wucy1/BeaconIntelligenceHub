@@ -517,7 +517,7 @@ export function ContributorMap({
 
       {buildings.features.length > 0 && (
         <GeoJSON
-          key="buildings-layer"
+          key={`buildings-layer-${buildings.features.length}-${(buildings.features[0]?.properties?.building_id as string) ?? '0'}`}
           data={buildings}
           style={(feature) => {
             const id = feature?.properties?.building_id as string | undefined;

@@ -46,7 +46,7 @@ import {
   findBuildingAtPoint,
   markersNearPoint,
 } from '../utils/buildingAtPoint';
-import { filterMarkersInBbox } from '../utils/mapBbox';
+import { bboxKeysMatch, filterMarkersInBbox } from '../utils/mapBbox';
 
 const DEFAULT_CENTER: [number, number] = [20, 0];
 const DEFAULT_ZOOM = 14;
@@ -463,14 +463,14 @@ export function MapPage() {
             return { type: 'FeatureCollection', features };
           })();
           if (fc === null) return;
-          if (cancelled || bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
-          buildingsCacheRef.current[buildingsCacheKey] = fc;
+          if (cancelled || scopeRef.current !== requestedScope) return;
+          buildingsCacheRef.current[requestedScope === 'all' ? buildingsCacheKey : requestedScope] = fc;
           setBuildings(fc);
         } catch (e: unknown) {
-          if (cancelled || bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+          if (cancelled || scopeRef.current !== requestedScope) return;
           setBuildingsError(e instanceof Error ? e.message : String(e));
         } finally {
-          if (bboxRef.current === requestedBbox && scopeRef.current === requestedScope) {
+          if (!cancelled && scopeRef.current === requestedScope) {
             setBuildingsLoading(false);
           }
         }
@@ -487,7 +487,7 @@ export function MapPage() {
     if (online || !bbox) return;
     const requestedBbox = bbox;
     void loadFootprintsForBbox(requestedBbox).then((fc) => {
-      if (bboxRef.current !== requestedBbox) return;
+      if (!bboxKeysMatch(bboxRef.current, requestedBbox)) return;
       if (fc.features.length === 0) return;
       buildingsCacheRef.current[buildingsCacheKey] = fc;
       setBuildings(fc);
@@ -522,7 +522,7 @@ export function MapPage() {
           );
 
         const applyResults = (pinItems: MapMarker[], aggregateItems: MapMarker[]) => {
-          if (cancelled || bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+          if (cancelled || scopeRef.current !== requestedScope) return;
           const pinFiltered = filterMarkersInBbox(pinItems, requestedBbox);
           const allFiltered = filterMarkersInBbox(aggregateItems, requestedBbox);
           setMarkers(pinFiltered);
@@ -540,12 +540,12 @@ export function MapPage() {
             applyResults(r.items, r.items);
           }
         } catch (e: unknown) {
-          if (cancelled || bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+          if (cancelled || scopeRef.current !== requestedScope) return;
           setMarkers([]);
           setAllMarkers([]);
           setMarkersError(e instanceof Error ? e.message : String(e));
         } finally {
-          if (bboxRef.current === requestedBbox && scopeRef.current === requestedScope) {
+          if (!cancelled && scopeRef.current === requestedScope) {
             setMarkersLoading(false);
           }
         }
