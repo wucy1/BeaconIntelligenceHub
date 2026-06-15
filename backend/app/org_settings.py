@@ -44,7 +44,7 @@ def effective_capture_window(
     current = now or datetime.now(timezone.utc)
     start = current - timedelta(days=months * 30)
     end = current
-    if event_start is not None and event_start > start:
+    if event_start is not None and event_start <= current and event_start > start:
         start = event_start
     if event_end is not None and event_end < end:
         end = event_end

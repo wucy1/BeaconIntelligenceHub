@@ -127,6 +127,11 @@ def report_ids_active_crisis_in_bbox(
                           OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
                         )
                     )
+                    OR EXISTS (
+                      SELECT 1 FROM buildings b2
+                      WHERE b2.id = r.building_id
+                        AND b2.crisis_id = CAST(:cid AS uuid)
+                    )
                     OR (
                       NOT EXISTS (SELECT 1 FROM zones z WHERE z.crisis_id = CAST(:cid AS uuid))
                       AND (
