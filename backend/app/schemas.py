@@ -95,6 +95,7 @@ class OpsReportSummary(ReportSummary):
     crisis_types: list[str] = []
     infrastructure_types: list[str] = []
     crisis_link_status: str | None = None
+    building_name: str | None = None
 
 
 class ReportUpdate(BaseModel):

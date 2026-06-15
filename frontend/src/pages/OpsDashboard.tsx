@@ -9,6 +9,7 @@ import {
   opsGet,
   opsPatch,
   opsPost,
+  opsPostFile,
   type AuditEntry,
   type OpsCrisis,
   type OpsUserRecord,
@@ -82,6 +83,9 @@ export function OpsDashboard() {
   const [userFormMsg, setUserFormMsg] = useState<string | null>(null);
   const [leadFormMsg, setLeadFormMsg] = useState<string | null>(null);
   const [coordFormMsg, setCoordFormMsg] = useState<string | null>(null);
+  const [buildingImportMsg, setBuildingImportMsg] = useState<string | null>(null);
+  const [buildingImportOk, setBuildingImportOk] = useState(false);
+  const [uploadReplace, setUploadReplace] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activeTab, setActiveTab] = useState<OpsTabId>('overview');
 
@@ -249,6 +253,55 @@ export function OpsDashboard() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setCrisisFormMsg(msg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const importDemoBuildings = async (replace: boolean) => {
+    if (!selectedCrisisId || !canEditSelectedCrisis) return;
+    setBusy(true);
+    setBuildingImportMsg(null);
+    setBuildingImportOk(false);
+    try {
+      const res = await opsPost<{ imported: number; total: number; source: string }>(
+        `/v1/ops/crises/${selectedCrisisId}/buildings/import-demo`,
+        { replace },
+      );
+      setBuildingImportOk(true);
+      setBuildingImportMsg(
+        t('ops.buildings.imported', { imported: res.imported, total: res.total }),
+      );
+      loadAudit();
+    } catch (e) {
+      setBuildingImportOk(false);
+      setBuildingImportMsg(e instanceof Error ? e.message : t('ops.buildings.importError'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onUploadBuildingsFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !selectedCrisisId || !canEditSelectedCrisis) return;
+    setBusy(true);
+    setBuildingImportMsg(null);
+    setBuildingImportOk(false);
+    try {
+      const res = await opsPostFile<{ imported: number; total: number }>(
+        `/v1/ops/crises/${selectedCrisisId}/buildings/import`,
+        file,
+        { replace: uploadReplace ? 'true' : 'false' },
+      );
+      setBuildingImportOk(true);
+      setBuildingImportMsg(
+        t('ops.buildings.uploaded', { imported: res.imported, total: res.total }),
+      );
+      loadAudit();
+    } catch (err) {
+      setBuildingImportOk(false);
+      setBuildingImportMsg(err instanceof Error ? err.message : t('ops.buildings.importError'));
     } finally {
       setBusy(false);
     }
@@ -542,6 +595,59 @@ export function OpsDashboard() {
                     {crisisEditMsg}
                   </p>
                 )}
+                <div className="ops-dash-form ops-buildings-import">
+                  <h4>{t('ops.buildings.title')}</h4>
+                  <p className="muted">{t('ops.buildings.hint')}</p>
+                  <div className="ops-inline-actions">
+                    <button type="button" onClick={() => void importDemoBuildings(false)} disabled={busy}>
+                      {busy ? t('ops.buildings.importing') : t('ops.buildings.importDemo')}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => void importDemoBuildings(true)}
+                      disabled={busy}
+                    >
+                      {t('ops.buildings.importReplace')}
+                    </button>
+                  </div>
+                  {buildingImportMsg && (
+                    <p className={buildingImportOk ? 'ops-form-ok' : 'error'}>{buildingImportMsg}</p>
+                  )}
+                  <div className="ops-buildings-upload">
+                    <p className="muted">{t('ops.buildings.uploadHint')}</p>
+                    <label className="ops-field">
+                      {t('ops.buildings.uploadLabel')}
+                      <input
+                        className="ops-input"
+                        type="file"
+                        accept=".geojson,.json,application/geo+json,application/json"
+                        onChange={(ev) => void onUploadBuildingsFile(ev)}
+                        disabled={busy}
+                      />
+                    </label>
+                    <label className="ops-field ops-checkbox-field">
+                      <input
+                        type="checkbox"
+                        checked={uploadReplace}
+                        onChange={(e) => setUploadReplace(e.target.checked)}
+                        disabled={busy}
+                      />
+                      <span>{t('ops.buildings.uploadReplace')}</span>
+                    </label>
+                    <p className="muted">
+                      <a
+                        href="/assets/building-footprints.example.geojson"
+                        download="building-footprints.example.geojson"
+                        className="ops-dash-inline-link"
+                      >
+                        {t('ops.buildings.exampleDownload')}
+                      </a>
+                      {' · '}
+                      {t('ops.buildings.formatHint')}
+                    </p>
+                  </div>
+                </div>
               </>
             )}
             {selectedCrisis && isManageableCrisis(selectedCrisis) && (

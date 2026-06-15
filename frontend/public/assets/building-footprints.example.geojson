@@ -1,0 +1,45 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-74.0135, 40.7078],
+            [-74.0129, 40.7078],
+            [-74.0129, 40.7083],
+            [-74.0135, 40.7083],
+            [-74.0135, 40.7078]
+          ]
+        ]
+      },
+      "properties": {
+        "name": "Example Building A",
+        "external_ref": "demo-bin-1001"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [-74.0120, 40.7070],
+              [-74.0114, 40.7070],
+              [-74.0114, 40.7075],
+              [-74.0120, 40.7075],
+              [-74.0120, 40.7070]
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "name": "Example Building B",
+        "external_ref": "demo-bin-1002"
+      }
+    }
+  ]
+}

@@ -10,6 +10,17 @@ import {
 import { prefetchMapTiles, type PrefetchProgress } from '../offline/tilePrefetch';
 import { DEFAULT_RADIUS_KM, type LatLng } from '../offline/tileMath';
 
+export type FootprintPrefetchNote = {
+  featureCount: number;
+  skipped: boolean;
+  reason?: string;
+};
+
+export type OfflineDownloadOptions = {
+  includeFootprints?: boolean;
+  crisisIds?: string[];
+};
+
 export function useOfflineMapTiles(center: LatLng | null) {
   const [ready, setReady] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -20,6 +31,7 @@ export function useOfflineMapTiles(center: LatLng | null) {
   const [progress, setProgress] = useState<PrefetchProgress | null>(null);
   const [regions, setRegions] = useState<MapRegionMeta[]>([]);
   const [cachedTileCount, setCachedTileCount] = useState(0);
+  const [footprintNote, setFootprintNote] = useState<FootprintPrefetchNote | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const refreshRegions = useCallback(async () => {
@@ -56,17 +68,21 @@ export function useOfflineMapTiles(center: LatLng | null) {
   }, [refreshRegions]);
 
   const download = useCallback(
-    async (loc: LatLng) => {
+    async (loc: LatLng, opts?: OfflineDownloadOptions) => {
       abortRef.current?.abort();
       const ac = new AbortController();
       abortRef.current = ac;
       setDownloading(true);
+      setFootprintNote(null);
       setProgress({ done: 0, total: 0, failed: 0 });
       try {
         const result = await prefetchMapTiles({
           center: loc,
           signal: ac.signal,
           onProgress: setProgress,
+          includeFootprints: opts?.includeFootprints,
+          crisisIds: opts?.crisisIds,
+          onFootprintsDone: setFootprintNote,
         });
         await refresh(loc);
         await refreshRegions();
@@ -97,5 +113,6 @@ export function useOfflineMapTiles(center: LatLng | null) {
     regions,
     cachedTileCount,
     refreshRegions,
+    footprintNote,
   };
 }

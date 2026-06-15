@@ -21,6 +21,8 @@ export type MapRegionMeta = {
   zMax: number;
   tileCount: number;
   downloadedAt: string;
+  footprintsIncluded?: boolean;
+  footprintCount?: number;
 };
 
 export async function getTileBlob(z: number, x: number, y: number): Promise<Blob | null> {

@@ -51,6 +51,22 @@ export async function opsPost<T>(path: string, body: unknown): Promise<T> {
   return parseOpsJson<T>(res, path);
 }
 
+export async function opsPostFile<T>(
+  path: string,
+  file: File,
+  fields?: Record<string, string>,
+): Promise<T> {
+  const form = new FormData();
+  form.append('file', file);
+  if (fields) {
+    for (const [k, v] of Object.entries(fields)) {
+      form.append(k, v);
+    }
+  }
+  const res = await opsFetch(path, { method: 'POST', body: form });
+  return parseOpsJson<T>(res, path);
+}
+
 export async function opsPatch<T>(path: string, body: unknown): Promise<T> {
   const res = await opsFetch(path, {
     method: 'PATCH',
@@ -94,6 +110,7 @@ export type OpsReport = {
   id: string;
   crisis_id: string;
   building_id: string | null;
+  building_name?: string | null;
   damage_level: string;
   site_status: string;
   captured_at_client: string;

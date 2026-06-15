@@ -29,6 +29,7 @@ import {
   type PendingReportSummary,
 } from '../offline/queue';
 import type { MapRegionMeta } from '../offline/tileCache';
+import { loadFootprintsForBbox, MAX_OFFLINE_FOOTPRINT_FEATURES } from '../offline/buildingFootprintCache';
 import { useI18n } from '../i18n/I18nContext';
 import { getOpsToken } from '../ops/opsAuth';
 import {
@@ -58,6 +59,8 @@ type Placement = {
 };
 
 type TopPanelKey = 'contribution' | 'offline' | 'legend' | null;
+
+const OFFLINE_INCLUDE_FOOTPRINTS_KEY = 'bih-offline-include-footprints';
 
 function emptyPlacement(): Placement {
   return { buildingId: null, buildingName: null, pin: null };
@@ -146,6 +149,13 @@ export function MapPage() {
   } | null>(null);
   const [queueFlash, setQueueFlash] = useState(false);
   const queueCardRef = useRef<HTMLDivElement | null>(null);
+  const [offlineIncludeFootprints, setOfflineIncludeFootprints] = useState(() => {
+    try {
+      return localStorage.getItem(OFFLINE_INCLUDE_FOOTPRINTS_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
 
   bboxRef.current = bbox;
 
@@ -348,6 +358,12 @@ export function MapPage() {
     return mapScope;
   }, [mapScope, activeCrises]);
 
+  const crisisIdsForFootprints = useMemo(() => {
+    if (mapScope === 'unspecified') return [] as string[];
+    if (mapScope === 'all') return activeCrises.map((c) => c.id);
+    return [mapScope];
+  }, [mapScope, activeCrises]);
+
   useEffect(() => {
     if (!online || !bbox || publicCrises.length === 0) return;
     const requestedScope = mapScope;
@@ -400,6 +416,18 @@ export function MapPage() {
     }, 350);
     return () => clearTimeout(timer);
   }, [online, mapScope, bbox, refreshKey, publicCrises.length, activeCrises, buildingsCacheKey]);
+
+  useEffect(() => {
+    if (online || !bbox) return;
+    const requestedBbox = bbox;
+    void loadFootprintsForBbox(requestedBbox).then((fc) => {
+      if (bboxRef.current !== requestedBbox) return;
+      if (fc.features.length === 0) return;
+      buildingsCacheRef.current[buildingsCacheKey] = fc;
+      setBuildings(fc);
+      setBuildingsError(null);
+    });
+  }, [online, bbox, buildingsCacheKey]);
 
   useEffect(() => {
     if (!online || !bbox || mapMode === 'new' || inspectOpen) {
@@ -585,8 +613,20 @@ export function MapPage() {
       geo.request();
       return;
     }
-    void offlineTiles.download(tileCenter);
-  }, [tileCenter, geo, offlineTiles]);
+    void offlineTiles.download(tileCenter, {
+      includeFootprints: offlineIncludeFootprints,
+      crisisIds: crisisIdsForFootprints,
+    });
+  }, [tileCenter, geo, offlineTiles, offlineIncludeFootprints, crisisIdsForFootprints]);
+
+  const onToggleOfflineFootprints = useCallback((checked: boolean) => {
+    setOfflineIncludeFootprints(checked);
+    try {
+      localStorage.setItem(OFFLINE_INCLUDE_FOOTPRINTS_KEY, checked ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     if (!locatePending || !geo.position) return;
@@ -997,6 +1037,45 @@ export function MapPage() {
                     })
                   : t('map.offline.downloadCoverageUnknown')}
               </p>
+              {online && crisisIdsForFootprints.length > 0 && (
+                <label className="map-offline-footprint-opt">
+                  <input
+                    type="checkbox"
+                    checked={offlineIncludeFootprints}
+                    onChange={(e) => onToggleOfflineFootprints(e.target.checked)}
+                    disabled={offlineTiles.downloading}
+                  />
+                  <span>{t('map.offline.includeFootprints')}</span>
+                </label>
+              )}
+              {online && crisisIdsForFootprints.length === 0 && (
+                <p className="map-offline-download-meta map-offline-legend-hint">
+                  {t('map.offline.footprintsNeedCrisis')}
+                </p>
+              )}
+              {online && offlineIncludeFootprints && (
+                <p className="map-offline-download-meta map-offline-legend-hint">
+                  {t('map.offline.includeFootprintsHint')}
+                </p>
+              )}
+              {offlineTiles.footprintNote && (
+                <p
+                  className={
+                    offlineTiles.footprintNote.skipped
+                      ? 'map-offline-download-meta error'
+                      : 'map-offline-download-meta ops-form-ok'
+                  }
+                >
+                  {offlineTiles.footprintNote.skipped
+                    ? t(`map.offline.footprintsSkipped.${offlineTiles.footprintNote.reason ?? 'fetch_failed'}`, {
+                        count: offlineTiles.footprintNote.featureCount,
+                        max: MAX_OFFLINE_FOOTPRINT_FEATURES,
+                      })
+                    : t('map.offline.footprintsSaved', {
+                        count: offlineTiles.footprintNote.featureCount,
+                      })}
+                </p>
+              )}
               {online && (
                 <div className="map-offline-download-actions">
                   <button
@@ -1050,6 +1129,9 @@ export function MapPage() {
                             lng: fmtCoord(r.center.lng),
                             side: Number((r.radiusKm * 2).toFixed(1)),
                           })}
+                          {r.footprintsIncluded
+                            ? ` · ${t('map.offline.regionFootprints', { count: r.footprintCount ?? 0 })}`
+                            : ''}
                         </button>
                       </li>
                     ))}

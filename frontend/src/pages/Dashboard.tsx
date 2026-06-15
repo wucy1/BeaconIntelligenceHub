@@ -27,6 +27,7 @@ type ReportSummary = {
   id: string;
   crisis_id: string;
   building_id: string | null;
+  building_name?: string | null;
   damage_level: string;
   captured_at_client: string;
   received_at_server: string;
@@ -723,7 +724,15 @@ export function Dashboard() {
                       </td>
                       <td>{new Date(r.received_at_server).toLocaleString()}</td>
                       <td>{r.damage_level}</td>
-                      <td>{r.building_id?.slice(0, 8) ?? '—'}</td>
+                      <td>
+                        {r.building_id ? (
+                          <span title={r.building_id}>
+                            {r.building_name ?? r.building_id.slice(0, 8)}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                       <td>
                         <button type="button" className="linkish" onClick={() => setReviewId(r.id)}>
                           {r.description_preview}

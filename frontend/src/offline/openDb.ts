@@ -1,7 +1,7 @@
 export const OFFLINE_DB_NAME = 'bih-offline';
-export const OFFLINE_DB_VERSION = 3;
+export const OFFLINE_DB_VERSION = 4;
 
-const STORES = ['pending_reports', 'crisis_snapshot', 'map_tiles', 'map_regions'] as const;
+const STORES = ['pending_reports', 'crisis_snapshot', 'map_tiles', 'map_regions', 'map_buildings'] as const;
 
 /** 共用 IndexedDB（佇列、危機快照、地圖瓦片） */
 export function openOfflineDb(): Promise<IDBDatabase> {
@@ -22,6 +22,9 @@ export function openOfflineDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains('map_regions')) {
         db.createObjectStore('map_regions');
+      }
+      if (!db.objectStoreNames.contains('map_buildings')) {
+        db.createObjectStore('map_buildings');
       }
     };
   });

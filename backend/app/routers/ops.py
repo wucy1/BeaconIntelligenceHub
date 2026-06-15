@@ -4,7 +4,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from geoalchemy2.shape import from_shape
 from pydantic import BaseModel, Field
 from shapely.geometry import shape
@@ -12,6 +13,11 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.building_import import (
+    EXAMPLE_GEOJSON_PATH,
+    import_buildings_from_bytes,
+    import_demo_buildings,
+)
 from app.archive_logic import (
     count_linked_in_scope,
     report_ids_for_archive,
@@ -28,6 +34,7 @@ from app.ops_reports_query import (
 )
 from app.org_settings import get_org_settings
 from app.models import (
+    Building,
     Crisis,
     CrisisLeadAssignment,
     OpsAuditLog,
@@ -94,6 +101,10 @@ class CrisisPatchBody(BaseModel):
     archive_status: str | None = None
     archive_window_start: datetime | None = None
     archive_window_end: datetime | None = None
+
+
+class BuildingImportBody(BaseModel):
+    replace: bool = False
 
 
 class ArchiveRunBody(BaseModel):
@@ -746,6 +757,81 @@ def ops_patch_crisis(
     return _crisis_out(crisis)
 
 
+@router.post("/crises/{crisis_id}/buildings/import-demo")
+def ops_import_demo_buildings(
+    crisis_id: UUID,
+    body: BuildingImportBody,
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
+    if not crisis:
+        raise HTTPException(status_code=404, detail="Crisis not found")
+    if _is_system_unspecified(crisis):
+        raise HTTPException(status_code=422, detail="Cannot import buildings for system unspecified crisis")
+    if not principal.can_manage_crisis(crisis_id):
+        raise HTTPException(status_code=403, detail="Cannot import buildings for this crisis")
+    try:
+        result = import_demo_buildings(db, crisis_id, replace=body.replace)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="buildings.import_demo",
+        entity_type="crisis",
+        entity_id=crisis.id,
+        detail=result,
+    )
+    db.commit()
+    return result
+
+
+@router.get("/buildings/geojson-example")
+def ops_buildings_geojson_example(
+    principal: OpsPrincipal = Depends(get_ops_principal),
+) -> FileResponse:
+    if not EXAMPLE_GEOJSON_PATH.is_file():
+        raise HTTPException(status_code=404, detail="Example GeoJSON not found")
+    return FileResponse(
+        EXAMPLE_GEOJSON_PATH,
+        media_type="application/geo+json",
+        filename="building-footprints.example.geojson",
+    )
+
+
+@router.post("/crises/{crisis_id}/buildings/import")
+async def ops_import_buildings_file(
+    crisis_id: UUID,
+    file: UploadFile = File(...),
+    replace: bool = Form(False),
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    crisis = db.query(Crisis).filter(Crisis.id == crisis_id).first()
+    if not crisis:
+        raise HTTPException(status_code=404, detail="Crisis not found")
+    if _is_system_unspecified(crisis):
+        raise HTTPException(status_code=422, detail="Cannot import buildings for system unspecified crisis")
+    if not principal.can_manage_crisis(crisis_id):
+        raise HTTPException(status_code=403, detail="Cannot import buildings for this crisis")
+    raw = await file.read()
+    try:
+        result = import_buildings_from_bytes(db, crisis_id, raw, replace=replace, source="upload")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    log_ops_action(
+        db,
+        actor_user_id=principal.user_id,
+        action="buildings.import_upload",
+        entity_type="crisis",
+        entity_id=crisis.id,
+        detail={**result, "filename": file.filename},
+    )
+    db.commit()
+    return result
+
+
 @router.post("/crises/{crisis_id}/archive-preview")
 def ops_archive_preview(
     crisis_id: UUID,
@@ -1000,11 +1086,19 @@ def ops_list_reports(
     if rows and ids:
         order = {rid: i for i, rid in enumerate(ids)}
         rows.sort(key=lambda r: order.get(r.id, 9999))
+    building_names: dict[UUID, str | None] = {}
+    building_ids = [r.building_id for r in rows if r.building_id]
+    if building_ids:
+        for bid, name in (
+            db.query(Building.id, Building.name).filter(Building.id.in_(building_ids)).all()
+        ):
+            building_names[bid] = name
     items = [
         OpsReportSummary(
             id=r.id,
             crisis_id=r.crisis_id,
             building_id=r.building_id,
+            building_name=building_names.get(r.building_id) if r.building_id else None,
             damage_level=r.damage_level,
             site_status=site_status_from_appendix(r.appendix_answers),
             captured_at_client=r.captured_at_client,
