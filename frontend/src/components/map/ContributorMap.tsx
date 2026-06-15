@@ -16,7 +16,6 @@ import {
 import 'leaflet/dist/leaflet.css';
 
 import { useI18n } from '../../i18n/I18nContext';
-import { FOOTPRINT_FIT_MIN_ZOOM } from '../../constants/mapFootprints';
 import { centroidOfFeature } from '../../utils/buildingAtPoint';
 import { buildingDisplayById, buildingFootprintStyle, resolveGroupDisplay } from '../../utils/mapMarkers';
 import {
@@ -508,12 +507,7 @@ export function ContributorMap({
         <FitBoundsOnce bounds={crisisBounds} tick={fitBoundsTick} />
       )}
       {zoneFitBounds && zoneFitTick > 0 && (
-        <FitLatLngBoundsOnce
-          bounds={zoneFitBounds}
-          tick={zoneFitTick}
-          maxZoom={17}
-          minZoom={FOOTPRINT_FIT_MIN_ZOOM}
-        />
+        <FitLatLngBoundsOnce bounds={zoneFitBounds} tick={zoneFitTick} maxZoom={14} />
       )}
       {regionFitBounds && regionFitTick > 0 && (
         <FitLatLngBoundsOnce bounds={regionFitBounds} tick={regionFitTick} maxZoom={16} />

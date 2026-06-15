@@ -170,7 +170,6 @@ export function MapPage() {
   const scopeRef = useRef(mapScope);
   scopeRef.current = mapScope;
   const buildingsCacheRef = useRef<Record<string, GeoJSON.FeatureCollection>>({});
-  const autoZoneFitScopeRef = useRef<string | null>(null);
   const markersCacheRef = useRef<Record<string, MapMarker[]>>({});
   /** 全站共用視角；切換危機時不跳地圖位置 */
   const mapCenterStorageKey = `${MAP_CENTER_STORAGE_KEY_PREFIX}:view`;
@@ -393,15 +392,6 @@ export function MapPage() {
     }
     urlBootstrappedRef.current = true;
   }, [crisesLoading, publicCrises, searchParams, selectScope, flyToDemoFootprints]);
-
-  /** 選定有分區的危機時自動定位一次，並放大至可載入 footprint 的縮放級 */
-  useEffect(() => {
-    if (mapScope === 'all' || mapScope === 'unspecified') return;
-    if (publicZones.length === 0) return;
-    if (autoZoneFitScopeRef.current === mapScope) return;
-    autoZoneFitScopeRef.current = mapScope;
-    setZoneFitTick((n) => n + 1);
-  }, [mapScope, publicZones.length]);
 
   useEffect(() => {
     if (!online || !bbox || publicCrises.length === 0 || crisesLoading) return;
