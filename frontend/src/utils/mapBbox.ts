@@ -32,6 +32,14 @@ export function bboxKeysMatch(a: string | null | undefined, b: string | null | u
   return normalizeBboxString(a) === normalizeBboxString(b);
 }
 
+export function buildingsFetchKey(scope: string, bbox: string): string {
+  return `${scope}:${normalizeBboxString(bbox)}`;
+}
+
+export function markersFetchKey(scope: string, bbox: string, mode: string): string {
+  return `${scope}:${normalizeBboxString(bbox)}:${mode}`;
+}
+
 export function parseBbox(bbox: string): [number, number, number, number] | null {
   const parts = bbox.split(',').map(Number);
   if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return null;

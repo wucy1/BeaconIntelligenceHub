@@ -158,6 +158,7 @@
   "map.hint.noMineInView": "此視野內沒有您的回報。請拖曳地圖或切到「新增」。",
   "map.legend.buildings": "建物輪廓 {{count}}",
   "map.legend.buildingsLoading": "載入建物輪廓中…",
+  "map.legend.reportsLoading": "載入回報標記中…",
   "map.legend.flyToDemoFootprints": "移至示範區（曼哈頓下城）",
   "map.legend.footprintVisualHint": "輪廓為地圖上半透明藍色多邊形（不是圖釘）。",
   "map.legend.clusterNote": "放大或點叢集可展開。",

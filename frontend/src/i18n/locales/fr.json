@@ -267,6 +267,7 @@
   "map.legend.title": "Légende",
   "map.legend.buildings": "Emprises de bâtiments ({{count}})",
   "map.legend.buildingsLoading": "Chargement des emprises…",
+  "map.legend.reportsLoading": "Chargement des signalements…",
   "map.legend.flyToDemoFootprints": "Aller à la zone démo (Lower Manhattan)",
   "map.legend.footprintVisualHint": "Les emprises sont des polygones bleus semi-transparents (pas des repères).",
   "map.legend.footprintNote": "Emprises = import groupé, facultatif",

@@ -157,6 +157,7 @@
   "map.hint.noMineInView": "Keine eigenen Meldungen in dieser Ansicht. Karte verschieben oder „Neu“ verwenden.",
   "map.legend.buildings": "Gebäudefootprints ({{count}})",
   "map.legend.buildingsLoading": "Gebäudefootprints werden geladen…",
+  "map.legend.reportsLoading": "Meldungsmarkierungen werden geladen…",
   "map.legend.flyToDemoFootprints": "Zum Demo-Gebiet (Lower Manhattan)",
   "map.legend.footprintVisualHint": "Footprints erscheinen als halbtransparente blaue Polygone (keine Pins).",
   "map.legend.clusterNote": "Hineinzoomen oder Cluster antippen zum Aufklappen.",

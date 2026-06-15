@@ -267,6 +267,7 @@
   "map.legend.title": "مفتاح الخريطة",
   "map.legend.buildings": "حدود المباني ({{count}})",
   "map.legend.buildingsLoading": "جارٍ تحميل حدود المباني…",
+  "map.legend.reportsLoading": "جارٍ تحميل علامات البلاغات…",
   "map.legend.flyToDemoFootprints": "الانتقال إلى منطقة العرض (Lower Manhattan)",
   "map.legend.footprintVisualHint": "الحدود هي مضلعات زرقاء شبه شفافة (وليست دبابيس).",
   "map.legend.footprintNote": "الحدود = استيراد دفعي، اختياري",

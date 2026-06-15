@@ -157,6 +157,7 @@
   "map.hint.noMineInView": "Nenhum dos seus relatórios nesta vista. Desloque o mapa ou use Novo.",
   "map.legend.buildings": "Contornos de edifícios ({{count}})",
   "map.legend.buildingsLoading": "A carregar contornos de edifícios…",
+  "map.legend.reportsLoading": "A carregar marcadores de relatórios…",
   "map.legend.flyToDemoFootprints": "Ir para área demo (Lower Manhattan)",
   "map.legend.footprintVisualHint": "Os contornos são polígonos azuis semitransparentes (não marcadores).",
   "map.legend.clusterNote": "Amplie ou toque nos agrupamentos para expandir.",

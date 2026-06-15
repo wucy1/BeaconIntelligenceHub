@@ -157,6 +157,7 @@
   "map.hint.noMineInView": "Ninguno de sus informes en esta vista. Desplace el mapa o use Nuevo.",
   "map.legend.buildings": "Huellas de edificios ({{count}})",
   "map.legend.buildingsLoading": "Cargando huellas de edificios…",
+  "map.legend.reportsLoading": "Cargando marcadores de informes…",
   "map.legend.flyToDemoFootprints": "Ir al área demo (Lower Manhattan)",
   "map.legend.footprintVisualHint": "Las huellas son polígonos azules semitransparentes (no marcadores).",
   "map.legend.clusterNote": "Acérquese o toque los grupos para expandirlos.",

@@ -267,6 +267,7 @@
   "map.legend.title": "Legend",
   "map.legend.buildings": "Building footprints ({{count}})",
   "map.legend.buildingsLoading": "Loading building footprints…",
+  "map.legend.reportsLoading": "Loading report markers…",
   "map.legend.flyToDemoFootprints": "Go to demo area (Lower Manhattan)",
   "map.legend.footprintVisualHint": "Footprints appear as semi-transparent blue polygons on the map (not pins).",
   "map.legend.footprintNote": "Footprints = batch import, optional",

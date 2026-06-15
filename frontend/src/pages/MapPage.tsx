@@ -46,7 +46,7 @@ import {
   findBuildingAtPoint,
   markersNearPoint,
 } from '../utils/buildingAtPoint';
-import { bboxKeysMatch, filterMarkersInBbox } from '../utils/mapBbox';
+import { bboxKeysMatch, buildingsFetchKey, filterMarkersInBbox, markersFetchKey, normalizeBboxString } from '../utils/mapBbox';
 
 const DEFAULT_CENTER: [number, number] = [20, 0];
 const DEFAULT_ZOOM = 14;
@@ -171,6 +171,10 @@ export function MapPage() {
   const scopeRef = useRef(mapScope);
   scopeRef.current = mapScope;
   const buildingsCacheRef = useRef<Record<string, GeoJSON.FeatureCollection>>({});
+  const buildingsBboxCacheRef = useRef<Record<string, GeoJSON.FeatureCollection>>({});
+  const footprintsFetchGenRef = useRef(0);
+  const markersFetchGenRef = useRef(0);
+  const markersBboxCacheRef = useRef<Record<string, { pins: MapMarker[]; all: MapMarker[] }>>({});
   const markersCacheRef = useRef<Record<string, MapMarker[]>>({});
   /** 全站共用視角；切換危機時不跳地圖位置 */
   const mapCenterStorageKey = `${MAP_CENTER_STORAGE_KEY_PREFIX}:view`;
@@ -384,6 +388,13 @@ export function MapPage() {
     return [mapScope];
   }, [mapScope, activeCrises]);
 
+  const crisisIdsFootprintKey = crisisIdsForFootprints.join(',');
+
+  const onBboxChange = useCallback((next: string) => {
+    const normalized = normalizeBboxString(next);
+    setBbox((prev) => (prev === normalized ? prev : normalized));
+  }, []);
+
   const flyToDemoFootprints = useCallback(() => {
     setFlyTarget({ ...NYC_DEMO_MAP_VIEW });
     setActiveTopPanel('legend');
@@ -403,8 +414,24 @@ export function MapPage() {
 
   useEffect(() => {
     if (!online || !bbox || publicCrises.length === 0 || crisesLoading) return;
+
+    const fetchKey = buildingsFetchKey(mapScope, bbox);
+    const cached = buildingsBboxCacheRef.current[fetchKey];
+    if (cached) {
+      setBuildings(cached);
+      setBuildingsError(null);
+      setBuildingsLoading(false);
+      return;
+    }
+
+    // 離開已載入視野時先清掉舊輪廓，避免紐約 154 棟殘留 + 一直顯示 loading
+    setBuildings({ type: 'FeatureCollection', features: [] });
+    setBuildingsLoading(false);
+
     const requestedScope = mapScope;
     const requestedBbox = bbox;
+    const requestedKey = fetchKey;
+    const fetchGen = ++footprintsFetchGenRef.current;
     let cancelled = false;
     const timer = setTimeout(() => {
       const q = encodeURIComponent(requestedBbox);
@@ -417,9 +444,7 @@ export function MapPage() {
               return { type: 'FeatureCollection', features: [] };
             }
             const crisisIds =
-              requestedScope === 'all'
-                ? activeCrises.map((c) => c.id)
-                : [requestedScope];
+              requestedScope === 'all' ? crisisIdsForFootprints : [requestedScope];
             if (crisisIds.length === 0) {
               return null;
             }
@@ -463,14 +488,17 @@ export function MapPage() {
             return { type: 'FeatureCollection', features };
           })();
           if (fc === null) return;
-          if (cancelled || scopeRef.current !== requestedScope) return;
+          if (cancelled || fetchGen !== footprintsFetchGenRef.current) return;
+          if (scopeRef.current !== requestedScope) return;
+          buildingsBboxCacheRef.current[requestedKey] = fc;
           buildingsCacheRef.current[requestedScope === 'all' ? buildingsCacheKey : requestedScope] = fc;
           setBuildings(fc);
         } catch (e: unknown) {
-          if (cancelled || scopeRef.current !== requestedScope) return;
+          if (cancelled || fetchGen !== footprintsFetchGenRef.current) return;
+          if (scopeRef.current !== requestedScope) return;
           setBuildingsError(e instanceof Error ? e.message : String(e));
         } finally {
-          if (!cancelled && scopeRef.current === requestedScope) {
+          if (fetchGen === footprintsFetchGenRef.current) {
             setBuildingsLoading(false);
           }
         }
@@ -481,7 +509,18 @@ export function MapPage() {
       clearTimeout(timer);
       setBuildingsLoading(false);
     };
-  }, [online, mapScope, bbox, refreshKey, publicCrises.length, activeCrises, buildingsCacheKey, crisesLoading, t]);
+  }, [
+    online,
+    mapScope,
+    bbox,
+    refreshKey,
+    publicCrises.length,
+    crisisIdsFootprintKey,
+    buildingsCacheKey,
+    crisesLoading,
+    crisisIdsForFootprints,
+    t,
+  ]);
 
   useEffect(() => {
     if (online || !bbox) return;
@@ -503,8 +542,23 @@ export function MapPage() {
       }
       return;
     }
+
+    const fetchKey = markersFetchKey(mapScope, bbox, mapMode);
+    const cached = markersBboxCacheRef.current[fetchKey];
+    if (cached) {
+      setMarkers(cached.pins);
+      setAllMarkers(cached.all);
+      setMarkersError(null);
+      setMarkersLoading(false);
+      return;
+    }
+
+    setMarkersLoading(false);
+
     const requestedBbox = bbox;
     const requestedScope = mapScope;
+    const requestedKey = fetchKey;
+    const fetchGen = ++markersFetchGenRef.current;
     let cancelled = false;
     const timer = setTimeout(() => {
       setMarkersError(null);
@@ -522,13 +576,15 @@ export function MapPage() {
           );
 
         const applyResults = (pinItems: MapMarker[], aggregateItems: MapMarker[]) => {
-          if (cancelled || scopeRef.current !== requestedScope) return;
+          if (cancelled || fetchGen !== markersFetchGenRef.current) return;
+          if (scopeRef.current !== requestedScope) return;
           const pinFiltered = filterMarkersInBbox(pinItems, requestedBbox);
           const allFiltered = filterMarkersInBbox(aggregateItems, requestedBbox);
           setMarkers(pinFiltered);
           setAllMarkers(allFiltered);
           markersCacheRef.current[`${requestedScope}:${mapMode}`] = pinFiltered;
           markersCacheRef.current[`${requestedScope}:all`] = allFiltered;
+          markersBboxCacheRef.current[requestedKey] = { pins: pinFiltered, all: allFiltered };
         };
 
         try {
@@ -540,12 +596,13 @@ export function MapPage() {
             applyResults(r.items, r.items);
           }
         } catch (e: unknown) {
-          if (cancelled || scopeRef.current !== requestedScope) return;
+          if (cancelled || fetchGen !== markersFetchGenRef.current) return;
+          if (scopeRef.current !== requestedScope) return;
           setMarkers([]);
           setAllMarkers([]);
           setMarkersError(e instanceof Error ? e.message : String(e));
         } finally {
-          if (!cancelled && scopeRef.current === requestedScope) {
+          if (fetchGen === markersFetchGenRef.current) {
             setMarkersLoading(false);
           }
         }
@@ -983,7 +1040,7 @@ export function MapPage() {
         onBuildingViewDetails={onBuildingViewDetails}
         onMarkerViewDetails={onMarkerViewDetails}
         markerPopupLabels={markerPopupLabels}
-        onBboxChange={setBbox}
+        onBboxChange={onBboxChange}
         onViewChange={onViewChange}
         flyTo={flyTarget}
         onFlyComplete={onFlyComplete}
@@ -1365,8 +1422,12 @@ export function MapPage() {
         <p className="map-hint map-hint-warn">{t('map.err.markersLoad', { msg: markersError })}</p>
       )}
 
-      {(buildingsLoading || markersLoading) && !buildingsError && !markersError && (
+      {buildingsLoading && !buildingsError && (
         <p className="map-hint">{t('map.legend.buildingsLoading')}</p>
+      )}
+
+      {markersLoading && !markersError && (
+        <p className="map-hint">{t('map.legend.reportsLoading')}</p>
       )}
 
       {online && mapMode === 'all' && markers.length === 0 && bbox && !buildingsError && !markersError && !markersLoading && (

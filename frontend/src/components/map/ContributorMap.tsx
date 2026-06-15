@@ -5,7 +5,6 @@ import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CircleMarker,
-  GeoJSON,
   MapContainer,
   Marker,
   Popup,
@@ -18,7 +17,7 @@ import 'leaflet/dist/leaflet.css';
 import { useI18n } from '../../i18n/I18nContext';
 import { centroidOfFeature } from '../../utils/buildingAtPoint';
 import { normalizeBboxString } from '../../utils/mapBbox';
-import { buildingDisplayById, buildingFootprintStyle, resolveGroupDisplay } from '../../utils/mapMarkers';
+import { buildingDisplayById, resolveGroupDisplay } from '../../utils/mapMarkers';
 import {
   MapZoomLimits,
   OfflineOsmTileLayer,
@@ -26,6 +25,7 @@ import {
   type OfflineZoomLimits,
 } from './CachedOsmTileLayer';
 import { CrisisZonesLayer } from './CrisisZonesLayer';
+import { BuildingsFootprintLayer } from './BuildingsFootprintLayer';
 import { ClusteredReportMarkers } from './ClusteredReportMarkers';
 import { MapRailZoom } from './MapRailZoom';
 import { DownloadPreviewLayer } from './DownloadPreviewLayer';
@@ -145,10 +145,13 @@ function FlyTo({
 function BboxWatcher({ onBboxChange }: { onBboxChange: (bbox: string) => void }) {
   const map = useMap();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastEmittedRef = useRef<string | null>(null);
 
   const emit = () => {
     const b = map.getBounds();
     const s = normalizeBboxString(`${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`);
+    if (lastEmittedRef.current === s) return;
+    lastEmittedRef.current = s;
     onBboxChange(s);
   };
 
@@ -425,16 +428,6 @@ export function ContributorMap({
     if (mapMode === 'new') setBuildingPopup(null);
   }, [mapMode]);
 
-  const buildingStyle = useMemo(
-    () => ({
-      color: '#1155cc',
-      weight: 2,
-      fillColor: '#3388ff',
-      fillOpacity: 0.28,
-    }),
-    [],
-  );
-
   const onEachBuilding = (feature: GeoJSON.Feature, layer: L.Layer) => {
     const id = (feature.properties?.building_id as string) ?? null;
     layer.off('click');
@@ -516,20 +509,10 @@ export function ContributorMap({
       )}
 
       {buildings.features.length > 0 && (
-        <GeoJSON
-          key={`buildings-layer-${buildings.features.length}-${(buildings.features[0]?.properties?.building_id as string) ?? '0'}`}
-          data={buildings}
-          style={(feature) => {
-            const id = feature?.properties?.building_id as string | undefined;
-            const selected = Boolean(id && id === selectedBuildingId);
-            const damage = id ? buildingDamageMap.get(id) : undefined;
-            const { fillColor, fillOpacity } = buildingFootprintStyle(damage, selected);
-            return {
-              ...buildingStyle,
-              fillColor,
-              fillOpacity,
-            };
-          }}
+        <BuildingsFootprintLayer
+          buildings={buildings}
+          selectedBuildingId={selectedBuildingId}
+          buildingDamageMap={buildingDamageMap}
           onEachFeature={onEachBuilding}
         />
       )}

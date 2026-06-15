@@ -157,6 +157,7 @@
   "map.hint.noMineInView": "Ваших отчётов нет в этом виде. Сдвиньте карту или используйте «Новый».",
   "map.legend.buildings": "Контуры зданий ({{count}})",
   "map.legend.buildingsLoading": "Загрузка контуров зданий…",
+  "map.legend.reportsLoading": "Загрузка меток сообщений…",
   "map.legend.flyToDemoFootprints": "Перейти к демо-зоне (Lower Manhattan)",
   "map.legend.footprintVisualHint": "Контуры — полупрозрачные синие полигоны (не метки).",
   "map.legend.clusterNote": "Увеличьте масштаб или нажмите на кластеры, чтобы развернуть.",

@@ -39,7 +39,7 @@ function BuildingsLegendRows({
       <div className="map-legend-row">
         <span className="map-legend-swatch building" />
         <span>
-          {buildingsLoading
+          {buildingsLoading && buildingCount === 0
             ? t('map.legend.buildingsLoading')
             : t('map.legend.buildings', { count: buildingCount })}
         </span>

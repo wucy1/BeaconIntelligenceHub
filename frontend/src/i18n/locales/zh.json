@@ -157,6 +157,7 @@
   "map.hint.noMineInView": "此视野内没有您的回报。请拖曳地图或切到「新增」。",
   "map.legend.buildings": "建物轮廓 {{count}}",
   "map.legend.buildingsLoading": "载入建物轮廓中…",
+  "map.legend.reportsLoading": "载入回报标记中…",
   "map.legend.flyToDemoFootprints": "移至示范区（曼哈顿下城）",
   "map.legend.footprintVisualHint": "轮廓为地图上半透明蓝色多边形（不是图钉）。",
   "map.legend.clusterNote": "放大或点丛集可展开。",
