@@ -293,19 +293,35 @@ export function OpsMapPage() {
     }
   }, [activeCrisisId]);
 
-  const loadCrises = useCallback(() => {
-    opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises')
-      .then((d) => {
-        setCrises(d.items);
-        setActiveCrisisId((prev) => {
-          if (prev && d.items.some((c) => c.id === prev)) return prev;
-          const manageable = d.items.filter(isManageableCrisis);
-          if (crisisFromUrl && manageable.some((c) => c.id === crisisFromUrl)) return crisisFromUrl;
-          return manageable[0]?.id ?? d.items[0]?.id ?? '';
-        });
-      })
-      .catch(() => setCrises([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount + initial URL only
+  const loadCrises = useCallback(async () => {
+    const readCrisisFromUrl = () =>
+      parseOpsBrowseSearchParams(new URLSearchParams(window.location.search)).crisisId ??
+      new URLSearchParams(window.location.search).get('crisis_id') ??
+      '';
+
+    const applyCrises = (items: OpsCrisis[]) => {
+      setCrises(items);
+      setActiveCrisisId((prev) => {
+        if (prev && items.some((c) => c.id === prev)) return prev;
+        const manageable = items.filter(isManageableCrisis);
+        const fromUrl = readCrisisFromUrl();
+        if (fromUrl && manageable.some((c) => c.id === fromUrl)) return fromUrl;
+        return manageable[0]?.id ?? items[0]?.id ?? '';
+      });
+    };
+
+    try {
+      let d: { items: OpsCrisis[] };
+      try {
+        d = await opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises');
+      } catch {
+        await wakeApiBackend();
+        d = await opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises');
+      }
+      applyCrises(d.items);
+    } catch {
+      setCrises([]);
+    }
   }, []);
 
   const loadAudit = useCallback(() => {
@@ -370,17 +386,21 @@ export function OpsMapPage() {
   }, [user]);
 
   useEffect(() => {
-    void wakeApiBackend();
-    const token = getOpsToken();
-    const current = getOpsUser();
-    if (!token || !current) return;
-    opsGet<{
-      role: OpsUserSession['role'];
-      zone_assignments: OpsUserSession['zone_assignments'];
-      crisis_lead_assignments: OpsUserSession['crisis_lead_assignments'];
-      zone_ids: string[];
-    }>('/v1/ops/me')
-      .then((me) => {
+    let cancelled = false;
+    void (async () => {
+      await wakeApiBackend();
+      if (cancelled) return;
+      const token = getOpsToken();
+      const current = getOpsUser();
+      if (!token || !current) return;
+      try {
+        const me = await opsGet<{
+          role: OpsUserSession['role'];
+          zone_assignments: OpsUserSession['zone_assignments'];
+          crisis_lead_assignments: OpsUserSession['crisis_lead_assignments'];
+          zone_ids: string[];
+        }>('/v1/ops/me');
+        if (cancelled) return;
         const updated: OpsUserSession = {
           ...current,
           role: me.role,
@@ -390,13 +410,19 @@ export function OpsMapPage() {
         };
         setOpsSession(token, updated);
         setUser(updated);
-      })
-      .catch(() => undefined);
-  }, []);
+      } catch {
+        /* keep cached session */
+      }
+      if (!cancelled) await loadCrises();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadCrises]);
 
   useEffect(() => {
-    loadCrises();
-  }, [loadCrises]);
+    loadAudit();
+  }, [loadAudit]);
 
   useEffect(() => {
     loadZones();

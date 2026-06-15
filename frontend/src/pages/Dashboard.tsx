@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
-import { apiBase } from '../api';
+import { apiBase, wakeApiBackend } from '../api';
 import { DashboardReviewModal } from '../components/ops/DashboardReviewModal';
 import { useI18n } from '../i18n/I18nContext';
 import { isManageableCrisis } from '../ops/crisisUtils';
@@ -196,8 +196,13 @@ export function Dashboard() {
   }, [savedFromUrl]);
 
   useEffect(() => {
-    opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises')
-      .then((d) => {
+    let cancelled = false;
+    void (async () => {
+      await wakeApiBackend();
+      if (cancelled) return;
+      try {
+        const d = await opsGet<{ items: OpsCrisis[] }>('/v1/ops/crises');
+        if (cancelled) return;
         setCrises(d.items);
         const manageable = d.items.filter(isManageableCrisis);
         setCrisisId((prev) => {
@@ -206,8 +211,13 @@ export function Dashboard() {
           return manageable[0]?.id ?? '';
         });
         crisesReadyRef.current = true;
-      })
-      .catch(() => setCrises([]));
+      } catch {
+        if (!cancelled) setCrises([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount + URL seed only
   }, []);
 
