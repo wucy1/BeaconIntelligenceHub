@@ -242,6 +242,7 @@
   "map.popup.reportCount": "此處共 {{count}} 筆回報",
   "map.popup.viewDetails": "查看歷史與詳情",
   "map.popup.worstDamage": "地圖燈號（最嚴重）",
+  "map.popup.noReportsAtBuilding": "此視野內這棟建物尚無回報。",
   "map.reportHere": "在我目前位置回報",
   "map.reportPin": "GPS 座標",
   "map.retry": "重試",

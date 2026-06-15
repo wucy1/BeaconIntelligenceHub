@@ -242,6 +242,7 @@
   "map.popup.reportCount": "此处共 {{count}} 笔回报",
   "map.popup.viewDetails": "查看历史与详情",
   "map.popup.worstDamage": "地图灯号（最严重）",
+  "map.popup.noReportsAtBuilding": "此视野内这栋建筑尚无回报。",
   "map.reportHere": "在我目前位置回报",
   "map.reportPin": "GPS 座标",
   "map.retry": "重试",

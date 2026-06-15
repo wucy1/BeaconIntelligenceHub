@@ -114,6 +114,7 @@ export function MapPage() {
   const [buildingsError, setBuildingsError] = useState<string | null>(null);
   const [buildingsLoading, setBuildingsLoading] = useState(false);
   const [markers, setMarkers] = useState<MapMarker[]>([]);
+  const [allMarkers, setAllMarkers] = useState<MapMarker[]>([]);
   const [placement, setPlacement] = useState<Placement>(emptyPlacement);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [inspectContext, setInspectContext] = useState<LocationPanelContext>('all');
@@ -481,7 +482,10 @@ export function MapPage() {
 
   useEffect(() => {
     if (!online || !bbox || mapMode === 'new' || inspectOpen) {
-      if (mapMode === 'new') setMarkers([]);
+      if (mapMode === 'new') {
+        setMarkers([]);
+        setAllMarkers([]);
+      }
       return;
     }
     const requestedBbox = bbox;
@@ -491,18 +495,39 @@ export function MapPage() {
         requestedScope === 'all' || requestedScope === 'unspecified'
           ? `scope=${requestedScope}`
           : `scope=crisis&crisis_id=${encodeURIComponent(requestedScope)}`;
-      apiGet<{ items: MapMarker[] }>(
-        `/v1/public/markers?bbox=${encodeURIComponent(requestedBbox)}&mode=${mapMode}&${scopeParam}`,
-      )
-        .then((r) => {
-          if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
-          markersCacheRef.current[`${requestedScope}:${mapMode}`] = r.items;
-          setMarkers(filterMarkersInBbox(r.items, requestedBbox));
-        })
-        .catch(() => {
-          if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
-          setMarkers([]);
-        });
+      const bboxQ = encodeURIComponent(requestedBbox);
+      const fetchMarkers = (mode: MapMode) =>
+        apiGet<{ items: MapMarker[] }>(
+          `/v1/public/markers?bbox=${bboxQ}&mode=${mode}&${scopeParam}`,
+        );
+
+      const applyResults = (pinItems: MapMarker[], aggregateItems: MapMarker[]) => {
+        if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+        const pinFiltered = filterMarkersInBbox(pinItems, requestedBbox);
+        const allFiltered = filterMarkersInBbox(aggregateItems, requestedBbox);
+        setMarkers(pinFiltered);
+        setAllMarkers(allFiltered);
+        markersCacheRef.current[`${requestedScope}:${mapMode}`] = pinFiltered;
+        markersCacheRef.current[`${requestedScope}:all`] = allFiltered;
+      };
+
+      if (mapMode === 'mine') {
+        void Promise.all([fetchMarkers('mine'), fetchMarkers('all')])
+          .then(([mineRes, allRes]) => applyResults(mineRes.items, allRes.items))
+          .catch(() => {
+            if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+            setMarkers([]);
+            setAllMarkers([]);
+          });
+      } else {
+        void fetchMarkers(mapMode)
+          .then((r) => applyResults(r.items, r.items))
+          .catch(() => {
+            if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+            setMarkers([]);
+            setAllMarkers([]);
+          });
+      }
     }, 350);
     return () => clearTimeout(timer);
   }, [online, bbox, mapMode, mapScope, refreshKey, inspectOpen]);
@@ -843,6 +868,10 @@ export function MapPage() {
       if (cachedMarkers && bboxRef.current) {
         setMarkers(filterMarkersInBbox(cachedMarkers, bboxRef.current));
       }
+      const cachedAllMarkers = markersCacheRef.current[`${next}:all`];
+      if (cachedAllMarkers && bboxRef.current) {
+        setAllMarkers(filterMarkersInBbox(cachedAllMarkers, bboxRef.current));
+      }
       selectScope(next);
     },
     [selectScope, mapMode, activeCrises],
@@ -920,6 +949,7 @@ export function MapPage() {
         key="contributor-map"
         buildings={buildings}
         markers={markers}
+        buildingMarkers={allMarkers}
         selectedBuildingId={placement.buildingId}
         userPosition={geo.position}
         showOthers={showOthers}

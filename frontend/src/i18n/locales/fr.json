@@ -283,6 +283,7 @@
   "map.popup.buildingReportCount": "{{count}} rapports pour ce bâtiment",
   "map.popup.latestReport": "Plus récent",
   "map.popup.worstDamage": "Dommage le plus grave affiché",
+  "map.popup.noReportsAtBuilding": "Aucun signalement pour ce bâtiment dans la vue actuelle.",
   "map.legend.repaired": "Réparé / sûr",
   "map.legend.demolished": "Dégagé / démoli",
   "map.legend.clusterNote": "Zoomez ou touchez les regroupements pour les développer.",

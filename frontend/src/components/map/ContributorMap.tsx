@@ -17,7 +17,7 @@ import 'leaflet/dist/leaflet.css';
 
 import { useI18n } from '../../i18n/I18nContext';
 import { centroidOfFeature } from '../../utils/buildingAtPoint';
-import { resolveGroupDisplay } from '../../utils/mapMarkers';
+import { buildingDisplayById, buildingFootprintStyle, resolveGroupDisplay } from '../../utils/mapMarkers';
 import {
   MapZoomLimits,
   OfflineOsmTileLayer,
@@ -46,6 +46,8 @@ export type MapMarker = {
 type Props = {
   buildings: GeoJSON.FeatureCollection;
   markers: MapMarker[];
+  /** All reports in view — used for building footprint colors and building popups. */
+  buildingMarkers?: MapMarker[];
   selectedBuildingId: string | null;
   userPosition: { lat: number; lng: number } | null;
   showOthers: boolean;
@@ -324,10 +326,14 @@ function BuildingPopupContent({
       <p className="building-popup-name">
         <strong>{buildingName ?? `${buildingId.slice(0, 8)}…`}</strong>
       </p>
-      <p>
-        <span className="muted">{t('map.popup.worstDamage')}: </span>
-        <strong>{label}</strong>
-      </p>
+      {atBuilding.length === 0 ? (
+        <p className="muted">{t('map.popup.noReportsAtBuilding')}</p>
+      ) : (
+        <p>
+          <span className="muted">{t('map.popup.worstDamage')}: </span>
+          <strong>{label}</strong>
+        </p>
+      )}
       {latest && (
         <time dateTime={latest.captured_at_client}>
           {t('map.popup.latestReport')}: {new Date(latest.captured_at_client).toLocaleString()}
@@ -359,6 +365,7 @@ function BuildingPopupContent({
 export function ContributorMap({
   buildings,
   markers,
+  buildingMarkers,
   selectedBuildingId,
   userPosition,
   showOthers,
@@ -390,12 +397,27 @@ export function ContributorMap({
   regionFitTick = 0,
   downloadPreview = null,
 }: Props) {
+  const markersForBuildings = buildingMarkers ?? markers;
+  const buildingDamageMap = useMemo(
+    () => buildingDisplayById(markersForBuildings),
+    [markersForBuildings],
+  );
+
+  const mapModeRef = useRef(mapMode);
+  mapModeRef.current = mapMode;
+  const onBuildingSelectRef = useRef(onBuildingSelect);
+  onBuildingSelectRef.current = onBuildingSelect;
+
   const [buildingPopup, setBuildingPopup] = useState<{
     buildingId: string;
     buildingName: string | null;
     lat: number;
     lng: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (mapMode === 'new') setBuildingPopup(null);
+  }, [mapMode]);
 
   const buildingStyle = useMemo(
     () => ({
@@ -408,12 +430,14 @@ export function ContributorMap({
   );
 
   const onEachBuilding = (feature: GeoJSON.Feature, layer: L.Layer) => {
+    const id = (feature.properties?.building_id as string) ?? null;
+    layer.off('click');
     layer.on({
       click: (e) => {
-        const id = (feature.properties?.building_id as string) ?? null;
         if (!id) return;
-        if (mapMode === 'new') {
-          onBuildingSelect(id);
+        if (mapModeRef.current === 'new') {
+          L.DomEvent.stopPropagation(e);
+          onBuildingSelectRef.current(id);
           return;
         }
         L.DomEvent.stopPropagation(e);
@@ -490,11 +514,13 @@ export function ContributorMap({
           data={buildings}
           style={(feature) => {
             const id = feature?.properties?.building_id as string | undefined;
-            const selected = id && id === selectedBuildingId;
+            const selected = Boolean(id && id === selectedBuildingId);
+            const damage = id ? buildingDamageMap.get(id) : undefined;
+            const { fillColor, fillOpacity } = buildingFootprintStyle(damage, selected);
             return {
               ...buildingStyle,
-              fillColor: selected ? '#ff5533' : '#3388ff',
-              fillOpacity: selected ? 0.45 : 0.28,
+              fillColor,
+              fillOpacity,
             };
           }}
           onEachFeature={onEachBuilding}
@@ -515,13 +541,16 @@ export function ContributorMap({
 
       {buildingPopup && (mapMode === 'all' || mapMode === 'mine') && (
         <Popup
+          key={buildingPopup.buildingId}
           position={[buildingPopup.lat, buildingPopup.lng]}
+          autoPan={false}
+          closeOnClick={false}
           eventHandlers={{ remove: () => setBuildingPopup(null) }}
         >
           <BuildingPopupContent
             buildingId={buildingPopup.buildingId}
             buildingName={buildingPopup.buildingName}
-            markers={markers}
+            markers={markersForBuildings}
             mapMode={mapMode}
             onViewDetails={(id) => {
               setBuildingPopup(null);

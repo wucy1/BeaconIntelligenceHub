@@ -283,6 +283,7 @@
   "map.popup.buildingReportCount": "{{count}} تقارير في هذا المبنى",
   "map.popup.latestReport": "الأحدث",
   "map.popup.worstDamage": "أسوأ ضرر معروض",
+  "map.popup.noReportsAtBuilding": "لا توجد بلاغات لهذا المبنى في العرض الحالي.",
   "map.legend.repaired": "مُصلَح / آمن",
   "map.legend.demolished": "مُزال / مُهدَّم",
   "map.legend.clusterNote": "كبّر أو انقر على التجمّعات للتوسيع.",

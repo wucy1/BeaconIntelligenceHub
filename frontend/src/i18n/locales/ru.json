@@ -242,6 +242,7 @@
   "map.popup.reportCount": "{{count}} отчётов в этой точке",
   "map.popup.viewDetails": "История и подробности",
   "map.popup.worstDamage": "Показан наихудший ущерб",
+  "map.popup.noReportsAtBuilding": "Нет сообщений по этому зданию в текущем обзоре.",
   "map.reportHere": "Сообщить в моём местоположении",
   "map.reportPin": "GPS-координаты",
   "map.retry": "Повторить",

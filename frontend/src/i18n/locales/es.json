@@ -242,6 +242,7 @@
   "map.popup.reportCount": "{{count}} informes en este lugar",
   "map.popup.viewDetails": "Ver historial y detalles",
   "map.popup.worstDamage": "Peor daño mostrado",
+  "map.popup.noReportsAtBuilding": "No hay informes de este edificio en la vista actual.",
   "map.reportHere": "Informar en mi ubicación",
   "map.reportPin": "Coordenadas GPS",
   "map.retry": "Reintentar",

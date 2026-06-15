@@ -84,6 +84,46 @@ export function pinFillColor(m: DisplayMapMarker): string {
   return DAMAGE_FILL[m.displayDamageLevel] ?? '#64748b';
 }
 
+/** Worst-on-building display for footprint fill / popups (key = building_id). */
+export function buildingDisplayById(
+  markers: MapMarker[],
+): Map<string, { pinDisplay: MapPinDisplay; displayDamageLevel: string }> {
+  const groups = new Map<string, MapMarker[]>();
+  for (const m of markers) {
+    if (!m.building_id) continue;
+    const list = groups.get(m.building_id) ?? [];
+    list.push(m);
+    groups.set(m.building_id, list);
+  }
+  const out = new Map<string, { pinDisplay: MapPinDisplay; displayDamageLevel: string }>();
+  for (const [buildingId, list] of groups) {
+    out.set(buildingId, resolveGroupDisplay(list));
+  }
+  return out;
+}
+
+export function buildingFootprintStyle(
+  display: { pinDisplay: MapPinDisplay; displayDamageLevel: string } | undefined,
+  selected: boolean,
+): { fillColor: string; fillOpacity: number } {
+  if (selected) {
+    return { fillColor: '#ff5533', fillOpacity: 0.45 };
+  }
+  if (!display) {
+    return { fillColor: '#3388ff', fillOpacity: 0.28 };
+  }
+  if (display.pinDisplay === 'damage') {
+    return {
+      fillColor: DAMAGE_FILL[display.displayDamageLevel] ?? '#3388ff',
+      fillOpacity: 0.32,
+    };
+  }
+  if (display.pinDisplay === 'repaired') {
+    return { fillColor: PIN_FILL.repaired, fillOpacity: 0.35 };
+  }
+  return { fillColor: PIN_FILL.demolished, fillOpacity: 0.35 };
+}
+
 export function aggregateMarkersForDisplay(markers: MapMarker[]): DisplayMapMarker[] {
   const groups = new Map<string, MapMarker[]>();
   for (const m of markers) {
