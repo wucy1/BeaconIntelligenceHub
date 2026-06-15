@@ -230,7 +230,7 @@
   "map.locateMe": "Placer l'épingle du rapport sur mon GPS",
   "map.hint.new": "Touchez une emprise de bâtiment pour définir l'emplacement",
   "map.hint.newOpen": "Signaler partout — aucune limite administrative requise",
-  "map.hint.newPlaceFirst": "Touchez la carte ou + pour placer une épingle, puis ouvrez le formulaire. Utilisez le bouton Annuler le rapport à gauche pour quitter.",
+  "map.hint.newPlaceFirst": "Touchez la carte ou + pour placer une épingle, puis ouvrez le formulaire. Appuyez sur Annuler le rapport ci-dessous pour quitter.",
   "map.hint.gpsDenied": "Impossible d'obtenir le GPS. Autorisez la localisation dans votre navigateur, ou placez une épingle manuellement sur la carte.",
   "map.newFlow.active": "Nouveau signalement",
   "map.newFlow.cancel": "Annuler le rapport",

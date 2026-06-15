@@ -151,7 +151,7 @@
   "map.hint.gpsDenied": "GPS nicht verfügbar. Erlauben Sie die Standortberechtigung im Browser oder setzen Sie einen Pin manuell auf der Karte.",
   "map.hint.new": "Gebäudeumriss antippen, um den Standort zu setzen",
   "map.hint.newOpen": "Überall melden — keine Admin-Grenze erforderlich",
-  "map.hint.newPlaceFirst": "Karte antippen oder + für einen Pin, dann Formular öffnen. Mit „Meldung abbrechen“ links beenden.",
+  "map.hint.newPlaceFirst": "Karte antippen oder + für einen Pin, dann Formular öffnen. Mit „Meldung abbrechen“ unten beenden.",
   "map.hint.noMarkers": "Keine Meldungen in dieser Ansicht. „Neu“ oder + verwenden, um hier zu melden.",
   "map.hint.noMineInView": "Keine eigenen Meldungen in dieser Ansicht. Karte verschieben oder „Neu“ verwenden.",
   "map.legend.buildings": "Gebäudefootprints ({{count}})",

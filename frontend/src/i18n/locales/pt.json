@@ -151,7 +151,7 @@
   "map.hint.gpsDenied": "Não foi possível obter o GPS. Permita a localização no navegador ou coloque um marcador manualmente no mapa.",
   "map.hint.new": "Toque num contorno de edifício para definir a localização",
   "map.hint.newOpen": "Reporte em qualquer lugar — sem limite administrativo obrigatório",
-  "map.hint.newPlaceFirst": "Toque no mapa ou em + para colocar um marcador e depois abra o formulário. Use o botão Cancelar relatório à esquerda para sair.",
+  "map.hint.newPlaceFirst": "Toque no mapa ou em + para colocar um marcador e depois abra o formulário. Toque em Cancelar relatório abaixo para sair.",
   "map.hint.noMarkers": "Sem relatórios nesta vista. Use Novo ou + para reportar aqui.",
   "map.hint.noMineInView": "Nenhum dos seus relatórios nesta vista. Desloque o mapa ou use Novo.",
   "map.legend.buildings": "Contornos de edifícios ({{count}})",

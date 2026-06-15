@@ -151,7 +151,7 @@
   "map.hint.gpsDenied": "无法取得 GPS。请确认浏览器定位权限已允许，或先手动在地图上放置图钉。",
   "map.hint.new": "点选蓝色建物轮廓以设定位置",
   "map.hint.newOpen": "可在任意地点回报，无需管理员预先划定范围",
-  "map.hint.newPlaceFirst": "点地图或按 + 放置图钉，再开启表单。可按左侧「取消回报」结束。",
+  "map.hint.newPlaceFirst": "点地图或按 + 放置图钉，再开启表单。可按下方「取消回报」结束。",
   "map.hint.noMarkers": "此视野尚无回报。请用「新增」或 + 在此回报。",
   "map.hint.noMineInView": "此视野内没有您的回报。请拖曳地图或切到「新增」。",
   "map.legend.buildings": "建物轮廓 {{count}}",

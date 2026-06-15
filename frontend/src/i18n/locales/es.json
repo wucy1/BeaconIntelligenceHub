@@ -151,7 +151,7 @@
   "map.hint.gpsDenied": "No se pudo obtener el GPS. Permita el acceso a la ubicación en su navegador o coloque un pin manualmente en el mapa.",
   "map.hint.new": "Toque una huella de edificio para establecer la ubicación",
   "map.hint.newOpen": "Informar en cualquier lugar — no se requiere límite administrativo",
-  "map.hint.newPlaceFirst": "Toque el mapa o + para colocar un pin y luego abra el formulario. Use el botón Cancelar informe a la izquierda para salir.",
+  "map.hint.newPlaceFirst": "Toque el mapa o + para colocar un pin y luego abra el formulario. Pulse Cancelar informe abajo para salir.",
   "map.hint.noMarkers": "No hay informes en esta vista. Use Nuevo o + para informar aquí.",
   "map.hint.noMineInView": "Ninguno de sus informes en esta vista. Desplace el mapa o use Nuevo.",
   "map.legend.buildings": "Huellas de edificios ({{count}})",

@@ -740,6 +740,7 @@ export function MapPage() {
 
   const hasPlacement = Boolean(placement.pin || placement.buildingId);
   const showPlacementBar = mapMode === 'new' && hasPlacement && !sheetOpen;
+  const showNewFlowCancel = mapMode === 'new' && !hasPlacement && !sheetOpen;
 
   const onSelectScope = useCallback(
     (next: string) => {
@@ -1147,18 +1148,18 @@ export function MapPage() {
         </div>
       )}
 
-      <MapModeToggle mode={mapMode} onChange={onModeChange} />
-
-      {mapMode === 'new' && (
-        <div className="map-new-flow-bar">
-          <button type="button" className="map-new-cancel-btn" onClick={cancelNewReport}>
-            {t('map.newFlow.cancel')}
-          </button>
-          {!hasPlacement && !sheetOpen && (
+      <div className="map-mode-stack">
+        {showNewFlowCancel && (
+          <>
             <p className="map-new-flow-text">{t('map.hint.newPlaceFirst')}</p>
-          )}
-        </div>
-      )}
+            <button type="button" className="map-new-cancel-btn" onClick={cancelNewReport}>
+              {t('map.newFlow.cancel')}
+            </button>
+          </>
+        )}
+        <MapModeToggle mode={mapMode} onChange={onModeChange} />
+      </div>
+
       {mapMode === 'new' && geo.denied && !geo.pending && !hasPlacement && (
         <p className="map-hint map-hint-warn">{t('map.hint.gpsDenied')}</p>
       )}
