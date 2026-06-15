@@ -13,6 +13,7 @@ export default defineConfig({
       manifest: false,
       workbox: {
         navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/v1\//, /^\/health/],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
@@ -25,29 +26,6 @@ export default defineConfig({
             options: {
               cacheName: 'osm-tiles',
               expiration: { maxEntries: 6000, maxAgeSeconds: 60 * 60 * 24 * 14 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            urlPattern: ({ url }) =>
-              url.pathname.startsWith('/v1/public/active-window'),
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-active-window',
-              networkTimeoutSeconds: 3,
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 7 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            urlPattern: ({ url }) =>
-              url.pathname.startsWith('/v1/public/markers') ||
-              url.pathname.includes('/v1/crises/') && url.pathname.endsWith('/buildings'),
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-map-data',
-              networkTimeoutSeconds: 3,
-              expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 2 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

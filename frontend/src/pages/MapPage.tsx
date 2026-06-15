@@ -2,7 +2,7 @@ import L from 'leaflet';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { apiGet, BUILDINGS_FETCH_TIMEOUT_MS } from '../api';
+import { apiGet, BUILDINGS_FETCH_TIMEOUT_MS, wakeApiBackend } from '../api';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { ContributorMap, type MapMarker } from '../components/map/ContributorMap';
 import {
@@ -251,6 +251,11 @@ export function MapPage() {
   const onFlyComplete = useCallback(() => {
     setFlyTarget(null);
   }, []);
+
+  useEffect(() => {
+    if (!online) return;
+    void wakeApiBackend();
+  }, [online]);
 
   useEffect(() => {
     apiGet<{ default_report_months?: number }>('/v1/public/active-window')
