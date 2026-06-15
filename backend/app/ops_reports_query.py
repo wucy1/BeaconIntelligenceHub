@@ -45,6 +45,29 @@ _ZONE_SCOPE = """
   )
 """
 
+_CRISIS_ZONE_SCOPE = """
+  AND (
+    EXISTS (
+      SELECT 1 FROM zones z
+      WHERE z.id = ANY(CAST(:zone_ids AS uuid[]))
+        AND r.geom IS NOT NULL
+        AND ST_Intersects(r.geom, z.geom)
+    )
+    OR EXISTS (
+      SELECT 1 FROM zones z
+      JOIN buildings b2 ON b2.id = r.building_id
+      WHERE z.id = ANY(CAST(:zone_ids AS uuid[]))
+        AND b2.geom IS NOT NULL
+        AND ST_Intersects(b2.geom, z.geom)
+    )
+    OR EXISTS (
+      SELECT 1 FROM buildings b2
+      WHERE b2.id = r.building_id
+        AND b2.crisis_id = CAST(:cid AS uuid)
+    )
+  )
+"""
+
 
 def _time_reviewed_clause(
     captured_from: datetime | None,
@@ -144,6 +167,11 @@ def report_ids_for_crisis_scoped(
                 OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
               )
           )
+          OR EXISTS (
+            SELECT 1 FROM buildings b2
+            WHERE b2.id = r.building_id
+              AND b2.crisis_id = CAST(:cid AS uuid)
+          )
         )
     """
     if geom_snapshots:
@@ -153,7 +181,7 @@ def report_ids_for_crisis_scoped(
     elif zone_ids is not None:
         if len(zone_ids) == 0:
             return []
-        zone_clause = _ZONE_SCOPE
+        zone_clause = _CRISIS_ZONE_SCOPE
         params["zone_ids"] = [str(z) for z in zone_ids]
     sql = f"""
         SELECT r.id FROM reports r
@@ -245,7 +273,7 @@ def _crisis_query_zone_clause(
     if zone_ids is not None:
         if len(zone_ids) == 0:
             return " AND FALSE", {}
-        return _ZONE_SCOPE, {"zone_ids": [str(z) for z in zone_ids]}
+        return _CRISIS_ZONE_SCOPE, {"zone_ids": [str(z) for z in zone_ids]}
     return """
         AND (
           NOT EXISTS (SELECT 1 FROM zones z WHERE z.crisis_id = CAST(:cid AS uuid))
@@ -256,6 +284,11 @@ def _crisis_query_zone_clause(
                 (r.geom IS NOT NULL AND ST_Intersects(r.geom, z.geom))
                 OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
               )
+          )
+          OR EXISTS (
+            SELECT 1 FROM buildings b2
+            WHERE b2.id = r.building_id
+              AND b2.crisis_id = CAST(:cid AS uuid)
           )
         )
     """, {}

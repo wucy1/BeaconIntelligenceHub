@@ -98,13 +98,16 @@ def resolve_active_crisis_for_report(
                 """
                 SELECT c.id, c.archive_window_start, c.archive_window_end
                 FROM crises c
+                JOIN buildings b ON b.id = CAST(:bid AS uuid)
                 WHERE c.archive_status = 'active' AND c.slug <> 'unspecified'
-                  AND EXISTS (
-                    SELECT 1 FROM zones z
-                    JOIN buildings b ON b.id = CAST(:bid AS uuid)
-                    WHERE z.crisis_id = c.id
-                      AND b.geom IS NOT NULL
-                      AND ST_Intersects(b.geom, z.geom)
+                  AND (
+                    b.crisis_id = c.id
+                    OR EXISTS (
+                      SELECT 1 FROM zones z
+                      WHERE z.crisis_id = c.id
+                        AND b.geom IS NOT NULL
+                        AND ST_Intersects(b.geom, z.geom)
+                    )
                   )
                 ORDER BY c.created_at DESC
                 """

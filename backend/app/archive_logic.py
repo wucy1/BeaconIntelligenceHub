@@ -19,12 +19,24 @@ def _time_clause(captured_from, captured_to) -> tuple[str, dict]:
     return clause, params
 
 
-def _zone_clause(zone_ids: list[UUID] | None) -> tuple[str, dict]:
+def _zone_clause(zone_ids: list[UUID] | None, crisis_id: UUID | None = None) -> tuple[str, dict]:
     if zone_ids is None:
         return "", {}
     if len(zone_ids) == 0:
         return " AND FALSE", {}
-    return """
+    params: dict = {"zone_ids": [str(z) for z in zone_ids]}
+    crisis_building = ""
+    if crisis_id is not None:
+        params["cid"] = str(crisis_id)
+        crisis_building = """
+        OR EXISTS (
+          SELECT 1 FROM buildings b
+          WHERE b.id = r.building_id
+            AND b.crisis_id = CAST(:cid AS uuid)
+        )
+        """
+    return (
+        f"""
       AND (
         EXISTS (
           SELECT 1 FROM zones z
@@ -38,9 +50,11 @@ def _zone_clause(zone_ids: list[UUID] | None) -> tuple[str, dict]:
           WHERE z.id = ANY(CAST(:zone_ids AS uuid[]))
             AND b.geom IS NOT NULL
             AND ST_Intersects(b.geom, z.geom)
-        )
+        ){crisis_building}
       )
-    """, {"zone_ids": [str(z) for z in zone_ids]}
+    """,
+        params,
+    )
 
 
 def report_ids_for_archive(
@@ -54,7 +68,7 @@ def report_ids_for_archive(
     exclude_already_linked: bool = True,
 ) -> list[UUID]:
     time_filter, time_params = _time_clause(captured_from, captured_to)
-    zone_filter, zone_params = _zone_clause(zone_ids)
+    zone_filter, zone_params = _zone_clause(zone_ids, crisis_id)
     link_filter = ""
     if exclude_already_linked:
         link_filter = """
@@ -82,12 +96,13 @@ def report_ids_for_archive(
 
 
 def _in_scope_condition(
+    crisis_id: UUID,
     captured_from: datetime | None,
     captured_to: datetime | None,
     zone_ids: list[UUID] | None,
 ) -> tuple[str, dict]:
     time_filter, time_params = _time_clause(captured_from, captured_to)
-    zone_filter, zone_params = _zone_clause(zone_ids)
+    zone_filter, zone_params = _zone_clause(zone_ids, crisis_id)
     return f"(TRUE{time_filter}{zone_filter})", {**time_params, **zone_params}
 
 
@@ -100,7 +115,7 @@ def report_ids_to_unlink(
     limit: int,
 ) -> list[UUID]:
     """Linked to this crisis but outside the current archive time/zone scope."""
-    in_scope, scope_params = _in_scope_condition(captured_from, captured_to, zone_ids)
+    in_scope, scope_params = _in_scope_condition(crisis_id, captured_from, captured_to, zone_ids)
     params = {"cid": str(crisis_id), "lim": limit, **scope_params}
     rows = db.execute(
         text(
@@ -126,7 +141,7 @@ def count_linked_in_scope(
     captured_from: datetime | None,
     captured_to: datetime | None,
 ) -> int:
-    in_scope, scope_params = _in_scope_condition(captured_from, captured_to, zone_ids)
+    in_scope, scope_params = _in_scope_condition(crisis_id, captured_from, captured_to, zone_ids)
     params = {"cid": str(crisis_id), **scope_params}
     return int(
         db.execute(

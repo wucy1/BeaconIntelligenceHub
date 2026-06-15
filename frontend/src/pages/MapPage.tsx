@@ -18,6 +18,7 @@ import { ReportSheet } from '../components/map/ReportSheet';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { UNSPECIFIED_CRISIS_ID } from '../constants/crisis';
 import { NYC_DEMO_MAP_VIEW } from '../constants/nycDemoFootprints';
+import { FOOTPRINT_MIN_ZOOM } from '../constants/mapFootprints';
 import { usePublicCrises } from '../hooks/usePublicCrises';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useOfflineMapTiles } from '../hooks/useOfflineMapTiles';
@@ -31,7 +32,7 @@ import {
   type PendingReportSummary,
 } from '../offline/queue';
 import type { MapRegionMeta } from '../offline/tileCache';
-import { loadFootprintsForBbox, MAX_OFFLINE_FOOTPRINT_FEATURES } from '../offline/buildingFootprintCache';
+import { loadFootprintsForBbox, MAX_OFFLINE_FOOTPRINT_FEATURES, mergeBuildingFootprints } from '../offline/buildingFootprintCache';
 import { useI18n } from '../i18n/I18nContext';
 import { getOpsToken } from '../ops/opsAuth';
 import {
@@ -46,7 +47,7 @@ import {
   findBuildingAtPoint,
   markersNearPoint,
 } from '../utils/buildingAtPoint';
-import { filterMarkersInBbox } from '../utils/mapBbox';
+import { filterBuildingsInBbox, filterMarkersInBbox } from '../utils/mapBbox';
 
 const DEFAULT_CENTER: [number, number] = [20, 0];
 const DEFAULT_ZOOM = 14;
@@ -169,6 +170,7 @@ export function MapPage() {
   const scopeRef = useRef(mapScope);
   scopeRef.current = mapScope;
   const buildingsCacheRef = useRef<Record<string, GeoJSON.FeatureCollection>>({});
+  const autoZoneFitScopeRef = useRef<string | null>(null);
   const markersCacheRef = useRef<Record<string, MapMarker[]>>({});
   /** 全站共用視角；切換危機時不跳地圖位置 */
   const mapCenterStorageKey = `${MAP_CENTER_STORAGE_KEY_PREFIX}:view`;
@@ -370,6 +372,11 @@ export function MapPage() {
     return [mapScope];
   }, [mapScope, activeCrises]);
 
+  const buildingsForDisplay = useMemo(() => {
+    if (!bbox) return buildings;
+    return filterBuildingsInBbox(buildings, bbox);
+  }, [buildings, bbox]);
+
   const flyToDemoFootprints = useCallback(() => {
     setFlyTarget({ ...NYC_DEMO_MAP_VIEW });
     setActiveTopPanel('legend');
@@ -387,8 +394,18 @@ export function MapPage() {
     urlBootstrappedRef.current = true;
   }, [crisesLoading, publicCrises, searchParams, selectScope, flyToDemoFootprints]);
 
+  /** 選定有分區的危機時自動定位一次，並放大至可載入 footprint 的縮放級 */
+  useEffect(() => {
+    if (mapScope === 'all' || mapScope === 'unspecified') return;
+    if (publicZones.length === 0) return;
+    if (autoZoneFitScopeRef.current === mapScope) return;
+    autoZoneFitScopeRef.current = mapScope;
+    setZoneFitTick((n) => n + 1);
+  }, [mapScope, publicZones.length]);
+
   useEffect(() => {
     if (!online || !bbox || publicCrises.length === 0 || crisesLoading) return;
+    if (viewZoom == null || viewZoom < FOOTPRINT_MIN_ZOOM) return;
     const requestedScope = mapScope;
     const requestedBbox = bbox;
     const timer = setTimeout(() => {
@@ -449,8 +466,14 @@ export function MapPage() {
         .then((fc) => {
           if (fc === null) return;
           if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
-          buildingsCacheRef.current[buildingsCacheKey] = fc;
-          setBuildings(fc);
+          const prev = buildingsCacheRef.current[buildingsCacheKey] ?? {
+            type: 'FeatureCollection' as const,
+            features: [],
+          };
+          const merged =
+            requestedScope === 'unspecified' ? fc : mergeBuildingFootprints(prev, fc);
+          buildingsCacheRef.current[buildingsCacheKey] = merged;
+          setBuildings(merged);
         })
         .catch((e: Error) => {
           if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
@@ -466,19 +489,25 @@ export function MapPage() {
       clearTimeout(timer);
       setBuildingsLoading(false);
     };
-  }, [online, mapScope, bbox, refreshKey, publicCrises.length, activeCrises, buildingsCacheKey, crisesLoading, t]);
+  }, [online, mapScope, bbox, refreshKey, publicCrises.length, activeCrises, buildingsCacheKey, crisesLoading, viewZoom, t]);
 
   useEffect(() => {
     if (online || !bbox) return;
+    if (viewZoom != null && viewZoom < FOOTPRINT_MIN_ZOOM) return;
     const requestedBbox = bbox;
     void loadFootprintsForBbox(requestedBbox).then((fc) => {
       if (bboxRef.current !== requestedBbox) return;
       if (fc.features.length === 0) return;
-      buildingsCacheRef.current[buildingsCacheKey] = fc;
-      setBuildings(fc);
+      const prev = buildingsCacheRef.current[buildingsCacheKey] ?? {
+        type: 'FeatureCollection' as const,
+        features: [],
+      };
+      const merged = mergeBuildingFootprints(prev, fc);
+      buildingsCacheRef.current[buildingsCacheKey] = merged;
+      setBuildings(merged);
       setBuildingsError(null);
     });
-  }, [online, bbox, buildingsCacheKey]);
+  }, [online, bbox, buildingsCacheKey, viewZoom]);
 
   useEffect(() => {
     if (!online || !bbox || mapMode === 'new' || inspectOpen) {
@@ -864,6 +893,7 @@ export function MapPage() {
         next === 'all' ? `all:${activeCrises.map((c) => c.id).join(',')}` : next;
       const cachedBuildings = buildingsCacheRef.current[scopeKey];
       if (cachedBuildings) setBuildings(cachedBuildings);
+      else setBuildings({ type: 'FeatureCollection', features: [] });
       const cachedMarkers = markersCacheRef.current[`${next}:${mapMode}`];
       if (cachedMarkers && bboxRef.current) {
         setMarkers(filterMarkersInBbox(cachedMarkers, bboxRef.current));
@@ -947,7 +977,7 @@ export function MapPage() {
       <OfflineBanner mapPage />
       <ContributorMap
         key="contributor-map"
-        buildings={buildings}
+        buildings={buildingsForDisplay}
         markers={markers}
         buildingMarkers={allMarkers}
         selectedBuildingId={placement.buildingId}
@@ -1222,7 +1252,7 @@ export function MapPage() {
           )}
           {activeTopPanel === 'legend' && (
             <MapLegend
-              buildingCount={buildings.features.length}
+              buildingCount={buildingsForDisplay.features.length}
               buildingsLoading={buildingsLoading}
               buildingsError={buildingsError}
               markerCount={markers.length}

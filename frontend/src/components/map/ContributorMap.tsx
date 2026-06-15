@@ -16,6 +16,7 @@ import {
 import 'leaflet/dist/leaflet.css';
 
 import { useI18n } from '../../i18n/I18nContext';
+import { FOOTPRINT_FIT_MIN_ZOOM } from '../../constants/mapFootprints';
 import { centroidOfFeature } from '../../utils/buildingAtPoint';
 import { buildingDisplayById, buildingFootprintStyle, resolveGroupDisplay } from '../../utils/mapMarkers';
 import {
@@ -274,10 +275,12 @@ function FitLatLngBoundsOnce({
   bounds,
   tick,
   maxZoom = 16,
+  minZoom,
 }: {
   bounds: L.LatLngBounds | null | undefined;
   tick: number;
   maxZoom?: number;
+  minZoom?: number;
 }) {
   const map = useMap();
   const boundsRef = useRef(bounds);
@@ -287,7 +290,10 @@ function FitLatLngBoundsOnce({
     const b = boundsRef.current;
     if (!b || !b.isValid()) return;
     map.fitBounds(b, { padding: [32, 32], maxZoom });
-  }, [tick, maxZoom, map]);
+    if (minZoom != null && map.getZoom() < minZoom) {
+      map.setZoom(minZoom);
+    }
+  }, [tick, maxZoom, minZoom, map]);
   return null;
 }
 
@@ -502,7 +508,12 @@ export function ContributorMap({
         <FitBoundsOnce bounds={crisisBounds} tick={fitBoundsTick} />
       )}
       {zoneFitBounds && zoneFitTick > 0 && (
-        <FitLatLngBoundsOnce bounds={zoneFitBounds} tick={zoneFitTick} maxZoom={14} />
+        <FitLatLngBoundsOnce
+          bounds={zoneFitBounds}
+          tick={zoneFitTick}
+          maxZoom={17}
+          minZoom={FOOTPRINT_FIT_MIN_ZOOM}
+        />
       )}
       {regionFitBounds && regionFitTick > 0 && (
         <FitLatLngBoundsOnce bounds={regionFitBounds} tick={regionFitTick} maxZoom={16} />

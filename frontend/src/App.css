@@ -2399,6 +2399,13 @@ button.danger {
   border-radius: 6px;
 }
 
+.ops-archive-live-count {
+  margin: 0.25rem 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #0f766e;
+}
+
 .ops-archive-draft-hint {
   color: #0369a1;
 }

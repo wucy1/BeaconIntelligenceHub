@@ -91,3 +91,20 @@ export function mergeCrisisFootprints(
   }
   return { type: 'FeatureCollection', features };
 }
+
+/** Merge by building_id so panning does not drop footprints already fetched. */
+export function mergeBuildingFootprints(
+  base: GeoJSON.FeatureCollection,
+  incoming: GeoJSON.FeatureCollection,
+): GeoJSON.FeatureCollection {
+  const byId = new Map<string, GeoJSON.Feature>();
+  for (const f of base.features) {
+    const bid = (f.properties?.building_id as string) ?? '';
+    byId.set(bid || `geom:${JSON.stringify(f.geometry)}`, f);
+  }
+  for (const f of incoming.features) {
+    const bid = (f.properties?.building_id as string) ?? '';
+    byId.set(bid || `geom:${JSON.stringify(f.geometry)}`, f);
+  }
+  return { type: 'FeatureCollection', features: [...byId.values()] };
+}

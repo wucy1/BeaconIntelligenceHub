@@ -10,6 +10,7 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 import {
   applyBrowseToSearchParams,
+  browseRangeToApi,
   captureRangeForOpsMap,
   defaultBrowseRange,
   eventArchiveRange,
@@ -77,16 +78,32 @@ const DAMAGE_COLOR: Record<string, string> = {
   complete: '#dc2626',
 };
 
-function formatPanelTime(value: string): string {
+function formatPanelTime(value: string, locale: string): string {
   if (!value) return '—';
   const iso = fromDatetimeLocalValue(value);
   if (!iso) return value;
-  return new Date(iso).toLocaleString();
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString(locale, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
-function formatIsoTime(value: string | null | undefined): string {
+function formatIsoTime(value: string | null | undefined, locale: string): string {
   if (!value) return '—';
-  return new Date(value).toLocaleString();
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString(locale, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 type MapMode = 'browse' | 'draw' | 'edit';
@@ -173,7 +190,7 @@ function OpsMapReportCount({
 }
 
 export function OpsMapPage() {
-  const { t, crisisName, setLocale } = useI18n();
+  const { t, crisisName, setLocale, locale } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlBrowse = parseOpsBrowseSearchParams(searchParams);
   const crisisFromUrl = urlBrowse.crisisId ?? searchParams.get('crisis_id') ?? '';
@@ -198,6 +215,9 @@ export function OpsMapPage() {
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [preview, setPreview] = useState<ArchivePreview | null>(null);
+  const [liveArchiveMatched, setLiveArchiveMatched] = useState<number | null>(null);
+  const [liveArchiveLoading, setLiveArchiveLoading] = useState(false);
+  const [browseRangeReportCount, setBrowseRangeReportCount] = useState<number | null>(null);
 
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(urlBrowse.zoneId || null);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
@@ -443,6 +463,78 @@ export function OpsMapPage() {
   }, [loadReports]);
 
   useEffect(() => {
+    if (panel !== 'crisis' || !activeCrisisId || archiveNeedsOfficialStart || archiveMissingZones) {
+      setLiveArchiveMatched(null);
+      setLiveArchiveLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLiveArchiveLoading(true);
+    const timer = setTimeout(() => {
+      void opsPost<ArchivePreview>(`/v1/ops/crises/${activeCrisisId}/archive-preview`, {
+        limit: 500,
+        unlink_out_of_scope: unlinkOutOfScope,
+      })
+        .then((p) => {
+          if (!cancelled) setLiveArchiveMatched(p.matched_count);
+        })
+        .catch(() => {
+          if (!cancelled) setLiveArchiveMatched(null);
+        })
+        .finally(() => {
+          if (!cancelled) setLiveArchiveLoading(false);
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    panel,
+    activeCrisisId,
+    unlinkOutOfScope,
+    archiveNeedsOfficialStart,
+    archiveMissingZones,
+    activeCrisis?.archive_window_start,
+    activeCrisis?.archive_window_end,
+  ]);
+
+  useEffect(() => {
+    if (panel !== 'crisis' || !activeCrisisId || shellMode !== 'work') {
+      setBrowseRangeReportCount(null);
+      return;
+    }
+    let cancelled = false;
+    const { captured_from, captured_to } = browseRangeToApi(browseFrom, browseTo);
+    const q = new URLSearchParams({ limit: '300', view: 'all', crisis_id: activeCrisisId });
+    if (captured_from) q.set('captured_from', captured_from);
+    if (captured_to) q.set('captured_to', captured_to);
+    void opsGet<{ items: OpsReport[] }>(`/v1/ops/reports?${q}`)
+      .then((d) => {
+        if (!cancelled) setBrowseRangeReportCount(d.items.length);
+      })
+      .catch(() => {
+        if (!cancelled) setBrowseRangeReportCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [panel, activeCrisisId, shellMode, browseFrom, browseTo]);
+
+  const showArchiveZeroHint =
+    panel === 'crisis' &&
+    !archiveNeedsOfficialStart &&
+    !archiveMissingZones &&
+    liveArchiveMatched === 0 &&
+    !liveArchiveLoading;
+
+  const showAlignOfficialHint =
+    showArchiveZeroHint &&
+    browseRangeReportCount != null &&
+    browseRangeReportCount > 0 &&
+    browseDiffersFromOfficial;
+
+  useEffect(() => {
     if (reportFromUrl) setSelectedReportId(reportFromUrl);
     const lat = latFromUrl ? Number(latFromUrl) : NaN;
     const lng = lngFromUrl ? Number(lngFromUrl) : NaN;
@@ -503,11 +595,11 @@ export function OpsMapPage() {
   const startDraw = () => {
     if (shellMode !== 'work') return;
     if (!activeCrisisId) {
-      setErr(crises.length === 0 ? '尚無危機，請至營運控制台建立' : '請先於上方選擇危機');
+      setErr(crises.length === 0 ? t('ops.map.err.noCrises') : t('ops.map.err.selectCrisisFirst'));
       return;
     }
     if (!opsCanCreateZones(user, activeCrisisId)) {
-      setErr('您無權在此危機畫分區（需為系統管理員或該危機 Lead）');
+      setErr(t('ops.map.err.noZonePermission'));
       return;
     }
     resetDraft();
@@ -538,7 +630,7 @@ export function OpsMapPage() {
 
   const finishDrawing = () => {
     if (vertices.length < 3) {
-      setErr('至少需要 3 個頂點');
+      setErr(t('ops.map.err.minVertices'));
       return;
     }
     setClosed(true);
@@ -548,20 +640,20 @@ export function OpsMapPage() {
   const saveZone = async () => {
     if (shellMode !== 'work') return;
     if (!activeCrisisId) {
-      setErr('請先選擇危機');
+      setErr(t('ops.map.err.selectCrisisFirst'));
       return;
     }
     if (!zoneName.trim()) {
-      setErr('請輸入分區名稱');
+      setErr(t('ops.map.err.zoneNameRequired'));
       return;
     }
     if (vertices.length < 3) {
-      setErr('至少需要 3 個頂點');
+      setErr(t('ops.map.err.minVertices'));
       return;
     }
     const polygon = draftPolygon ?? verticesToPolygon(vertices);
     if (!polygon) {
-      setErr('多邊形無效');
+      setErr(t('ops.map.err.invalidPolygon'));
       return;
     }
     setBusy(true);
@@ -604,7 +696,7 @@ export function OpsMapPage() {
 
   const removeZone = async (id: string) => {
     if (shellMode !== 'work') return;
-    if (!window.confirm('刪除此分區？')) return;
+    if (!window.confirm(t('ops.map.zone.deleteConfirm'))) return;
     setBusy(true);
     try {
       await opsDelete(`/v1/ops/zones/${id}`);
@@ -634,10 +726,60 @@ export function OpsMapPage() {
   const initArchivePanel = () => {
     setUnlinkOutOfScope(activeCrisis?.archive_status !== 'draft');
     setPreview(null);
+    if (activeCrisis) {
+      setDraftWindowStart(officialRange.archiveFrom);
+      setDraftWindowEnd(officialRange.archiveTo);
+    }
     if (archiveNeedsOfficialStart) {
-      setDraftWindowStart('');
-      setDraftWindowEnd('');
       setDraftWindowOpen(true);
+    }
+  };
+
+  const openEditOfficialWindow = () => {
+    if (activeCrisis) {
+      setDraftWindowStart(officialRange.archiveFrom);
+      setDraftWindowEnd(officialRange.archiveTo);
+    }
+    setDraftWindowOpen(true);
+  };
+
+  const alignOfficialStartToBrowse = async () => {
+    if (!activeCrisisId || !browseFrom.trim()) {
+      setErr(t('ops.map.draftWindowStartRequired'));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const updated = await opsPatch<OpsCrisis>(`/v1/ops/crises/${activeCrisisId}`, {
+        archive_window_start: fromDatetimeLocalValue(browseFrom) || null,
+      });
+      setCrises((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      setDraftWindowStart(browseFrom);
+      loadReports();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const closeCrisisAsArchived = async () => {
+    if (!activeCrisisId || activeCrisis?.archive_status !== 'active') return;
+    if (!window.confirm(t('ops.map.closeCrisisConfirm'))) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const updated = await opsPatch<OpsCrisis>(`/v1/ops/crises/${activeCrisisId}`, {
+        archive_status: 'archived',
+      });
+      setCrises((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      loadCrises();
+      alert(t('ops.map.closeCrisisDone'));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -762,6 +904,7 @@ export function OpsMapPage() {
       };
       const r = await opsPost<ArchiveRunResult>(`/v1/ops/crises/${activeCrisisId}/archive-run`, body);
       setPreview(null);
+      setLiveArchiveMatched(r.linked_count);
       loadCrises();
       loadReports();
       loadAudit();
@@ -1155,7 +1298,7 @@ export function OpsMapPage() {
       {err && (
         <div className="ops-map-toast error" role="alert">
           {err}
-          <button type="button" onClick={() => setErr(null)} aria-label="關閉">
+          <button type="button" onClick={() => setErr(null)} aria-label={t('ops.map.dismissError')}>
             ×
           </button>
         </div>
@@ -1169,35 +1312,42 @@ export function OpsMapPage() {
           </button>
           {shellMode === 'work' && (mapMode === 'draw' || mapMode === 'edit') ? (
             <>
-              <h3>{editingZoneId ? '編輯分區' : '新增分區'}</h3>
+              <h3>{editingZoneId ? t('ops.map.zone.editTitle') : t('ops.map.zone.addTitle')}</h3>
               <p className="muted">
-                {mapMode === 'draw' && !closed && '點擊地圖新增頂點；至少 3 點後按「完成多邊形」。'}
-                {(closed || mapMode === 'edit') &&
-                  '拖曳白點移動頂點；點綠色中點或邊線附近可加邊；選取頂點後可刪除。'}
+                {mapMode === 'draw' && !closed && t('ops.map.zone.drawHint')}
+                {(closed || mapMode === 'edit') && t('ops.map.zone.editHint')}
               </p>
               <label className="ops-field">
-                <span>分區名稱（必填）</span>
+                <span>{t('ops.map.zone.nameLabel')}</span>
                 <input
                   className="ops-input"
                   value={zoneName}
                   onChange={(e) => setZoneName(e.target.value)}
-                  placeholder="例如：北區、撤離區 A"
+                  placeholder={t('ops.map.zone.namePlaceholder')}
                   required
                 />
               </label>
               <p className="muted">
-                頂點 {vertices.length}
-                {draftAreaKm2 != null && (closed || mapMode === 'edit') && ` · ${formatArea(draftAreaKm2)}`}
-                {selectedVertex != null && ` · 已選頂點 #${selectedVertex + 1}`}
+                {t('ops.map.zone.vertexSummary', {
+                  count: vertices.length,
+                  area:
+                    draftAreaKm2 != null && (closed || mapMode === 'edit')
+                      ? ` · ${formatArea(draftAreaKm2)}`
+                      : '',
+                  selected:
+                    selectedVertex != null
+                      ? ` · ${t('ops.map.zone.selectedVertex', { index: selectedVertex + 1 })}`
+                      : '',
+                })}
               </p>
               <div className="ops-map-card-actions">
                 {mapMode === 'draw' && !closed && (
                   <>
                     <button type="button" onClick={finishDrawing} disabled={vertices.length < 3}>
-                      完成多邊形
+                      {t('ops.map.zone.finishPolygon')}
                     </button>
                     <button type="button" onClick={() => setVertices((p) => p.slice(0, -1))} disabled={!vertices.length}>
-                      復原上一點
+                      {t('ops.map.zone.undoVertex')}
                     </button>
                   </>
                 )}
@@ -1208,16 +1358,16 @@ export function OpsMapPage() {
                     onClick={removeSelectedVertex}
                     disabled={selectedVertex == null || vertices.length <= 3}
                   >
-                    刪除選取頂點
+                    {t('ops.map.zone.deleteVertex')}
                   </button>
                 )}
                 {canSaveZone && (
                   <button type="button" onClick={saveZone} disabled={busy}>
-                    儲存
+                    {t('ops.map.zone.save')}
                   </button>
                 )}
                 <button type="button" className="secondary" onClick={resetDraft}>
-                  取消
+                  {t('common.cancel')}
                 </button>
               </div>
             </>
@@ -1228,12 +1378,12 @@ export function OpsMapPage() {
               <div className="ops-map-card-actions">
                 {canEditSelectedZone && (
                   <button type="button" onClick={() => startEditZone(selectedZone)}>
-                    編輯邊界
+                    {t('ops.map.zone.editBoundary')}
                   </button>
                 )}
                 {canDeleteSelectedZone && (
                   <button type="button" className="danger" onClick={() => removeZone(selectedZone.id)} disabled={busy}>
-                    刪除
+                    {t('ops.map.zone.delete')}
                   </button>
                 )}
                 <button type="button" className="secondary" onClick={clearZoneSelection}>
@@ -1280,13 +1430,52 @@ export function OpsMapPage() {
             <p className="ops-archive-window-label">{t('ops.map.officialArchiveWindow')}</p>
             <p className="ops-archive-window-range">
               {t('ops.map.archiveWindowRange', {
-                from: formatPanelTime(officialRange.archiveFrom),
-                to: formatPanelTime(officialRange.archiveTo),
+                from: formatPanelTime(officialRange.archiveFrom, locale),
+                to: formatPanelTime(officialRange.archiveTo, locale),
               })}
             </p>
             <p className="muted ops-archive-window-zone">
               {t('ops.map.archiveAllZones', { count: zones.length })}
             </p>
+            {!archiveNeedsOfficialStart && (
+              <p className="muted">
+                <button type="button" className="linkish" onClick={openEditOfficialWindow}>
+                  {t('ops.map.editOfficialWindow')}
+                </button>
+              </p>
+            )}
+            {liveArchiveLoading && (
+              <p className="muted" role="status">
+                {t('ops.map.livePreviewLoading')}
+              </p>
+            )}
+            {!liveArchiveLoading && liveArchiveMatched != null && (
+              <p className="ops-archive-live-count" role="status">
+                {t('ops.map.livePreviewReady', { count: liveArchiveMatched })}
+              </p>
+            )}
+            {showArchiveZeroHint && (
+              <p className="ops-archive-warn" role="status">
+                {t('ops.map.archiveZeroCandidates')}
+              </p>
+            )}
+            {showAlignOfficialHint && (
+              <p className="ops-archive-warn" role="status">
+                {t('ops.map.archiveBrowseMismatch', {
+                  browseFrom: formatPanelTime(browseFrom, locale),
+                  browseTo: formatPanelTime(browseTo, locale),
+                  browseCount: browseRangeReportCount ?? 0,
+                })}
+                <button
+                  type="button"
+                  className="linkish"
+                  onClick={() => void alignOfficialStartToBrowse()}
+                  disabled={busy}
+                >
+                  {t('ops.map.alignOfficialToBrowse')}
+                </button>
+              </p>
+            )}
             <p className="ops-archive-window-label">{t('ops.map.archiveStrategy')}</p>
             <div className="ops-archive-mode-row">
               <label className="ops-archive-mode-opt">
@@ -1309,6 +1498,7 @@ export function OpsMapPage() {
               </label>
             </div>
             <p className="muted ops-archive-window-note">{t('ops.map.archiveWindowNote')}</p>
+            <p className="muted ops-archive-window-note">{t('ops.map.archiveBuildingFootprintHint')}</p>
           </div>
           <div className="ops-map-card-actions">
             <button
@@ -1325,14 +1515,24 @@ export function OpsMapPage() {
             >
               {t('ops.map.archiveRun')}
             </button>
+            {activeCrisis?.archive_status === 'active' && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void closeCrisisAsArchived()}
+                disabled={busy}
+              >
+                {t('ops.map.closeCrisis')}
+              </button>
+            )}
           </div>
           {preview && (
             <div className="ops-preview-box">
               <strong>{t('ops.map.archivePreviewTitle')}</strong>
               <p className="ops-archive-window-range">
                 {t('ops.map.archiveWindowRange', {
-                  from: formatIsoTime(preview.archive_window_start),
-                  to: formatIsoTime(preview.archive_window_end),
+                  from: formatIsoTime(preview.archive_window_start, locale),
+                  to: formatIsoTime(preview.archive_window_end, locale),
                 })}
               </p>
               <p>
@@ -1375,13 +1575,13 @@ export function OpsMapPage() {
           <ul className="ops-audit-list">
             {audit.map((a) => (
               <li key={a.id}>
-                <time>{a.created_at ? new Date(a.created_at).toLocaleString() : '—'}</time>
+                <time>{a.created_at ? formatIsoTime(a.created_at, locale) : '—'}</time>
                 <span>{a.action}</span>
                 <span className="muted">{a.entity_type}</span>
               </li>
             ))}
           </ul>
-          {audit.length === 0 && <p className="muted">尚無紀錄</p>}
+          {audit.length === 0 && <p className="muted">{t('ops.map.audit.empty')}</p>}
         </div>
       )}
 
@@ -1453,10 +1653,10 @@ export function OpsMapPage() {
           <button type="button" className="ops-map-card-close" onClick={() => setSelectedReportId(null)}>
             ×
           </button>
-          <h3>回報</h3>
+          <h3>{t('ops.map.reportPanelTitle')}</h3>
           <p>{selectedReport.description_preview}</p>
           <p className="muted">
-            {selectedReport.damage_level} · {new Date(selectedReport.captured_at_client).toLocaleString()}
+            {selectedReport.damage_level} · {formatIsoTime(selectedReport.captured_at_client, locale)}
           </p>
           <div className="ops-map-card-actions">
             <button
@@ -1464,14 +1664,14 @@ export function OpsMapPage() {
               onClick={() => patchReport(selectedReport.id, !selectedReport.admin_reviewed, undefined)}
               disabled={busy}
             >
-              {selectedReport.admin_reviewed ? '取消審核' : '標記審核'}
+              {selectedReport.admin_reviewed ? t('ops.map.report.unmarkReviewed') : t('ops.map.report.markReviewed')}
             </button>
             <button
               type="button"
               onClick={() => patchReport(selectedReport.id, undefined, !selectedReport.admin_flagged)}
               disabled={busy}
             >
-              {selectedReport.admin_flagged ? '取消旗標' : '加旗標'}
+              {selectedReport.admin_flagged ? t('ops.map.report.unflag') : t('ops.map.report.flag')}
             </button>
           </div>
         </div>
