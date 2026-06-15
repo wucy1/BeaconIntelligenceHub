@@ -106,14 +106,15 @@ When testing the hosted demo:
 
 ## i18n maintenance
 
-English (`en.json`) is the source of truth. Sync other locale files after adding keys:
+English (`en.json`) is the source of truth for **keys**. Each locale file must contain real translations — missing keys fall back to English at runtime only.
 
 ```powershell
 cd frontend
-python scripts/sync-i18n.py
+python scripts/sync-i18n.py              # validate key parity (does not copy English)
+python scripts/sync-i18n.py --regenerate-zh   # rebuild Simplified Chinese from zh-Hant (OpenCC)
 ```
 
-Missing keys in secondary locales fall back to English at runtime (`I18nContext`).
+Do **not** use `--fill-english` for release builds; it only scaffolds missing keys during development.
 
 ## Documentation
 
