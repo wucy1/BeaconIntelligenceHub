@@ -222,6 +222,10 @@ export function OpsDashboard() {
       setCrisisFormMsg('請填寫 slug 與名稱');
       return;
     }
+    if (newCrisisMeta.archive_status === 'active' && !newCrisisMeta.event_start.trim()) {
+      setCrisisFormMsg('設為進行中（active）前須填寫官方起始時間');
+      return;
+    }
     setBusy(true);
     setApiBanner(null);
     setCrisisFormMsg(null);
@@ -252,6 +256,10 @@ export function OpsDashboard() {
 
   const saveSelectedCrisisMeta = async () => {
     if (!selectedCrisisId || !canEditSelectedCrisis) return;
+    if (editCrisisMeta.archive_status === 'active' && !editCrisisMeta.event_start.trim()) {
+      setCrisisEditMsg('設為進行中（active）前須填寫官方起始時間');
+      return;
+    }
     setBusy(true);
     setCrisisEditMsg(null);
     try {

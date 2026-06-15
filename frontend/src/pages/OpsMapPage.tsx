@@ -259,8 +259,7 @@ export function OpsMapPage() {
     officialRange.archiveFrom,
     officialRange.archiveTo,
   );
-  const archiveNeedsOfficialStart =
-    activeCrisis?.archive_status === 'draft' && !activeCrisis.archive_window_start;
+  const archiveNeedsOfficialStart = !activeCrisis?.archive_window_start;
   const archiveMissingZones = zones.length === 0;
 
   useEffect(() => {
@@ -904,57 +903,45 @@ export function OpsMapPage() {
           </Link>
         </div>
         <div className="ops-map-top-right">
-          <LanguageSwitcher compact />
-          <OpsUserMenu className="ops-map-user-menu" compact />
-        </div>
-      </div>
-
-      <div className="ops-map-right-rail">
-        {canUseWorkMode && shellMode === 'work' && (
-          <div className="ops-map-fab-col">
-            <button
-              type="button"
-              className={`ops-map-fab ${mapMode === 'draw' ? 'active' : ''}`}
-              onClick={startDraw}
-              title={!canCreateZones && activeCrisisId ? t('ops.map.drawZoneDenied') : undefined}
-            >
-              {t('ops.map.drawZone')}
-            </button>
-            {canArchive && (
-              <button
-                type="button"
-                className={`ops-map-fab ${panel === 'crisis' ? 'active' : ''}`}
-                onClick={() => togglePanel('crisis')}
-              >
-                {t('ops.map.archiveFab')}
-              </button>
-            )}
-            {isAdmin && (
-              <button
-                type="button"
-                className={`ops-map-fab ${panel === 'audit' ? 'active' : ''}`}
-                onClick={() => togglePanel('audit')}
-              >
-                {t('ops.tab.audit')}
-              </button>
-            )}
+          <div className="ops-map-top-right-chrome">
+            <LanguageSwitcher compact />
+            <OpsUserMenu className="ops-map-user-menu" compact />
           </div>
-        )}
-        <div className="ops-map-rail-stack-host" aria-hidden="true" />
-      </div>
-
-      {shellMode === 'view' && (
-        <div className="ops-map-view-float-actions">
-          <button type="button" className="ops-map-float-btn" onClick={() => setSaveReportOpen(true)}>
-            {t('ops.map.saveReport')}
-          </button>
-          {selectedZone && (
-            <button type="button" className="ops-map-float-btn secondary" onClick={clearZoneSelection}>
-              {t('ops.map.clearZone')}
-            </button>
-          )}
+          <div className="ops-map-system-tools">
+            {canUseWorkMode && shellMode === 'work' && (
+              <div className="ops-map-fab-col">
+                <button
+                  type="button"
+                  className={`ops-map-fab ${mapMode === 'draw' ? 'active' : ''}`}
+                  onClick={startDraw}
+                  title={!canCreateZones && activeCrisisId ? t('ops.map.drawZoneDenied') : undefined}
+                >
+                  {t('ops.map.drawZone')}
+                </button>
+                {canArchive && (
+                  <button
+                    type="button"
+                    className={`ops-map-fab ${panel === 'crisis' ? 'active' : ''}`}
+                    onClick={() => togglePanel('crisis')}
+                  >
+                    {t('ops.map.archiveFab')}
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className={`ops-map-fab ${panel === 'audit' ? 'active' : ''}`}
+                    onClick={() => togglePanel('audit')}
+                  >
+                    {t('ops.tab.audit')}
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="ops-map-rail-stack-host" aria-hidden="true" />
+          </div>
         </div>
-      )}
+      </div>
 
       <div className="ops-map-bottom-chrome">
         {shellMode === 'work' && (
@@ -1013,7 +1000,18 @@ export function OpsMapPage() {
         )}
 
         {shellMode === 'view' && (
-          <div className="ops-map-view-panel ops-map-panel-compact">
+          <>
+            <div className="ops-map-view-toolbar-row">
+              <button type="button" className="ops-map-chip ops-map-btn" onClick={() => setSaveReportOpen(true)}>
+                {t('ops.map.saveReport')}
+              </button>
+              {selectedZone && (
+                <button type="button" className="ops-map-chip ops-map-btn secondary" onClick={clearZoneSelection}>
+                  {t('ops.map.clearZone')}
+                </button>
+              )}
+            </div>
+            <div className="ops-map-view-panel ops-map-panel-compact">
             <div className="ops-map-view-row">
               <label className="ops-map-chip ops-map-view-field">
                 <span className="ops-map-view-label">{t('ops.map.queryPanel')}</span>
@@ -1116,7 +1114,8 @@ export function OpsMapPage() {
                 )}
               </div>
             </div>
-          </div>
+            </div>
+          </>
         )}
 
         {canUseWorkMode ? (
@@ -1227,9 +1226,7 @@ export function OpsMapPage() {
           {activeCrisis && (
             <p className="muted">
               {crisisName(activeCrisis.name, activeCrisis.slug)} · {activeCrisis.archive_status}
-              {activeCrisis.archive_status === 'draft' && (
-                <span className="ops-archive-draft-hint"> · {t('ops.map.archiveDraftHint')}</span>
-              )}
+              <span className="ops-archive-draft-hint"> · {t('ops.map.archiveLifecycleHint')}</span>
             </p>
           )}
           {browseDiffersFromOfficial && (

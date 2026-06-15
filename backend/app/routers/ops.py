@@ -262,12 +262,24 @@ def _official_archive_scope(db: Session, crisis: Crisis) -> tuple[datetime | Non
             status_code=422,
             detail="Crisis has no zones; create zones before archiving",
         )
-    if crisis.archive_status == "draft" and crisis.archive_window_start is None:
+    if crisis.archive_window_start is None:
         raise HTTPException(
             status_code=422,
-            detail="Draft crisis requires archive_window_start before archiving",
+            detail="Crisis requires archive_window_start before archiving",
         )
     return crisis.archive_window_start, crisis.archive_window_end, zone_ids
+
+
+def _validate_crisis_archive_meta(
+    *,
+    archive_status: str,
+    archive_window_start: datetime | None,
+) -> None:
+    if archive_status in ("active", "archived") and archive_window_start is None:
+        raise HTTPException(
+            status_code=422,
+            detail="archive_window_start required for active or archived crisis",
+        )
 
 
 def _saved_report_out(row: OpsSavedReport, creator_email: str | None = None) -> dict:
@@ -659,6 +671,10 @@ def ops_create_crisis(
 ) -> dict:
     if body.archive_status not in ("draft", "active", "archived"):
         raise HTTPException(status_code=422, detail="Invalid archive_status")
+    _validate_crisis_archive_meta(
+        archive_status=body.archive_status,
+        archive_window_start=body.archive_window_start,
+    )
     crisis = Crisis(
         slug=body.slug.strip(),
         name=body.name,
@@ -711,6 +727,12 @@ def ops_patch_crisis(
         crisis.archive_window_start = body.archive_window_start
     if body.archive_window_end is not None:
         crisis.archive_window_end = body.archive_window_end
+    next_status = crisis.archive_status
+    next_start = crisis.archive_window_start
+    _validate_crisis_archive_meta(
+        archive_status=next_status,
+        archive_window_start=next_start,
+    )
     log_ops_action(
         db,
         actor_user_id=principal.user_id,
