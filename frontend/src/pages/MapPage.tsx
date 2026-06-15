@@ -2,7 +2,7 @@ import L from 'leaflet';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { apiGet, BUILDINGS_FETCH_TIMEOUT_MS, wakeApiBackend } from '../api';
+import { apiGet, BUILDINGS_FETCH_TIMEOUT_MS, ensureApiReady } from '../api';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { ContributorMap, type MapMarker } from '../components/map/ContributorMap';
 import {
@@ -250,11 +250,18 @@ export function MapPage() {
 
   const onFlyComplete = useCallback(() => {
     setFlyTarget(null);
+    setRefreshKey((k) => k + 1);
   }, []);
 
   useEffect(() => {
     if (!online) return;
-    void wakeApiBackend();
+    let cancelled = false;
+    void ensureApiReady(90_000, { soft: true }).then(() => {
+      if (!cancelled) setRefreshKey((k) => k + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [online]);
 
   useEffect(() => {
@@ -396,78 +403,81 @@ export function MapPage() {
     if (!online || !bbox || publicCrises.length === 0 || crisesLoading) return;
     const requestedScope = mapScope;
     const requestedBbox = bbox;
+    let cancelled = false;
     const timer = setTimeout(() => {
-      const q = encodeURIComponent(requestedBbox);
-      setBuildingsError(null);
-      setBuildingsLoading(true);
-      const loadBuildings = async (): Promise<GeoJSON.FeatureCollection | null> => {
-        if (requestedScope === 'unspecified') {
-          return { type: 'FeatureCollection', features: [] };
-        }
-        const crisisIds =
-          requestedScope === 'all'
-            ? activeCrises.map((c) => c.id)
-            : [requestedScope];
-        if (crisisIds.length === 0) {
-          return null;
-        }
-        const results = await Promise.allSettled(
-          crisisIds.map((id) =>
-            apiGet<GeoJSON.FeatureCollection>(`/v1/crises/${id}/buildings?bbox=${q}`, {
-              timeoutMs: BUILDINGS_FETCH_TIMEOUT_MS,
-              maxAttempts: 2,
-            }),
-          ),
-        );
-        const seen = new Set<string>();
-        const features: GeoJSON.Feature[] = [];
-        let failures = 0;
-        for (let i = 0; i < results.length; i++) {
-          const result = results[i];
-          if (result.status !== 'fulfilled') {
-            failures += 1;
-            continue;
-          }
-          const cid = crisisIds[i];
-          const list = result.value.features ?? [];
-          for (const f of list) {
-            const bid = (f.properties?.building_id as string) ?? '';
-            if (bid && seen.has(bid)) continue;
-            if (bid) seen.add(bid);
-            features.push({
-              ...f,
-              properties: { ...f.properties, crisis_id: cid },
-            });
-          }
-        }
-        if (failures > 0 && features.length === 0) {
-          throw new Error(`Failed to load footprints (${failures}/${crisisIds.length} crises)`);
-        }
-        if (failures > 0) {
-          setBuildingsError(
-            t('map.err.buildingsPartial', { failed: failures, total: crisisIds.length }),
-          );
-        }
-        return { type: 'FeatureCollection', features };
-      };
-      void loadBuildings()
-        .then((fc) => {
+      void (async () => {
+        await ensureApiReady(90_000, { soft: true });
+        if (cancelled) return;
+        const q = encodeURIComponent(requestedBbox);
+        setBuildingsError(null);
+        setBuildingsLoading(true);
+        try {
+          const fc = await (async (): Promise<GeoJSON.FeatureCollection | null> => {
+            if (requestedScope === 'unspecified') {
+              return { type: 'FeatureCollection', features: [] };
+            }
+            const crisisIds =
+              requestedScope === 'all'
+                ? activeCrises.map((c) => c.id)
+                : [requestedScope];
+            if (crisisIds.length === 0) {
+              return null;
+            }
+            const results = await Promise.allSettled(
+              crisisIds.map((id) =>
+                apiGet<GeoJSON.FeatureCollection>(`/v1/crises/${id}/buildings?bbox=${q}`, {
+                  timeoutMs: BUILDINGS_FETCH_TIMEOUT_MS,
+                  maxAttempts: 3,
+                }),
+              ),
+            );
+            const seen = new Set<string>();
+            const features: GeoJSON.Feature[] = [];
+            let failures = 0;
+            for (let i = 0; i < results.length; i++) {
+              const result = results[i];
+              if (result.status !== 'fulfilled') {
+                failures += 1;
+                continue;
+              }
+              const cid = crisisIds[i];
+              const list = result.value.features ?? [];
+              for (const f of list) {
+                const bid = (f.properties?.building_id as string) ?? '';
+                if (bid && seen.has(bid)) continue;
+                if (bid) seen.add(bid);
+                features.push({
+                  ...f,
+                  properties: { ...f.properties, crisis_id: cid },
+                });
+              }
+            }
+            if (failures > 0 && features.length === 0) {
+              throw new Error(`Failed to load footprints (${failures}/${crisisIds.length} crises)`);
+            }
+            if (failures > 0) {
+              setBuildingsError(
+                t('map.err.buildingsPartial', { failed: failures, total: crisisIds.length }),
+              );
+            }
+            return { type: 'FeatureCollection', features };
+          })();
           if (fc === null) return;
-          if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+          if (cancelled || bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
           buildingsCacheRef.current[buildingsCacheKey] = fc;
           setBuildings(fc);
-        })
-        .catch((e: Error) => {
-          if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
-          setBuildingsError(e.message);
-        })
-        .finally(() => {
-          if (bboxRef.current === requestedBbox && scopeRef.current === requestedScope) {
+        } catch (e: unknown) {
+          if (cancelled || bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+          setBuildingsError(e instanceof Error ? e.message : String(e));
+        } finally {
+          if (!cancelled && bboxRef.current === requestedBbox && scopeRef.current === requestedScope) {
             setBuildingsLoading(false);
           }
-        });
+        }
+      })();
     }, 350);
     return () => {
+      cancelled = true;
       clearTimeout(timer);
       setBuildingsLoading(false);
     };
@@ -495,46 +505,51 @@ export function MapPage() {
     }
     const requestedBbox = bbox;
     const requestedScope = mapScope;
+    let cancelled = false;
     const timer = setTimeout(() => {
-      const scopeParam =
-        requestedScope === 'all' || requestedScope === 'unspecified'
-          ? `scope=${requestedScope}`
-          : `scope=crisis&crisis_id=${encodeURIComponent(requestedScope)}`;
-      const bboxQ = encodeURIComponent(requestedBbox);
-      const fetchMarkers = (mode: MapMode) =>
-        apiGet<{ items: MapMarker[] }>(
-          `/v1/public/markers?bbox=${bboxQ}&mode=${mode}&${scopeParam}`,
-        );
+      void (async () => {
+        await ensureApiReady(90_000, { soft: true });
+        if (cancelled) return;
+        const scopeParam =
+          requestedScope === 'all' || requestedScope === 'unspecified'
+            ? `scope=${requestedScope}`
+            : `scope=crisis&crisis_id=${encodeURIComponent(requestedScope)}`;
+        const bboxQ = encodeURIComponent(requestedBbox);
+        const fetchMarkers = (mode: MapMode) =>
+          apiGet<{ items: MapMarker[] }>(
+            `/v1/public/markers?bbox=${bboxQ}&mode=${mode}&${scopeParam}`,
+            { maxAttempts: 3 },
+          );
 
-      const applyResults = (pinItems: MapMarker[], aggregateItems: MapMarker[]) => {
-        if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
-        const pinFiltered = filterMarkersInBbox(pinItems, requestedBbox);
-        const allFiltered = filterMarkersInBbox(aggregateItems, requestedBbox);
-        setMarkers(pinFiltered);
-        setAllMarkers(allFiltered);
-        markersCacheRef.current[`${requestedScope}:${mapMode}`] = pinFiltered;
-        markersCacheRef.current[`${requestedScope}:all`] = allFiltered;
-      };
+        const applyResults = (pinItems: MapMarker[], aggregateItems: MapMarker[]) => {
+          if (cancelled || bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+          const pinFiltered = filterMarkersInBbox(pinItems, requestedBbox);
+          const allFiltered = filterMarkersInBbox(aggregateItems, requestedBbox);
+          setMarkers(pinFiltered);
+          setAllMarkers(allFiltered);
+          markersCacheRef.current[`${requestedScope}:${mapMode}`] = pinFiltered;
+          markersCacheRef.current[`${requestedScope}:all`] = allFiltered;
+        };
 
-      if (mapMode === 'mine') {
-        void Promise.all([fetchMarkers('mine'), fetchMarkers('all')])
-          .then(([mineRes, allRes]) => applyResults(mineRes.items, allRes.items))
-          .catch(() => {
-            if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
-            setMarkers([]);
-            setAllMarkers([]);
-          });
-      } else {
-        void fetchMarkers(mapMode)
-          .then((r) => applyResults(r.items, r.items))
-          .catch(() => {
-            if (bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
-            setMarkers([]);
-            setAllMarkers([]);
-          });
-      }
+        try {
+          if (mapMode === 'mine') {
+            const [mineRes, allRes] = await Promise.all([fetchMarkers('mine'), fetchMarkers('all')]);
+            applyResults(mineRes.items, allRes.items);
+          } else {
+            const r = await fetchMarkers(mapMode);
+            applyResults(r.items, r.items);
+          }
+        } catch {
+          if (cancelled || bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+          setMarkers([]);
+          setAllMarkers([]);
+        }
+      })();
     }, 350);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [online, bbox, mapMode, mapScope, refreshKey, inspectOpen]);
 
   const showOthers = mapMode === 'all';
