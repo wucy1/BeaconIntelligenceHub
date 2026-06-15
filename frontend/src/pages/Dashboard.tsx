@@ -48,6 +48,7 @@ type ListResp = {
 };
 
 type ReviewFilter = 'all' | 'pending' | 'flagged' | 'reviewed';
+type SourceTab = 'official' | 'saved';
 
 function zoneVertexCount(geom: GeoJSON.Polygon): number {
   return geom.coordinates[0]?.length ?? 0;
@@ -85,6 +86,7 @@ export function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const crisisFromUrl = searchParams.get('crisis_id') ?? '';
   const savedFromUrl = searchParams.get('saved_report_id') ?? '';
+  const tabFromUrl = searchParams.get('tab');
 
   const [data, setData] = useState<ListResp>({ items: [] });
   const [reportsLoading, setReportsLoading] = useState(false);
@@ -94,6 +96,11 @@ export function Dashboard() {
   const [savedReports, setSavedReports] = useState<OpsSavedReport[]>([]);
   const [archiveSummary, setArchiveSummary] = useState<OpsArchiveSummary | null>(null);
   const [activeSavedId, setActiveSavedId] = useState(savedFromUrl || '');
+  const [sourceTab, setSourceTab] = useState<SourceTab>(() => {
+    if (savedFromUrl) return 'saved';
+    if (tabFromUrl === 'saved') return 'saved';
+    return 'official';
+  });
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('pending');
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -105,7 +112,7 @@ export function Dashboard() {
   const activeCrisis = manageableCrises.find((c) => c.id === crisisId);
   const activeSaved = savedReports.find((s) => s.id === activeSavedId) ?? null;
   const canViewArchiveForCrisis = opsCanViewCrisisArchive(opsUser, crisisId);
-  const usingSavedReport = Boolean(activeSavedId);
+  const usingSavedReport = sourceTab === 'saved' && Boolean(activeSavedId);
 
   const loadOfficialReports = useCallback(async () => {
     if (!crisisId || !activeCrisis) {
@@ -150,12 +157,17 @@ export function Dashboard() {
   }, [activeSavedId]);
 
   const loadReports = useCallback(async () => {
-    if (usingSavedReport) {
+    if (sourceTab === 'saved') {
+      if (!activeSavedId) {
+        setData({ items: [] });
+        setReportsLoading(false);
+        return;
+      }
       await loadSavedReportList();
       return;
     }
     await loadOfficialReports();
-  }, [usingSavedReport, loadSavedReportList, loadOfficialReports]);
+  }, [sourceTab, activeSavedId, loadSavedReportList, loadOfficialReports]);
 
   const loadSavedReports = useCallback(async () => {
     if (!crisisId) {
@@ -190,6 +202,7 @@ export function Dashboard() {
     opsGet<OpsSavedReport>(`/v1/ops/saved-reports/${savedFromUrl}`)
       .then((saved) => {
         setActiveSavedId(saved.id);
+        setSourceTab('saved');
         if (saved.crisis_id) setCrisisId(saved.crisis_id);
       })
       .catch(() => undefined);
@@ -246,27 +259,30 @@ export function Dashboard() {
         const q = new URLSearchParams(prev);
         if (crisisId) q.set('crisis_id', crisisId);
         else q.delete('crisis_id');
-        if (activeSavedId) q.set('saved_report_id', activeSavedId);
+        q.set('tab', sourceTab);
+        if (sourceTab === 'saved' && activeSavedId) q.set('saved_report_id', activeSavedId);
         else q.delete('saved_report_id');
         return q;
       },
       { replace: true },
     );
-  }, [crisisId, activeSavedId, setSearchParams]);
+  }, [crisisId, activeSavedId, sourceTab, setSearchParams]);
 
   useEffect(() => {
     void loadReports();
   }, [loadReports]);
 
   const selectSavedReport = (saved: OpsSavedReport) => {
+    setSourceTab('saved');
     setActiveSavedId(saved.id);
     if (saved.crisis_id && saved.crisis_id !== crisisId) {
       setCrisisId(saved.crisis_id);
     }
   };
 
-  const clearSavedReport = () => {
-    setActiveSavedId('');
+  const switchSourceTab = (tab: SourceTab) => {
+    setSourceTab(tab);
+    if (tab === 'official') setActiveSavedId('');
   };
 
   const deleteSavedReport = async (id: string) => {
@@ -355,8 +371,10 @@ export function Dashboard() {
   const mapHref = activeSaved
     ? buildOpsMapHref(savedReportToBrowseParams(activeSaved))
     : crisisId
-      ? `/ops/map?crisis_id=${crisisId}`
-      : '/ops/map';
+      ? `/ops/map?crisis_id=${crisisId}&shell=view`
+      : '/ops/map?shell=view';
+
+  const exportCrisisId = sourceTab === 'official' ? crisisId : (activeSaved?.crisis_id ?? crisisId);
 
   if (!opsHasStaffAccess(opsUser)) {
     return (
@@ -377,7 +395,8 @@ export function Dashboard() {
     );
   }
 
-  const showReports = Boolean(crisisId && (usingSavedReport || activeCrisis));
+  const showReports =
+    sourceTab === 'official' ? Boolean(crisisId && activeCrisis) : Boolean(activeSavedId);
 
   const api = apiBase();
 
@@ -427,7 +446,30 @@ export function Dashboard() {
         )}
       </section>
 
-      {activeCrisis && canViewArchiveForCrisis && archiveSummary && (
+      <section className="ops-dash-section ops-dash-source-tabs-section">
+        <div className="ops-review-tabs ops-dash-source-tabs" role="tablist" aria-label={t('dashboard.sourceTabsLabel')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={sourceTab === 'official'}
+            className={sourceTab === 'official' ? 'ops-review-tab active' : 'ops-review-tab'}
+            onClick={() => switchSourceTab('official')}
+          >
+            {t('dashboard.tabOfficial')}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={sourceTab === 'saved'}
+            className={sourceTab === 'saved' ? 'ops-review-tab active' : 'ops-review-tab'}
+            onClick={() => switchSourceTab('saved')}
+          >
+            {t('dashboard.tabSaved')}
+          </button>
+        </div>
+      </section>
+
+      {sourceTab === 'official' && activeCrisis && canViewArchiveForCrisis && archiveSummary && (
         <section className="ops-dash-section ops-archive-status-section">
           <h2>{t('dashboard.archiveStatusTitle')}</h2>
           <p className="muted">{t('dashboard.archiveStatusHint')}</p>
@@ -479,54 +521,71 @@ export function Dashboard() {
         </section>
       )}
 
-      <section className="ops-dash-section">
-        <h2>{t('dashboard.queryTitle')}</h2>
-        <p className="muted">{t('dashboard.querySavedOnlyHint')}</p>
-        {savedReports.length === 0 ? (
-          <p className="muted">{t('dashboard.savedReportsEmpty')}</p>
-        ) : (
-          <ul className="ops-saved-reports-list">
-            {savedReports.map((saved) => (
-              <li key={saved.id} className={activeSavedId === saved.id ? 'active' : ''}>
-                <button type="button" className="ops-saved-report-btn" onClick={() => selectSavedReport(saved)}>
-                  <strong>{saved.name}</strong>
-                  <span className="muted">
-                    {t(`dashboard.view.${saved.report_view}`)}
-                    {' · '}
-                    {formatRange(saved.browse_from, saved.browse_to, t('dashboard.openEnded'))}
-                    {saved.snapshot_total != null && ` · ${saved.snapshot_total} ${t('dashboard.savedAtCount')}`}
-                  </span>
-                  {saved.zone_snapshots && saved.zone_snapshots.length > 0 && (
-                    <ZoneSnapshotList snapshots={saved.zone_snapshots} />
-                  )}
-                  <span className="muted ops-saved-report-meta">
-                    {saved.updated_at ? new Date(saved.updated_at).toLocaleString() : ''}
-                    {saved.creator_email ? ` · ${saved.creator_email}` : ''}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="small secondary"
-                  onClick={() => void deleteSavedReport(saved.id)}
-                >
-                  {t('dashboard.savedReportDelete')}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {activeSaved && (
-          <div className="ops-active-saved-detail">
-            <strong>{t('dashboard.activeSavedReport', { name: activeSaved.name })}</strong>
-            {activeSaved.zone_snapshots && activeSaved.zone_snapshots.length > 0 && (
-              <p className="muted">{t('dashboard.frozenZoneBoundaries')}</p>
-            )}
-            <button type="button" className="small secondary" onClick={clearSavedReport}>
-              {t('dashboard.backToOfficialReports')}
-            </button>
-          </div>
-        )}
-      </section>
+      {sourceTab === 'official' && activeCrisis && !canViewArchiveForCrisis && (
+        <section className="ops-dash-section">
+          <p className="muted">{t('dashboard.officialReportsHint')}</p>
+        </section>
+      )}
+
+      {sourceTab === 'saved' && (
+        <section className="ops-dash-section">
+          <h2>{t('dashboard.savedReportsTitle')}</h2>
+          <p className="muted">{t('dashboard.savedReportsHint')}</p>
+          {savedReports.length === 0 ? (
+            <p className="muted">{t('dashboard.savedReportsEmpty')}</p>
+          ) : (
+            <ul className="ops-saved-reports-list">
+              {savedReports.map((saved) => (
+                <li key={saved.id} className={activeSavedId === saved.id ? 'active' : ''}>
+                  <button type="button" className="ops-saved-report-btn" onClick={() => selectSavedReport(saved)}>
+                    <strong>{saved.name}</strong>
+                    <span className="muted">
+                      {t(`dashboard.view.${saved.report_view}`)}
+                      {' · '}
+                      {formatRange(saved.browse_from, saved.browse_to, t('dashboard.openEnded'))}
+                      {saved.snapshot_total != null && ` · ${saved.snapshot_total} ${t('dashboard.savedAtCount')}`}
+                    </span>
+                    {saved.zone_snapshots && saved.zone_snapshots.length > 0 && (
+                      <ZoneSnapshotList snapshots={saved.zone_snapshots} />
+                    )}
+                    <span className="muted ops-saved-report-meta">
+                      {saved.updated_at ? new Date(saved.updated_at).toLocaleString() : ''}
+                      {saved.creator_email ? ` · ${saved.creator_email}` : ''}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="small secondary"
+                    onClick={() => void deleteSavedReport(saved.id)}
+                  >
+                    {t('dashboard.savedReportDelete')}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {activeSaved && (
+            <div className="ops-active-saved-detail">
+              <strong>{t('dashboard.activeSavedReport', { name: activeSaved.name })}</strong>
+              {activeSaved.zone_snapshots && activeSaved.zone_snapshots.length > 0 && (
+                <p className="muted">{t('dashboard.frozenZoneBoundaries')}</p>
+              )}
+              <Link to={mapHref} className="ops-dash-inline-link">
+                {t('dashboard.openMapView')}
+              </Link>
+            </div>
+          )}
+          {!activeSavedId && savedReports.length > 0 && (
+            <p className="muted ops-dash-pick-saved">{t('dashboard.pickSavedReportHint')}</p>
+          )}
+        </section>
+      )}
+
+      {showReports && reportsLoading && (
+        <section className="ops-dash-section">
+          <p className="muted">{t('common.loading')}</p>
+        </section>
+      )}
 
       {showReports && listStats && !reportsLoading && (
         <section className="ops-dash-section ops-analytics-section">
@@ -586,13 +645,13 @@ export function Dashboard() {
         </section>
       )}
 
-      {crisisId && showReports && !reportsLoading && (
+      {exportCrisisId && showReports && !reportsLoading && (
         <section className="ops-dash-section">
           <h2>{t('dashboard.exportTitle')}</h2>
           <p className="muted">{t('dashboard.exportImageHint')}</p>
           <p className="ops-export-links">
-            <a href={`${api}/v1/export?crisis_id=${crisisId}&format=csv`}>{t('dashboard.exportCsv')}</a>
-            <a href={`${api}/v1/export?crisis_id=${crisisId}&format=geojson`}>{t('dashboard.exportGeojson')}</a>
+            <a href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=csv`}>{t('dashboard.exportCsv')}</a>
+            <a href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=geojson`}>{t('dashboard.exportGeojson')}</a>
           </p>
         </section>
       )}

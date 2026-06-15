@@ -1486,7 +1486,39 @@ def ops_create_saved_report(
         entity_id=row.id,
         detail={"name": row.name, "report_view": row.report_view},
     )
-    db.commit()
+    try:
+        db.commit()
+    except Exception as exc:
+        err_text = str(exc).lower()
+        if zone_snapshots and "zone_snapshots" in err_text:
+            db.rollback()
+            row = OpsSavedReport(
+                name=body.name.strip(),
+                created_by=principal.user_id,
+                report_view=body.report_view,
+                crisis_id=body.crisis_id,
+                zone_id=body.zone_id,
+                browse_from=body.browse_from,
+                browse_to=body.browse_to,
+                review_filter=body.review_filter,
+                snapshot_total=body.snapshot_total,
+                snapshot_linked=body.snapshot_linked,
+                snapshot_candidate=body.snapshot_candidate,
+                zone_snapshots=None,
+            )
+            db.add(row)
+            log_ops_action(
+                db,
+                actor_user_id=principal.user_id,
+                action="saved_report.create",
+                entity_type="saved_report",
+                entity_id=row.id,
+                detail={"name": row.name, "report_view": row.report_view, "zone_snapshots_omitted": True},
+            )
+            db.commit()
+        else:
+            db.rollback()
+            raise HTTPException(status_code=500, detail="Could not save report") from exc
     db.refresh(row)
     return _saved_report_out(row, principal.user.email)
 

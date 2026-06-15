@@ -228,6 +228,7 @@ export function OpsMapPage() {
   const [draftWindowEnd, setDraftWindowEnd] = useState('');
   const [saveReportOpen, setSaveReportOpen] = useState(false);
   const [saveReportName, setSaveReportName] = useState('');
+  const [saveReportErr, setSaveReportErr] = useState<string | null>(null);
 
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -676,10 +677,19 @@ export function OpsMapPage() {
   const saveNamedReport = async () => {
     const name = saveReportName.trim();
     if (!name) {
-      setErr(t('ops.map.saveReportNameRequired'));
+      setSaveReportErr(t('ops.map.saveReportNameRequired'));
+      return;
+    }
+    if (reportView === 'crisis' && !activeCrisisId) {
+      setSaveReportErr(t('ops.map.saveReportCrisisRequired'));
+      return;
+    }
+    if ((reportView === 'all' || reportView === 'unspecified') && !canBrowseWideViews) {
+      setSaveReportErr(t('ops.map.saveReportWideViewDenied'));
       return;
     }
     setBusy(true);
+    setSaveReportErr(null);
     setErr(null);
     try {
       const zoneSnapshots =
@@ -699,21 +709,24 @@ export function OpsMapPage() {
       await opsPost('/v1/ops/saved-reports', {
         name,
         report_view: reportView,
-        crisis_id: reportView === 'crisis' ? activeCrisisId || null : null,
-        zone_id: selectedZoneId,
+        crisis_id: activeCrisisId || null,
+        zone_id: selectedZoneId || null,
         browse_from: fromDatetimeLocalValue(browseFrom) || null,
         browse_to: fromDatetimeLocalValue(browseTo) || null,
         review_filter: 'all',
         snapshot_total: reports.length,
         snapshot_linked: crisisLinkedCount,
         snapshot_candidate: crisisCandidateCount,
-        zone_snapshots: zoneSnapshots,
+        zone_snapshots: zoneSnapshots.length > 0 ? zoneSnapshots : null,
       });
       setSaveReportOpen(false);
       setSaveReportName('');
+      setSaveReportErr(null);
       alert(t('ops.map.saveReportDone'));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setSaveReportErr(msg);
+      setErr(msg);
     } finally {
       setBusy(false);
     }
@@ -1011,7 +1024,14 @@ export function OpsMapPage() {
         {shellMode === 'view' && (
           <>
             <div className="ops-map-view-toolbar-row">
-              <button type="button" className="ops-map-chip ops-map-btn" onClick={() => setSaveReportOpen(true)}>
+              <button
+                type="button"
+                className="ops-map-chip ops-map-btn"
+                onClick={() => {
+                  setSaveReportErr(null);
+                  setSaveReportOpen(true);
+                }}
+              >
                 {t('ops.map.saveReport')}
               </button>
               {selectedZone && (
@@ -1415,6 +1435,7 @@ export function OpsMapPage() {
                 placeholder={t('ops.map.saveReportNamePlaceholder')}
               />
             </label>
+            {saveReportErr && <p className="error">{saveReportErr}</p>}
             <div className="ops-map-card-actions">
               <button type="button" onClick={saveNamedReport} disabled={busy}>
                 {t('ops.map.saveReportConfirm')}

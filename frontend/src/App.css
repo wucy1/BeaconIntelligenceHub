@@ -2567,6 +2567,15 @@ button.danger {
   margin-bottom: 1rem;
 }
 
+.ops-dash-source-tabs-section {
+  padding-top: 0;
+  margin-top: -0.25rem;
+}
+
+.ops-dash-source-tabs {
+  margin-bottom: 0.25rem;
+}
+
 .ops-dash-crisis-field {
   margin-top: 0.25rem;
 }
