@@ -305,7 +305,8 @@ export function OpsMapPage() {
         });
       })
       .catch(() => setCrises([]));
-  }, [crisisFromUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount + initial URL only
+  }, []);
 
   const loadAudit = useCallback(() => {
     if (!isAdmin) return;
@@ -315,6 +316,13 @@ export function OpsMapPage() {
   }, [isAdmin]);
 
   const loadReports = useCallback(() => {
+    if (effectiveReportView === 'crisis' && !activeCrisisId) {
+      setReports([]);
+      setCrisisLinkedCount(0);
+      setCrisisCandidateCount(0);
+      setCrisisOtherLinkedCount(0);
+      return;
+    }
     const q = new URLSearchParams({ limit: '300', view: effectiveReportView });
     if (activeCrisisId) q.set('crisis_id', activeCrisisId);
     if (shellMode === 'view' && selectedZoneId) q.set('zone_id', selectedZoneId);
@@ -875,34 +883,48 @@ export function OpsMapPage() {
         </div>
       </div>
 
-      <div className="ops-map-rail-stack-host" aria-hidden="true" />
-
-      {canUseWorkMode && shellMode === 'work' && (
-        <div className="ops-map-fab-col">
-          <button
-            type="button"
-            className={`ops-map-fab ${mapMode === 'draw' ? 'active' : ''}`}
-            onClick={startDraw}
-            title={!canCreateZones && activeCrisisId ? t('ops.map.drawZoneDenied') : undefined}
-          >
-            {t('ops.map.drawZone')}
-          </button>
-          {canArchive && (
+      <div className="ops-map-right-rail">
+        {canUseWorkMode && shellMode === 'work' && (
+          <div className="ops-map-fab-col">
             <button
               type="button"
-              className={`ops-map-fab ${panel === 'crisis' ? 'active' : ''}`}
-              onClick={() => togglePanel('crisis')}
+              className={`ops-map-fab ${mapMode === 'draw' ? 'active' : ''}`}
+              onClick={startDraw}
+              title={!canCreateZones && activeCrisisId ? t('ops.map.drawZoneDenied') : undefined}
             >
-              {t('ops.map.archiveFab')}
+              {t('ops.map.drawZone')}
             </button>
-          )}
-          {isAdmin && (
-            <button
-              type="button"
-              className={`ops-map-fab ${panel === 'audit' ? 'active' : ''}`}
-              onClick={() => togglePanel('audit')}
-            >
-              {t('ops.tab.audit')}
+            {canArchive && (
+              <button
+                type="button"
+                className={`ops-map-fab ${panel === 'crisis' ? 'active' : ''}`}
+                onClick={() => togglePanel('crisis')}
+              >
+                {t('ops.map.archiveFab')}
+              </button>
+            )}
+            {isAdmin && (
+              <button
+                type="button"
+                className={`ops-map-fab ${panel === 'audit' ? 'active' : ''}`}
+                onClick={() => togglePanel('audit')}
+              >
+                {t('ops.tab.audit')}
+              </button>
+            )}
+          </div>
+        )}
+        <div className="ops-map-rail-stack-host" aria-hidden="true" />
+      </div>
+
+      {shellMode === 'view' && (
+        <div className="ops-map-view-float-actions">
+          <button type="button" className="ops-map-float-btn" onClick={() => setSaveReportOpen(true)}>
+            {t('ops.map.saveReport')}
+          </button>
+          {selectedZone && (
+            <button type="button" className="ops-map-float-btn secondary" onClick={clearZoneSelection}>
+              {t('ops.map.clearZone')}
             </button>
           )}
         </div>
@@ -927,9 +949,9 @@ export function OpsMapPage() {
             )}
             <div ref={workHelpRef} className="ops-map-chip ops-map-report-count-wrap ops-map-work-stats">
               <OpsMapReportCount
-                reportView="all"
+                reportView="crisis"
                 activeCrisisId={activeCrisisId}
-                total={reports.length}
+                total={crisisLinkedCount}
                 linked={crisisLinkedCount}
                 other={crisisOtherLinkedCount}
                 candidate={crisisCandidateCount}
@@ -966,16 +988,6 @@ export function OpsMapPage() {
 
         {shellMode === 'view' && (
           <div className="ops-map-view-panel ops-map-panel-compact">
-            <div className="ops-map-view-toolbar">
-              <button type="button" className="ops-map-chip ops-map-btn" onClick={() => setSaveReportOpen(true)}>
-                {t('ops.map.saveReport')}
-              </button>
-              {selectedZone && (
-                <button type="button" className="ops-map-chip ops-map-btn secondary" onClick={clearZoneSelection}>
-                  {t('ops.map.clearZone')}
-                </button>
-              )}
-            </div>
             <div className="ops-map-view-row">
               <label className="ops-map-chip ops-map-view-field">
                 <span className="ops-map-view-label">{t('ops.map.queryPanel')}</span>

@@ -110,6 +110,13 @@ export function opsHasStaffAccess(user: OpsUserSession | null): boolean {
   return (user.zone_ids?.length ?? 0) > 0;
 }
 
+/** Archive status + official archived reports on dashboard (Lead / admin / assigned coordinator). */
+export function opsCanViewCrisisArchive(user: OpsUserSession | null, crisisId: string): boolean {
+  if (!user || !crisisId) return false;
+  if (opsIsSystemAdmin(user) || opsIsCrisisLead(user, crisisId)) return true;
+  return (user.zone_ids?.length ?? 0) > 0;
+}
+
 export function opsRoleLabel(role: OpsUserSession['role']): string {
   if (role === 'system_admin') return '系統管理員';
   if (role === 'crisis_lead') return '危機 Lead';

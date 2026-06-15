@@ -1943,13 +1943,30 @@ button.danger {
 }
 
 .ops-map-fab-col {
-  position: absolute;
-  right: 0.5rem;
-  top: 5.5rem;
-  z-index: 500;
+  position: static;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+.ops-map-right-rail {
+  position: absolute;
+  right: 0.5rem;
+  top: var(--ops-map-rail-top, 5.25rem);
+  z-index: 650;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  pointer-events: none;
+}
+
+.ops-map-right-rail > * {
+  pointer-events: auto;
+}
+
+.ops-map-page.ops-shell-work .ops-map-right-rail {
+  top: var(--ops-map-rail-top-work, 10.5rem);
 }
 
 .ops-map-page .ops-map-fab,
@@ -2195,16 +2212,13 @@ button.danger {
 }
 
 .ops-map-rail-stack-host {
-  position: absolute;
-  right: 0.5rem;
-  top: var(--ops-map-rail-top);
-  z-index: 650;
+  position: static;
   width: var(--map-rail-btn, 2.625rem);
   pointer-events: none;
 }
 
 .ops-map-page.ops-shell-work .ops-map-rail-stack-host {
-  top: var(--ops-map-rail-top-work);
+  top: auto;
 }
 
 .ops-map-rail-stack {
@@ -2274,7 +2288,12 @@ button.danger {
   }
 
   .ops-map-page.ops-shell-view {
-    --ops-view-panel-clearance: 8.5rem;
+    --ops-view-panel-clearance: 7.25rem;
+  }
+
+  .ops-map-view-float-actions {
+    left: 0.35rem;
+    bottom: calc(var(--ops-view-panel-clearance) + env(safe-area-inset-bottom, 0px));
   }
 
   .ops-map-page.ops-shell-work {
@@ -2381,6 +2400,37 @@ button.danger {
 .ops-dash-map-link {
   align-self: flex-start;
   white-space: nowrap;
+}
+
+.ops-map-view-float-actions {
+  position: absolute;
+  left: 0.5rem;
+  bottom: calc(var(--ops-view-panel-clearance) + env(safe-area-inset-bottom, 0px));
+  z-index: 610;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  pointer-events: none;
+}
+
+.ops-map-view-float-actions .ops-map-float-btn {
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0.32rem 0.62rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.14);
+  white-space: nowrap;
+}
+
+.ops-map-view-float-actions .ops-map-float-btn.secondary {
+  background: #f8fafc;
+  color: #475569;
 }
 
 .ops-map-view-toolbar {

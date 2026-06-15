@@ -291,41 +291,62 @@ def _saved_report_out(row: OpsSavedReport, creator_email: str | None = None) -> 
     }
 
 
-def _archive_summary(db: Session, crisis: Crisis) -> dict:
-    zone_count = db.query(Zone).filter(Zone.crisis_id == crisis.id).count()
-    link_rows = db.execute(
-        text(
-            """
-            SELECT link_source, COUNT(*)::int AS n
-            FROM report_crisis_links
-            WHERE crisis_id = CAST(:cid AS uuid)
-            GROUP BY link_source
-            """
-        ),
-        {"cid": str(crisis.id)},
-    ).mappings().all()
-    by_source = {r["link_source"]: r["n"] for r in link_rows}
+def _archive_summary(db: Session, crisis: Crisis, principal: OpsPrincipal | None = None) -> dict:
+    all_zone_ids = [row[0] for row in db.query(Zone.id).filter(Zone.crisis_id == crisis.id).all()]
+    if principal and principal.uses_coordinator_zone_filter(crisis.id):
+        scope_zone_ids = principal.coordinator_zone_ids_for_crisis(db, crisis.id)
+    else:
+        scope_zone_ids = all_zone_ids
+    zone_count = len(scope_zone_ids)
+
+    from app.ops_reports_query import report_ids_for_crisis_scoped
+
+    scoped_linked_ids: list[UUID] = []
+    if scope_zone_ids:
+        scoped_linked_ids = report_ids_for_crisis_scoped(
+            db,
+            crisis.id,
+            scope_zone_ids,
+            crisis.archive_window_start,
+            crisis.archive_window_end,
+            5000,
+        )
+
+    if scoped_linked_ids:
+        link_rows = db.execute(
+            text(
+                """
+                SELECT link_source, COUNT(*)::int AS n
+                FROM report_crisis_links
+                WHERE crisis_id = CAST(:cid AS uuid)
+                  AND report_id = ANY(CAST(:rids AS uuid[]))
+                GROUP BY link_source
+                """
+            ),
+            {"cid": str(crisis.id), "rids": [str(r) for r in scoped_linked_ids]},
+        ).mappings().all()
+        by_source = {r["link_source"]: r["n"] for r in link_rows}
+    else:
+        by_source = {}
     linked_auto = by_source.get("auto_classify", 0)
     linked_manual = by_source.get("batch_archive", 0)
-    linked_total = sum(by_source.values())
+    linked_total = len(scoped_linked_ids)
 
     candidate_count = 0
-    if zone_count > 0:
-        zone_ids = [row[0] for row in db.query(Zone.id).filter(Zone.crisis_id == crisis.id).all()]
-        if zone_ids:
-            from app.archive_logic import report_ids_for_archive
+    if scope_zone_ids:
+        from app.archive_logic import report_ids_for_archive
 
-            candidate_count = len(
-                report_ids_for_archive(
-                    db,
-                    crisis.id,
-                    zone_ids,
-                    crisis.archive_window_start,
-                    crisis.archive_window_end,
-                    5000,
-                    exclude_already_linked=True,
-                )
+        candidate_count = len(
+            report_ids_for_archive(
+                db,
+                crisis.id,
+                scope_zone_ids,
+                crisis.archive_window_start,
+                crisis.archive_window_end,
+                5000,
+                exclude_already_linked=True,
             )
+        )
 
     last_run = (
         db.query(OpsAuditLog, OpsUser.email)
@@ -1003,9 +1024,9 @@ def ops_crisis_archive_summary(
         raise HTTPException(status_code=404, detail="Crisis not found")
     if _is_system_unspecified(crisis):
         raise HTTPException(status_code=422, detail="System unspecified crisis")
-    if not principal.can_view_crisis_archive_summary(crisis_id):
-        raise HTTPException(status_code=403, detail="Crisis archive summary requires crisis lead or admin")
-    return _archive_summary(db, crisis)
+    if not principal.can_view_crisis_archive_summary(crisis_id, db):
+        raise HTTPException(status_code=403, detail="Crisis archive summary requires crisis access")
+    return _archive_summary(db, crisis, principal)
 
 
 @router.post("/reports/batch-review")

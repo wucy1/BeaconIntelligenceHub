@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { apiBase } from '../api';
@@ -18,8 +18,8 @@ import {
 } from '../ops/opsApi';
 import {
   getOpsUser,
+  opsCanViewCrisisArchive,
   opsHasStaffAccess,
-  opsIsCrisisLead,
   opsIsSystemAdmin,
   opsRoleLabel,
 } from '../ops/opsAuth';
@@ -86,9 +86,11 @@ export function Dashboard() {
   const crisisFromUrl = searchParams.get('crisis_id') ?? '';
   const savedFromUrl = searchParams.get('saved_report_id') ?? '';
 
-  const [data, setData] = useState<ListResp | null>(null);
+  const [data, setData] = useState<ListResp>({ items: [] });
+  const [reportsLoading, setReportsLoading] = useState(false);
   const [crises, setCrises] = useState<OpsCrisis[]>([]);
   const [crisisId, setCrisisId] = useState(crisisFromUrl);
+  const crisesReadyRef = useRef(false);
   const [savedReports, setSavedReports] = useState<OpsSavedReport[]>([]);
   const [archiveSummary, setArchiveSummary] = useState<OpsArchiveSummary | null>(null);
   const [activeSavedId, setActiveSavedId] = useState(savedFromUrl || '');
@@ -102,13 +104,38 @@ export function Dashboard() {
   const manageableCrises = useMemo(() => crises.filter(isManageableCrisis), [crises]);
   const activeCrisis = manageableCrises.find((c) => c.id === crisisId);
   const activeSaved = savedReports.find((s) => s.id === activeSavedId) ?? null;
-  const canViewArchiveForCrisis = isAdmin || (crisisId ? opsIsCrisisLead(opsUser, crisisId) : false);
+  const canViewArchiveForCrisis = opsCanViewCrisisArchive(opsUser, crisisId);
+  const usingSavedReport = Boolean(activeSavedId);
 
-  const loadReports = useCallback(async () => {
-    if (!activeSavedId) {
+  const loadOfficialReports = useCallback(async () => {
+    if (!crisisId || !activeCrisis) {
       setData({ items: [] });
       return;
     }
+    setReportsLoading(true);
+    try {
+      const q = new URLSearchParams({ limit: '200', view: 'crisis', crisis_id: crisisId });
+      if (activeCrisis.archive_window_start) {
+        q.set('captured_from', activeCrisis.archive_window_start);
+      }
+      if (activeCrisis.archive_window_end) {
+        q.set('captured_to', activeCrisis.archive_window_end);
+      }
+      const d = await opsGet<ListResp>(`/v1/ops/reports?${q}`);
+      setData(d);
+      setSelectedIds(new Set());
+      setErr(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setData({ items: [] });
+    } finally {
+      setReportsLoading(false);
+    }
+  }, [crisisId, activeCrisis]);
+
+  const loadSavedReportList = useCallback(async () => {
+    if (!activeSavedId) return;
+    setReportsLoading(true);
     try {
       const d = await opsGet<ListResp>(`/v1/ops/reports?saved_report_id=${activeSavedId}&limit=200`);
       setData(d);
@@ -116,8 +143,19 @@ export function Dashboard() {
       setErr(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+      setData({ items: [] });
+    } finally {
+      setReportsLoading(false);
     }
   }, [activeSavedId]);
+
+  const loadReports = useCallback(async () => {
+    if (usingSavedReport) {
+      await loadSavedReportList();
+      return;
+    }
+    await loadOfficialReports();
+  }, [usingSavedReport, loadSavedReportList, loadOfficialReports]);
 
   const loadSavedReports = useCallback(async () => {
     if (!crisisId) {
@@ -135,7 +173,7 @@ export function Dashboard() {
   }, [crisisId]);
 
   const loadArchiveSummary = useCallback(async () => {
-    if (!crisisId || (!isAdmin && !opsIsCrisisLead(opsUser, crisisId))) {
+    if (!crisisId || !canViewArchiveForCrisis) {
       setArchiveSummary(null);
       return;
     }
@@ -145,7 +183,7 @@ export function Dashboard() {
     } catch {
       setArchiveSummary(null);
     }
-  }, [crisisId, isAdmin, opsUser]);
+  }, [crisisId, canViewArchiveForCrisis]);
 
   useEffect(() => {
     if (!savedFromUrl) return;
@@ -162,16 +200,16 @@ export function Dashboard() {
       .then((d) => {
         setCrises(d.items);
         const manageable = d.items.filter(isManageableCrisis);
-        setCrisisId((prev) =>
-          prev && manageable.some((c) => c.id === prev)
-            ? prev
-            : crisisFromUrl && manageable.some((c) => c.id === crisisFromUrl)
-              ? crisisFromUrl
-              : manageable[0]?.id ?? '',
-        );
+        setCrisisId((prev) => {
+          if (prev && manageable.some((c) => c.id === prev)) return prev;
+          if (crisisFromUrl && manageable.some((c) => c.id === crisisFromUrl)) return crisisFromUrl;
+          return manageable[0]?.id ?? '';
+        });
+        crisesReadyRef.current = true;
       })
       .catch(() => setCrises([]));
-  }, [crisisFromUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount + URL seed only
+  }, []);
 
   useEffect(() => {
     void loadSavedReports();
@@ -192,13 +230,19 @@ export function Dashboard() {
   }, [activeSaved?.id, activeSaved?.review_filter]);
 
   useEffect(() => {
-    const q = new URLSearchParams();
-    if (crisisId) q.set('crisis_id', crisisId);
-    if (activeSavedId) q.set('saved_report_id', activeSavedId);
-    const cur = searchParams.toString();
-    const nxt = q.toString();
-    if (cur !== nxt) setSearchParams(q, { replace: true });
-  }, [crisisId, activeSavedId, searchParams, setSearchParams]);
+    if (!crisesReadyRef.current) return;
+    setSearchParams(
+      (prev) => {
+        const q = new URLSearchParams(prev);
+        if (crisisId) q.set('crisis_id', crisisId);
+        else q.delete('crisis_id');
+        if (activeSavedId) q.set('saved_report_id', activeSavedId);
+        else q.delete('saved_report_id');
+        return q;
+      },
+      { replace: true },
+    );
+  }, [crisisId, activeSavedId, setSearchParams]);
 
   useEffect(() => {
     void loadReports();
@@ -209,6 +253,10 @@ export function Dashboard() {
     if (saved.crisis_id && saved.crisis_id !== crisisId) {
       setCrisisId(saved.crisis_id);
     }
+  };
+
+  const clearSavedReport = () => {
+    setActiveSavedId('');
   };
 
   const deleteSavedReport = async (id: string) => {
@@ -223,7 +271,6 @@ export function Dashboard() {
   };
 
   const listStats = useMemo(() => {
-    if (!data) return null;
     const items = data.items;
     const damage_counts: Record<string, number> = {};
     const crisis_type_counts: Record<string, number> = {};
@@ -283,7 +330,6 @@ export function Dashboard() {
   };
 
   const filteredItems = useMemo(() => {
-    if (!data) return [];
     return data.items.filter((r) => {
       if (reviewFilter === 'pending') return !r.admin_reviewed;
       if (reviewFilter === 'reviewed') return Boolean(r.admin_reviewed);
@@ -313,14 +359,15 @@ export function Dashboard() {
     );
   }
 
-  if (err && !data) {
+  if (err && data.items.length === 0 && !crisisId) {
     return (
       <section className="card ops-dashboard">
         <p className="error">{err}</p>
       </section>
     );
   }
-  if (!data) return <p className="muted">{t('common.loading')}</p>;
+
+  const showReports = Boolean(crisisId && (usingSavedReport || activeCrisis));
 
   const api = apiBase();
 
@@ -464,18 +511,19 @@ export function Dashboard() {
             {activeSaved.zone_snapshots && activeSaved.zone_snapshots.length > 0 && (
               <p className="muted">{t('dashboard.frozenZoneBoundaries')}</p>
             )}
+            <button type="button" className="small secondary" onClick={clearSavedReport}>
+              {t('dashboard.backToOfficialReports')}
+            </button>
           </div>
         )}
       </section>
 
-      {!activeSavedId && (
-        <p className="muted ops-dash-pick-saved">{t('dashboard.pickSavedReportHint')}</p>
-      )}
-
-      {activeSavedId && listStats && (
+      {showReports && listStats && !reportsLoading && (
         <section className="ops-dash-section ops-analytics-section">
-          <h2>{t('dashboard.analytics')}</h2>
-          <p className="muted">{t('dashboard.analyticsListHint')}</p>
+          <h2>{usingSavedReport ? t('dashboard.savedReportListTitle') : t('dashboard.officialReportsTitle')}</h2>
+          <p className="muted">
+            {usingSavedReport ? t('dashboard.analyticsListHint') : t('dashboard.officialReportsHint')}
+          </p>
           <div className="ops-analytics-stats">
             <div className="ops-stat-card">
               <span className="ops-stat-label">{t('dashboard.totalReports')}</span>
@@ -528,7 +576,7 @@ export function Dashboard() {
         </section>
       )}
 
-      {crisisId && activeSavedId && (
+      {crisisId && showReports && !reportsLoading && (
         <section className="ops-dash-section">
           <h2>{t('dashboard.exportTitle')}</h2>
           <p className="muted">{t('dashboard.exportImageHint')}</p>
@@ -539,7 +587,7 @@ export function Dashboard() {
         </section>
       )}
 
-      {activeSavedId && (
+      {showReports && !reportsLoading && (
         <section className="ops-dash-section">
           <h2>{t('dashboard.reviewQueueTitle')}</h2>
           <div className="ops-review-tabs">

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import CrisisLeadAssignment, OpsUser, UserZoneAssignment
+from app.models import CrisisLeadAssignment, OpsUser, UserZoneAssignment, Zone
 
 ZONE_ASSIGNMENT_ROLES = frozenset({"lead", "coordinator"})
 
@@ -130,8 +130,20 @@ class OpsPrincipal:
         """view=all / unspecified — Lead and system admin only."""
         return self.is_system_admin() or bool(self.crisis_lead_ids)
 
-    def can_view_crisis_archive_summary(self, crisis_id: UUID) -> bool:
-        return self.can_manage_crisis(crisis_id)
+    def coordinator_zone_ids_for_crisis(self, db: Session, crisis_id: UUID) -> list[UUID]:
+        if not self.zone_ids:
+            return []
+        rows = (
+            db.query(Zone.id)
+            .filter(Zone.crisis_id == crisis_id, Zone.id.in_(self.zone_ids))
+            .all()
+        )
+        return [row[0] for row in rows]
+
+    def can_view_crisis_archive_summary(self, crisis_id: UUID, db: Session) -> bool:
+        if self.can_manage_crisis(crisis_id):
+            return True
+        return bool(self.coordinator_zone_ids_for_crisis(db, crisis_id))
 
     def can_access_saved_report(self, row) -> bool:
         if self.is_system_admin():
