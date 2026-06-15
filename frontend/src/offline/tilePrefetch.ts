@@ -42,14 +42,31 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function mergeAbortSignals(signals: AbortSignal[]): AbortSignal {
+  const alreadyAborted = signals.find((s) => s.aborted);
+  if (alreadyAborted) {
+    const controller = new AbortController();
+    controller.abort(alreadyAborted.reason);
+    return controller.signal;
+  }
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any(signals);
+  }
+  const controller = new AbortController();
+  for (const signal of signals) {
+    signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
+  }
+  return controller.signal;
+}
+
 async function fetchTileOnce(coord: TileCoord, signal?: AbortSignal): Promise<Blob | null> {
   const url = osmTileUrl(coord.z, coord.x, coord.y);
   const localController = new AbortController();
   const timer = setTimeout(() => localController.abort(), PER_TILE_TIMEOUT_MS);
-  const mergedSignal = signal
-    ? AbortSignal.any([signal, localController.signal])
-    : localController.signal;
   try {
+    const mergedSignal = signal
+      ? mergeAbortSignals([signal, localController.signal])
+      : localController.signal;
     const res = await fetch(url, { signal: mergedSignal, mode: 'cors', credentials: 'omit' });
     if (!res.ok) return null;
     const blob = await res.blob();

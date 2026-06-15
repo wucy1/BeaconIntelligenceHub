@@ -2,7 +2,7 @@ import L from 'leaflet';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { apiGet, ensureApiReady } from '../api';
+import { apiGet, BUILDINGS_FETCH_TIMEOUT_MS, ensureApiReady } from '../api';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { ContributorMap, type MapMarker } from '../components/map/ContributorMap';
 import {
@@ -31,8 +31,7 @@ import {
   type PendingReportSummary,
 } from '../offline/queue';
 import type { MapRegionMeta } from '../offline/tileCache';
-import { loadFootprintsForBbox, getViewportFootprints, saveViewportFootprints, MAX_OFFLINE_FOOTPRINT_FEATURES } from '../offline/buildingFootprintCache';
-import { fetchViewportFootprints } from '../offline/footprintPrefetch';
+import { loadFootprintsForBbox, MAX_OFFLINE_FOOTPRINT_FEATURES } from '../offline/buildingFootprintCache';
 import { useI18n } from '../i18n/I18nContext';
 import { getOpsToken } from '../ops/opsAuth';
 import {
@@ -47,7 +46,7 @@ import {
   findBuildingAtPoint,
   markersNearPoint,
 } from '../utils/buildingAtPoint';
-import { bboxKeysMatch, buildingsFetchKey, filterMarkersInBbox, markersFetchKey, normalizeBboxString } from '../utils/mapBbox';
+import { filterMarkersInBbox, markersFetchKey, normalizeBboxString } from '../utils/mapBbox';
 
 const DEFAULT_CENTER: [number, number] = [20, 0];
 const DEFAULT_ZOOM = 14;
@@ -114,7 +113,6 @@ export function MapPage() {
   });
   const [buildingsError, setBuildingsError] = useState<string | null>(null);
   const [buildingsLoading, setBuildingsLoading] = useState(false);
-  const [viewportFootprintsUpdatedAt, setViewportFootprintsUpdatedAt] = useState<string | null>(null);
   const [markersLoading, setMarkersLoading] = useState(false);
   const [markersError, setMarkersError] = useState<string | null>(null);
   const [markers, setMarkers] = useState<MapMarker[]>([]);
@@ -173,7 +171,6 @@ export function MapPage() {
   const scopeRef = useRef(mapScope);
   scopeRef.current = mapScope;
   const buildingsCacheRef = useRef<Record<string, GeoJSON.FeatureCollection>>({});
-  const buildingsBboxCacheRef = useRef<Record<string, GeoJSON.FeatureCollection>>({});
   const markersFetchGenRef = useRef(0);
   const markersBboxCacheRef = useRef<Record<string, { pins: MapMarker[]; all: MapMarker[] }>>({});
   const markersCacheRef = useRef<Record<string, MapMarker[]>>({});
@@ -389,8 +386,6 @@ export function MapPage() {
     return [mapScope];
   }, [mapScope, activeCrises]);
 
-  const crisisIdsFootprintKey = crisisIdsForFootprints.join(',');
-
   const onBboxChange = useCallback((next: string) => {
     const normalized = normalizeBboxString(next);
     setBbox((prev) => (prev === normalized ? prev : normalized));
@@ -414,102 +409,98 @@ export function MapPage() {
   }, [crisesLoading, publicCrises, searchParams, selectScope, flyToDemoFootprints]);
 
   useEffect(() => {
-    if (!bbox || publicCrises.length === 0 || crisesLoading) return;
-
-    const fetchKey = buildingsFetchKey(mapScope, bbox);
-    const mem = buildingsBboxCacheRef.current[fetchKey];
-    if (mem) {
-      setBuildings(mem);
-      setBuildingsError(null);
-      setBuildingsLoading(false);
-      return;
-    }
-
-    setBuildings({ type: 'FeatureCollection', features: [] });
-    setBuildingsLoading(false);
-    setViewportFootprintsUpdatedAt(null);
-
+    if (!online || !bbox || publicCrises.length === 0 || crisesLoading) return;
+    const requestedScope = mapScope;
+    const requestedBbox = bbox;
     let cancelled = false;
-
-    const apply = (fc: GeoJSON.FeatureCollection, updatedAt?: string) => {
-      if (cancelled || !bboxKeysMatch(bboxRef.current, bbox)) return;
-      buildingsBboxCacheRef.current[fetchKey] = fc;
-      setBuildings(fc);
+    const timer = setTimeout(() => {
+      const q = encodeURIComponent(requestedBbox);
       setBuildingsError(null);
-      if (updatedAt) setViewportFootprintsUpdatedAt(updatedAt);
-    };
-
-    if (!online) {
-      void loadFootprintsForBbox(bbox).then((fc) => {
-        if (fc.features.length > 0) apply(fc);
-      });
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    void getViewportFootprints(fetchKey).then((entry) => {
-      if (!entry) return;
-      apply(entry.collection, entry.downloadedAt);
-    });
-
+      setBuildingsLoading(true);
+      void (async () => {
+        try {
+          const fc = await (async (): Promise<GeoJSON.FeatureCollection | null> => {
+            if (requestedScope === 'unspecified') {
+              return { type: 'FeatureCollection', features: [] };
+            }
+            const crisisIds =
+              requestedScope === 'all'
+                ? activeCrises.map((c) => c.id)
+                : [requestedScope];
+            if (crisisIds.length === 0) {
+              return null;
+            }
+            const results = await Promise.allSettled(
+              crisisIds.map((id) =>
+                apiGet<GeoJSON.FeatureCollection>(`/v1/crises/${id}/buildings?bbox=${q}`, {
+                  timeoutMs: BUILDINGS_FETCH_TIMEOUT_MS,
+                  maxAttempts: 4,
+                }),
+              ),
+            );
+            const seen = new Set<string>();
+            const features: GeoJSON.Feature[] = [];
+            let failures = 0;
+            for (let i = 0; i < results.length; i++) {
+              const result = results[i];
+              if (result.status !== 'fulfilled') {
+                failures += 1;
+                continue;
+              }
+              const cid = crisisIds[i];
+              const list = result.value.features ?? [];
+              for (const f of list) {
+                const bid = (f.properties?.building_id as string) ?? '';
+                if (bid && seen.has(bid)) continue;
+                if (bid) seen.add(bid);
+                features.push({
+                  ...f,
+                  properties: { ...f.properties, crisis_id: cid },
+                });
+              }
+            }
+            if (failures > 0 && features.length === 0) {
+              throw new Error(`Failed to load footprints (${failures}/${crisisIds.length} crises)`);
+            }
+            if (failures > 0) {
+              setBuildingsError(
+                t('map.err.buildingsPartial', { failed: failures, total: crisisIds.length }),
+              );
+            }
+            return { type: 'FeatureCollection', features };
+          })();
+          if (fc === null) return;
+          if (cancelled || bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+          buildingsCacheRef.current[buildingsCacheKey] = fc;
+          setBuildings(fc);
+        } catch (e: unknown) {
+          if (cancelled || bboxRef.current !== requestedBbox || scopeRef.current !== requestedScope) return;
+          setBuildingsError(e instanceof Error ? e.message : String(e));
+        } finally {
+          if (!cancelled && bboxRef.current === requestedBbox && scopeRef.current === requestedScope) {
+            setBuildingsLoading(false);
+          }
+        }
+      })();
+    }, 350);
     return () => {
       cancelled = true;
-    };
-  }, [online, mapScope, bbox, publicCrises.length, crisesLoading, crisisIdsFootprintKey]);
-
-  const onDownloadViewportFootprints = useCallback(async () => {
-    if (!bbox) return;
-    if (mapScope === 'unspecified') {
-      setBuildings({ type: 'FeatureCollection', features: [] });
-      setBuildingsError(null);
-      return;
-    }
-    const crisisIds =
-      mapScope === 'all' ? crisisIdsForFootprints : [mapScope];
-    if (crisisIds.length === 0) {
-      setBuildings({ type: 'FeatureCollection', features: [] });
-      return;
-    }
-    if (!online) {
-      setBuildingsError(t('map.offline.viewportFootprintsNeedOnline'));
-      return;
-    }
-
-    const fetchKey = buildingsFetchKey(mapScope, bbox);
-    setBuildingsLoading(true);
-    setBuildingsError(null);
-    try {
-      await ensureApiReady();
-      const { collection, failures } = await fetchViewportFootprints(bbox, crisisIds);
-      if (collection.features.length > MAX_OFFLINE_FOOTPRINT_FEATURES) {
-        setBuildings({ type: 'FeatureCollection', features: [] });
-        setBuildingsError(
-          t('map.offline.footprintsSkipped.too_large', {
-            count: collection.features.length,
-            max: MAX_OFFLINE_FOOTPRINT_FEATURES,
-          }),
-        );
-        return;
-      }
-      const updatedAt = new Date().toISOString();
-      buildingsBboxCacheRef.current[fetchKey] = collection;
-      buildingsCacheRef.current[mapScope === 'all' ? buildingsCacheKey : mapScope] = collection;
-      await saveViewportFootprints(fetchKey, bbox, collection);
-      setBuildings(collection);
-      setViewportFootprintsUpdatedAt(updatedAt);
-      if (failures > 0) {
-        setBuildingsError(
-          t('map.err.buildingsPartial', { failed: failures, total: crisisIds.length }),
-        );
-      }
-    } catch (e: unknown) {
-      setBuildings({ type: 'FeatureCollection', features: [] });
-      setBuildingsError(e instanceof Error ? e.message : String(e));
-    } finally {
+      clearTimeout(timer);
       setBuildingsLoading(false);
-    }
-  }, [bbox, mapScope, crisisIdsForFootprints, online, buildingsCacheKey, t]);
+    };
+  }, [online, mapScope, bbox, refreshKey, publicCrises.length, activeCrises, buildingsCacheKey, crisesLoading, t]);
+
+  useEffect(() => {
+    if (online || !bbox) return;
+    const requestedBbox = bbox;
+    void loadFootprintsForBbox(requestedBbox).then((fc) => {
+      if (bboxRef.current !== requestedBbox) return;
+      if (fc.features.length === 0) return;
+      buildingsCacheRef.current[buildingsCacheKey] = fc;
+      setBuildings(fc);
+      setBuildingsError(null);
+    });
+  }, [online, bbox, buildingsCacheKey]);
 
   useEffect(() => {
     if (!online || !bbox || mapMode === 'new' || inspectOpen) {
@@ -920,20 +911,10 @@ export function MapPage() {
   const onSelectScope = useCallback(
     (next: string) => {
       setZoneFitTick(0);
-      if (bboxRef.current) {
-        const bboxKey = buildingsFetchKey(next, bboxRef.current);
-        const bboxCached = buildingsBboxCacheRef.current[bboxKey];
-        if (bboxCached) {
-          setBuildings(bboxCached);
-        } else {
-          setBuildings({ type: 'FeatureCollection', features: [] });
-          setViewportFootprintsUpdatedAt(null);
-        }
-      }
       const scopeKey =
         next === 'all' ? `all:${activeCrises.map((c) => c.id).join(',')}` : next;
       const cachedBuildings = buildingsCacheRef.current[scopeKey];
-      if (cachedBuildings && !bboxRef.current) setBuildings(cachedBuildings);
+      if (cachedBuildings) setBuildings(cachedBuildings);
       const cachedMarkers = markersCacheRef.current[`${next}:${mapMode}`];
       if (cachedMarkers && bboxRef.current) {
         setMarkers(filterMarkersInBbox(cachedMarkers, bboxRef.current));
@@ -1232,7 +1213,7 @@ export function MapPage() {
                     type="button"
                     className="small primary"
                     onClick={onDownloadOfflineArea}
-                    disabled={offlineTiles.downloading || offlineTiles.checking}
+                    disabled={offlineTiles.downloading}
                   >
                     {offlineTiles.downloading
                       ? t('map.offline.downloading')
@@ -1254,56 +1235,6 @@ export function MapPage() {
                   })}
                 </p>
               )}
-              <div className="map-offline-footprints-viewport">
-                <p className="map-offline-download-title">{t('map.offline.viewportFootprintsTitle')}</p>
-                <p className="map-offline-download-meta map-offline-legend-hint">
-                  {t('map.offline.viewportFootprintsHint')}
-                </p>
-                <p className="map-offline-download-meta">
-                  {buildingsLoading
-                    ? t('map.legend.buildingsLoading')
-                    : t('map.offline.viewportFootprintsStatus', {
-                        count: buildings.features.length,
-                      })}
-                </p>
-                {viewportFootprintsUpdatedAt && !buildingsLoading && (
-                  <p className="map-offline-download-meta muted">
-                    {t('map.offline.viewportFootprintsUpdated', {
-                      at: new Date(viewportFootprintsUpdatedAt).toLocaleString(locale),
-                    })}
-                  </p>
-                )}
-                {mapScope === 'unspecified' && (
-                  <p className="map-offline-download-meta map-offline-legend-hint">
-                    {t('map.offline.footprintsNeedCrisis')}
-                  </p>
-                )}
-                <div className="map-offline-download-actions">
-                  <button
-                    type="button"
-                    className="small primary"
-                    onClick={() => void onDownloadViewportFootprints()}
-                    disabled={
-                      buildingsLoading ||
-                      !bbox ||
-                      mapScope === 'unspecified' ||
-                      (mapScope === 'all' && crisisIdsForFootprints.length === 0) ||
-                      (!online && buildings.features.length === 0)
-                    }
-                  >
-                    {buildingsLoading
-                      ? t('map.legend.buildingsLoading')
-                      : buildings.features.length > 0
-                        ? t('map.offline.viewportFootprintsUpdate')
-                        : t('map.offline.viewportFootprintsDownload')}
-                  </button>
-                </div>
-                {!online && (
-                  <p className="map-offline-download-meta map-offline-legend-hint">
-                    {t('map.offline.viewportFootprintsOfflineHint')}
-                  </p>
-                )}
-              </div>
               <p className="map-offline-download-meta">
                 {t('map.offline.storageSummary', { count: offlineTiles.cachedTileCount })}
               </p>
