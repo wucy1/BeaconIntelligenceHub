@@ -274,7 +274,16 @@ New Project → GitHub repo → Root `backend` → Start command：
 
 1. In Neon Console → **SQL Editor**, run: `CREATE EXTENSION IF NOT EXISTS postgis;`
 2. Run full `backend/db/init.sql` on an **empty** database (creates demo crisis + buildings).
-3. If the DB already has tables, run migrations `002`–`005` as needed (`005` renames `demo-taipei` → `unspecified`).
+3. If the DB already has tables, run migrations in `backend/db/migrations/` in order (`002` through **`015`**). Key files for current demo features:
+
+| Migration | Purpose |
+|-----------|---------|
+| `006` | Ops users, zones, JWT login |
+| `012_ops_user_profile.sql` | Staff profile fields (incl. UI locale) |
+| `014_ops_saved_reports.sql` | Saved query reports table |
+| `015_saved_report_zone_snapshots.sql` | Frozen zone boundaries on saved reports |
+
+4. After schema changes, restart the API. End users see a generic “contact administrator” message if the DB schema is out of date — fix migrations on the host, not in the UI.
 
 ## Contributor reporting (no pre-drawn boundary)
 
