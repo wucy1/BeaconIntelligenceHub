@@ -10,6 +10,7 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 import {
   applyBrowseToSearchParams,
+  captureRangeForOpsMap,
   defaultBrowseRange,
   eventArchiveRange,
   officialTimesDifferFromBrowse,
@@ -49,7 +50,9 @@ import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { OpsUserMenu } from '../components/OpsUserMenu';
 import { applyOpsProfileLocaleIfSet } from '../ops/applyOpsLocale';
 import { OsmTileLayer } from '../components/map/CachedOsmTileLayer';
+import { OpsDatetimeField } from '../components/ops/OpsDatetimeField';
 import { OpsMapClearSelection } from '../components/ops/OpsMapClearSelection';
+import { OpsMapHelpPopover } from '../components/ops/OpsMapHelpPopover';
 import { OpsMapRailControls } from '../components/ops/OpsMapRailControls';
 import { OpsMapShellToggle, type OpsMapShellMode } from '../components/ops/OpsMapShellToggle';
 import { OpsPolygonEditor } from '../components/ops/OpsPolygonEditor';
@@ -237,7 +240,10 @@ export function OpsMapPage() {
   const zonesToFit = useMemo(() => zones, [zones]);
 
   const selectedZone = zones.find((z) => z.id === selectedZoneId) ?? null;
-  const canEditSelectedZone = selectedZone ? opsCanEditZone(user, selectedZone.crisis_id ?? undefined) : false;
+  const canModifyZones = shellMode === 'work';
+  const canEditSelectedZone =
+    canModifyZones && selectedZone ? opsCanEditZone(user, selectedZone.crisis_id ?? undefined) : false;
+  const canDeleteSelectedZone = canModifyZones && isAdmin;
   const selectedReport = reports.find((r) => r.id === selectedReportId) ?? null;
   const activeCrisis = crises.find((c) => c.id === activeCrisisId) ?? null;
   const manageableCrises = useMemo(() => crises.filter(isManageableCrisis), [crises]);
@@ -341,8 +347,12 @@ export function OpsMapPage() {
     const q = new URLSearchParams({ limit: '300', view: effectiveReportView });
     if (activeCrisisId) q.set('crisis_id', activeCrisisId);
     if (shellMode === 'view' && selectedZoneId) q.set('zone_id', selectedZoneId);
-    const from = fromDatetimeLocalValue(browseFrom);
-    const to = fromDatetimeLocalValue(browseTo);
+    const { captured_from: from, captured_to: to } = captureRangeForOpsMap(
+      shellMode,
+      activeCrisis,
+      browseFrom,
+      browseTo,
+    );
     if (from) q.set('captured_from', from);
     if (to) q.set('captured_to', to);
     opsGet<{
@@ -363,7 +373,7 @@ export function OpsMapPage() {
         setCrisisCandidateCount(0);
         setCrisisOtherLinkedCount(0);
       });
-  }, [shellMode, selectedZoneId, browseFrom, browseTo, effectiveReportView, activeCrisisId]);
+  }, [shellMode, selectedZoneId, browseFrom, browseTo, effectiveReportView, activeCrisisId, activeCrisis]);
 
   useEffect(() => {
     apiGet<{ default_ops_view_months?: number }>('/v1/public/settings')
@@ -490,6 +500,7 @@ export function OpsMapPage() {
   };
 
   const startDraw = () => {
+    if (shellMode !== 'work') return;
     if (!activeCrisisId) {
       setErr(crises.length === 0 ? '尚無危機，請至營運控制台建立' : '請先於上方選擇危機');
       return;
@@ -506,6 +517,7 @@ export function OpsMapPage() {
   };
 
   const startEditZone = (zone: OpsZone) => {
+    if (shellMode !== 'work') return;
     setSelectedZoneId(zone.id);
     setEditingZoneId(zone.id);
     setZoneName(zone.name);
@@ -533,6 +545,7 @@ export function OpsMapPage() {
   };
 
   const saveZone = async () => {
+    if (shellMode !== 'work') return;
     if (!activeCrisisId) {
       setErr('請先選擇危機');
       return;
@@ -589,6 +602,7 @@ export function OpsMapPage() {
   };
 
   const removeZone = async (id: string) => {
+    if (shellMode !== 'work') return;
     if (!window.confirm('刪除此分區？')) return;
     setBusy(true);
     try {
@@ -962,9 +976,9 @@ export function OpsMapPage() {
             )}
             <div ref={workHelpRef} className="ops-map-chip ops-map-report-count-wrap ops-map-work-stats">
               <OpsMapReportCount
-                reportView="crisis"
+                reportView="all"
                 activeCrisisId={activeCrisisId}
-                total={crisisLinkedCount}
+                total={reports.length}
                 linked={crisisLinkedCount}
                 other={crisisOtherLinkedCount}
                 candidate={crisisCandidateCount}
@@ -979,21 +993,16 @@ export function OpsMapPage() {
                 ?
               </button>
               {workHelpOpen && (
-                <div className="ops-map-help-popover" role="dialog" aria-labelledby="ops-map-work-help-title">
-                  <header className="ops-map-help-popover-header">
-                    <strong id="ops-map-work-help-title">{t('ops.map.workHelp.title')}</strong>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      onClick={() => setWorkHelpOpen(false)}
-                      aria-label={t('common.cancel')}
-                    >
-                      ×
-                    </button>
-                  </header>
+                <OpsMapHelpPopover
+                  open={workHelpOpen}
+                  anchorRef={workHelpRef}
+                  onClose={() => setWorkHelpOpen(false)}
+                  titleId="ops-map-work-help-title"
+                  title={t('ops.map.workHelp.title')}
+                >
                   <p className="ops-map-help-summary">{t('ops.map.workBarHint')}</p>
                   <p>{t('ops.map.workHelp.body')}</p>
-                </div>
+                </OpsMapHelpPopover>
               )}
             </div>
           </div>
@@ -1076,11 +1085,11 @@ export function OpsMapPage() {
             <div className="ops-map-view-row">
               <label className="ops-map-chip ops-map-view-field">
                 <span className="ops-map-view-label">{t('ops.map.browseTimeFrom')}</span>
-                <input type="datetime-local" value={browseFrom} onChange={(e) => setBrowseFrom(e.target.value)} />
+                <OpsDatetimeField value={browseFrom} onChange={setBrowseFrom} />
               </label>
               <label className="ops-map-chip ops-map-view-field">
                 <span className="ops-map-view-label">{t('ops.map.browseTimeTo')}</span>
-                <input type="datetime-local" value={browseTo} onChange={(e) => setBrowseTo(e.target.value)} />
+                <OpsDatetimeField value={browseTo} onChange={setBrowseTo} />
               </label>
               <div ref={viewHelpRef} className="ops-map-chip ops-map-view-field ops-map-report-count-wrap">
                 <OpsMapReportCount
@@ -1101,16 +1110,16 @@ export function OpsMapPage() {
                   ?
                 </button>
                 {viewHelpOpen && (
-                  <div className="ops-map-help-popover" role="dialog" aria-labelledby="ops-map-view-help-title">
-                    <header className="ops-map-help-popover-header">
-                      <strong id="ops-map-view-help-title">{t('ops.map.viewHelp.title')}</strong>
-                      <button type="button" className="icon-btn" onClick={() => setViewHelpOpen(false)} aria-label={t('common.cancel')}>
-                        ×
-                      </button>
-                    </header>
+                  <OpsMapHelpPopover
+                    open={viewHelpOpen}
+                    anchorRef={viewHelpRef}
+                    onClose={() => setViewHelpOpen(false)}
+                    titleId="ops-map-view-help-title"
+                    title={t('ops.map.viewHelp.title')}
+                  >
                     <p className="ops-map-help-summary">{t(`ops.map.viewHint.${reportView}`)}</p>
                     <p>{t(`ops.map.viewHelp.${reportView}`)}</p>
-                  </div>
+                  </OpsMapHelpPopover>
                 )}
               </div>
             </div>
@@ -1138,7 +1147,7 @@ export function OpsMapPage() {
           <button type="button" className="ops-map-card-close" onClick={() => { setPanel(null); resetDraft(); }}>
             ×
           </button>
-          {(mapMode === 'draw' || mapMode === 'edit') ? (
+          {shellMode === 'work' && (mapMode === 'draw' || mapMode === 'edit') ? (
             <>
               <h3>{editingZoneId ? '編輯分區' : '新增分區'}</h3>
               <p className="muted">
@@ -1202,7 +1211,7 @@ export function OpsMapPage() {
                     編輯邊界
                   </button>
                 )}
-                {isAdmin && (
+                {canDeleteSelectedZone && (
                   <button type="button" className="danger" onClick={() => removeZone(selectedZone.id)} disabled={busy}>
                     刪除
                   </button>
@@ -1368,22 +1377,11 @@ export function OpsMapPage() {
             <p className="muted">{t('ops.map.draftWindowHint')}</p>
             <label className="ops-field">
               <span>{t('ops.map.officialStart')}</span>
-              <input
-                className="ops-input"
-                type="datetime-local"
-                value={draftWindowStart}
-                onChange={(e) => setDraftWindowStart(e.target.value)}
-                required
-              />
+              <OpsDatetimeField value={draftWindowStart} onChange={setDraftWindowStart} />
             </label>
             <label className="ops-field">
               <span>{t('ops.map.officialEnd')}</span>
-              <input
-                className="ops-input"
-                type="datetime-local"
-                value={draftWindowEnd}
-                onChange={(e) => setDraftWindowEnd(e.target.value)}
-              />
+              <OpsDatetimeField value={draftWindowEnd} onChange={setDraftWindowEnd} />
             </label>
             <p className="muted">{t('ops.map.officialEndOptional')}</p>
             <div className="ops-map-card-actions">

@@ -1,4 +1,5 @@
 import type { OpsCrisis } from '../../ops/opsApi';
+import { OpsDatetimeField } from './OpsDatetimeField';
 
 export type CrisisMetaDraft = {
   archive_status: OpsCrisis['archive_status'];
@@ -59,22 +60,18 @@ export function CrisisMetaFields({
       </label>
       <label className="ops-field">
         <span>{labels.eventStart}</span>
-        <input
-          className="ops-input"
-          type="datetime-local"
+        <OpsDatetimeField
           value={value.event_start}
+          onChange={(event_start) => onChange({ ...value, event_start })}
           disabled={disabled}
-          onChange={(e) => onChange({ ...value, event_start: e.target.value })}
         />
       </label>
       <label className="ops-field">
         <span>{labels.eventEnd}</span>
-        <input
-          className="ops-input"
-          type="datetime-local"
+        <OpsDatetimeField
           value={value.event_end}
+          onChange={(event_end) => onChange({ ...value, event_end })}
           disabled={disabled}
-          onChange={(e) => onChange({ ...value, event_end: e.target.value })}
         />
       </label>
       <p className="muted ops-crisis-meta-hint">{labels.eventHint}</p>

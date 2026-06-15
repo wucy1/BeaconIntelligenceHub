@@ -2121,7 +2121,13 @@ button.danger {
   justify-content: flex-start;
   gap: 0.3rem;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.ops-map-bottom-chrome,
+.ops-map-view-panel,
+.ops-map-view-row {
+  overflow: visible;
 }
 
 .ops-map-report-count {
@@ -2616,6 +2622,74 @@ button.danger {
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   padding: 0.15rem 0.3rem;
+}
+
+.ops-datetime-field {
+  position: relative;
+  width: 100%;
+}
+
+.ops-datetime-trigger {
+  width: 100%;
+  min-width: 0;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 0.72rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ops-datetime-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ops-datetime-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.35rem);
+  z-index: 1350;
+  width: min(14.5rem, 88vw);
+  padding: 0.55rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.ops-datetime-popover-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  color: #475569;
+}
+
+.ops-datetime-popover-row input {
+  width: 100%;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.78rem;
+}
+
+.ops-datetime-popover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+
+.ops-map-help-popover-portal {
+  max-height: min(40vh, 16rem);
+  overflow-y: auto;
 }
 
 .ops-map-card {
