@@ -1439,6 +1439,39 @@ button.danger {
   border-top: 1px solid #e2e8f0;
 }
 
+.map-offline-section {
+  margin-bottom: 0.65rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.map-offline-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 0.35rem;
+  padding-bottom: 0;
+}
+
+.map-offline-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.map-offline-section-head .map-offline-download-title {
+  margin: 0;
+  flex: 1;
+}
+
+.map-panel-help-btn {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  min-width: 1.25rem;
+  padding: 0;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
 .map-offline-download-meta {
   margin: 0.15rem 0;
   color: #334155;
@@ -3390,6 +3423,19 @@ button.linkish {
 .ops-buildings-section--demo {
   background: #fffbeb;
   border-color: #fde68a;
+}
+
+.ops-buildings-section--future {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  border-style: dashed;
+}
+
+.ops-under-construction {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #475569;
+  line-height: 1.45;
 }
 
 .ops-buildings-section--official {

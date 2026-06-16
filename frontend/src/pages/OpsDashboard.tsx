@@ -21,6 +21,8 @@ import {
   opsCanAssignCoordinator,
   opsIsCrisisLead,
   opsIsSystemAdmin,
+  clearOpsSession,
+  isOpsAuthError,
 } from '../ops/opsAuth';
 import { isManageableCrisis, isUnspecifiedCrisis } from '../ops/crisisUtils';
 import { readOpsCrisesCache, readOpsZonesCache, writeOpsCrisesCache, writeOpsZonesCache } from '../ops/opsCache';
@@ -172,6 +174,13 @@ export function OpsDashboard() {
     loadAudit();
     setApiWaking(false);
   }, [loadCrises, loadZones, loadUsers, loadAudit]);
+
+  const onReLogin = useCallback(() => {
+    clearOpsSession();
+    window.location.href = '/ops/login';
+  }, []);
+
+  const apiBannerIsAuth = apiBanner ? isOpsAuthError(apiBanner) : false;
 
   useEffect(() => {
     const hasCache = Boolean(readOpsCrisesCache()?.length);
@@ -586,13 +595,19 @@ export function OpsDashboard() {
           )}
           {apiBanner && (
             <>
-              <p>{apiBanner}</p>
-              {demoHosting && (
+              <p>{apiBannerIsAuth ? t('ops.sessionExpired.message') : apiBanner}</p>
+              {!apiBannerIsAuth && demoHosting && (
                 <p className="muted ops-cold-start-detail">{t('ops.coldStart.demoDetail')}</p>
               )}
-              <button type="button" className="secondary" onClick={() => void reloadAll()} disabled={apiWaking}>
-                {t('ops.coldStart.reconnect')}
-              </button>
+              {apiBannerIsAuth ? (
+                <button type="button" className="secondary" onClick={onReLogin}>
+                  {t('ops.sessionExpired.signInAgain')}
+                </button>
+              ) : (
+                <button type="button" className="secondary" onClick={() => void reloadAll()} disabled={apiWaking}>
+                  {t('ops.coldStart.reconnect')}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -756,6 +771,11 @@ export function OpsDashboard() {
                       {' · '}
                       {t('ops.buildings.formatHint')}
                     </p>
+                  </section>
+
+                  <section className="ops-buildings-section ops-buildings-section--future">
+                    <h5>{t('ops.buildings.centralHubTitle')}</h5>
+                    <p className="ops-under-construction">{t('ops.buildings.centralHubUnderConstruction')}</p>
                   </section>
                 </div>
               </>

@@ -47,6 +47,17 @@ export function clearOpsSession(): void {
   localStorage.removeItem(USER_KEY);
 }
 
+/** True when an ops API error indicates an expired or invalid login token. */
+export function isOpsAuthError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.startsWith('401') ||
+    m.includes('invalid or expired token') ||
+    m.includes('not authenticated') ||
+    m.includes('unauthorized')
+  );
+}
+
 export function opsIsSystemAdmin(user: OpsUserSession | null): boolean {
   return user?.role === 'system_admin';
 }

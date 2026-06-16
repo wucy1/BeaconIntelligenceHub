@@ -1,3 +1,4 @@
+import { centroidOfFeature } from '../utils/buildingAtPoint';
 import { openOfflineDb } from './openDb';
 import { bboxForBox, type LatLng } from './tileMath';
 
@@ -36,6 +37,66 @@ export async function saveRegionFootprints(bundle: OfflineFootprintBundle): Prom
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+function envelopeFromCollection(
+  collection: GeoJSON.FeatureCollection,
+): { west: number; south: number; east: number; north: number } | null {
+  let west = Infinity;
+  let south = Infinity;
+  let east = -Infinity;
+  let north = -Infinity;
+  for (const feature of collection.features) {
+    const cen = centroidOfFeature(feature);
+    if (!cen) continue;
+    west = Math.min(west, cen.lng);
+    south = Math.min(south, cen.lat);
+    east = Math.max(east, cen.lng);
+    north = Math.max(north, cen.lat);
+  }
+  if (!Number.isFinite(west)) return null;
+  return { west, south, east, north };
+}
+
+export function scopeFootprintId(scopeKey: string): string {
+  return `scope:${scopeKey}`;
+}
+
+export async function getScopeFootprints(scopeKey: string): Promise<OfflineFootprintBundle | null> {
+  const db = await openOfflineDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).get(scopeFootprintId(scopeKey));
+    req.onsuccess = () => resolve((req.result as OfflineFootprintBundle) ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/** Persist downloaded footprints per crisis scope; merges on update. */
+export async function saveScopeFootprints(
+  scopeKey: string,
+  incoming: GeoJSON.FeatureCollection,
+): Promise<OfflineFootprintBundle> {
+  const existing = await getScopeFootprints(scopeKey);
+  const collection = existing
+    ? mergeBuildingFootprints(existing.collection, incoming)
+    : incoming;
+  const bbox = envelopeFromCollection(collection);
+  if (!bbox) {
+    throw new Error('No footprint geometry to store');
+  }
+  const { west, south, east, north } = bbox;
+  const bundle: OfflineFootprintBundle = {
+    regionId: scopeFootprintId(scopeKey),
+    center: { lat: (south + north) / 2, lng: (west + east) / 2 },
+    radiusKm: 0,
+    bbox,
+    downloadedAt: new Date().toISOString(),
+    featureCount: collection.features.length,
+    collection,
+  };
+  await saveRegionFootprints(bundle);
+  return bundle;
 }
 
 export function viewportBundleId(fetchKey: string): string {

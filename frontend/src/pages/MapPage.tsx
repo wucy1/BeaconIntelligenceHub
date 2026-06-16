@@ -11,6 +11,7 @@ import {
 } from '../components/map/LocationPanel';
 import { LocationPrompt } from '../components/map/LocationPrompt';
 import { MapLegend } from '../components/map/MapLegend';
+import { MapPanelHelp } from '../components/map/MapPanelHelp';
 import { MapModeToggle, type MapMode } from '../components/map/MapModeToggle';
 import { ContributionStrip } from '../components/map/ContributionStrip';
 import { PlacementBar } from '../components/map/PlacementBar';
@@ -31,13 +32,17 @@ import {
   type PendingReportSummary,
 } from '../offline/queue';
 import type { MapRegionMeta } from '../offline/tileCache';
-import { loadFootprintsForBbox, getViewportFootprints, saveViewportFootprints, MAX_OFFLINE_FOOTPRINT_FEATURES } from '../offline/buildingFootprintCache';
+import {
+  loadFootprintsForBbox,
+  getScopeFootprints,
+  saveScopeFootprints,
+  MAX_OFFLINE_FOOTPRINT_FEATURES,
+} from '../offline/buildingFootprintCache';
 import { fetchViewportFootprints } from '../offline/footprintPrefetch';
 import { useI18n } from '../i18n/I18nContext';
 import { getOpsToken } from '../ops/opsAuth';
 import {
   DEFAULT_BOX_SIDE_KM,
-  DEFAULT_RADIUS_KM,
   PREFETCH_ZOOM_MAX,
   PREFETCH_ZOOM_MIN,
 } from '../offline/tileMath';
@@ -47,7 +52,7 @@ import {
   findBuildingAtPoint,
   markersNearPoint,
 } from '../utils/buildingAtPoint';
-import { bboxKeysMatch, buildingsFetchKey, filterMarkersInBbox, markersFetchKey, normalizeBboxString } from '../utils/mapBbox';
+import { filterMarkersInBbox, markersFetchKey, normalizeBboxString } from '../utils/mapBbox';
 
 const DEFAULT_CENTER: [number, number] = [20, 0];
 const DEFAULT_ZOOM = 14;
@@ -115,7 +120,6 @@ export function MapPage() {
   const [buildingsError, setBuildingsError] = useState<string | null>(null);
   const [viewportFootprintsFetching, setViewportFootprintsFetching] = useState(false);
   const [viewportFootprintsUpdatedAt, setViewportFootprintsUpdatedAt] = useState<string | null>(null);
-  const [markersLoading, setMarkersLoading] = useState(false);
   const [markersError, setMarkersError] = useState<string | null>(null);
   const [markers, setMarkers] = useState<MapMarker[]>([]);
   const [allMarkers, setAllMarkers] = useState<MapMarker[]>([]);
@@ -173,7 +177,7 @@ export function MapPage() {
   const scopeRef = useRef(mapScope);
   scopeRef.current = mapScope;
   const buildingsCacheRef = useRef<Record<string, GeoJSON.FeatureCollection>>({});
-  const buildingsBboxCacheRef = useRef<Record<string, GeoJSON.FeatureCollection>>({});
+  const buildingsScopeCacheRef = useRef<Record<string, GeoJSON.FeatureCollection>>({});
   const markersFetchGenRef = useRef(0);
   const markersBboxCacheRef = useRef<Record<string, { pins: MapMarker[]; all: MapMarker[] }>>({});
   const markersCacheRef = useRef<Record<string, MapMarker[]>>({});
@@ -389,7 +393,11 @@ export function MapPage() {
     return [mapScope];
   }, [mapScope, activeCrises]);
 
-  const crisisIdsFootprintKey = crisisIdsForFootprints.join(',');
+  const footprintScopeKey = useMemo(() => {
+    if (mapScope === 'unspecified') return null;
+    if (mapScope === 'all') return buildingsCacheKey;
+    return mapScope;
+  }, [mapScope, buildingsCacheKey]);
 
   const onBboxChange = useCallback((next: string) => {
     const normalized = normalizeBboxString(next);
@@ -414,50 +422,58 @@ export function MapPage() {
   }, [crisesLoading, publicCrises, searchParams, selectScope, flyToDemoFootprints]);
 
   useEffect(() => {
-    if (!bbox || publicCrises.length === 0 || crisesLoading) return;
-
-    const fetchKey = buildingsFetchKey(mapScope, bbox);
-    const mem = buildingsBboxCacheRef.current[fetchKey];
-    if (mem) {
-      setBuildings(mem);
-      setBuildingsError(null);
+    if (!footprintScopeKey || publicCrises.length === 0 || crisesLoading) {
+      if (mapScope === 'unspecified') {
+        setBuildings({ type: 'FeatureCollection', features: [] });
+        setViewportFootprintsUpdatedAt(null);
+      }
       return;
     }
 
-    setBuildings({ type: 'FeatureCollection', features: [] });
-    setViewportFootprintsUpdatedAt(null);
-
     let cancelled = false;
 
-    const apply = (fc: GeoJSON.FeatureCollection, updatedAt?: string) => {
-      if (cancelled || !bboxKeysMatch(bboxRef.current, bbox)) return;
-      buildingsBboxCacheRef.current[fetchKey] = fc;
+    const applyScope = (fc: GeoJSON.FeatureCollection, updatedAt?: string) => {
+      if (cancelled) return;
+      buildingsScopeCacheRef.current[footprintScopeKey] = fc;
       setBuildings(fc);
       setBuildingsError(null);
       if (updatedAt) setViewportFootprintsUpdatedAt(updatedAt);
     };
 
-    const restoreFromCache = async () => {
-      const viewportEntry = await getViewportFootprints(fetchKey);
-      if (viewportEntry) {
-        apply(viewportEntry.collection, viewportEntry.downloadedAt);
+    const mem = buildingsScopeCacheRef.current[footprintScopeKey];
+    if (mem) {
+      applyScope(mem);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void (async () => {
+      const scopeEntry = await getScopeFootprints(footprintScopeKey);
+      if (scopeEntry) {
+        applyScope(scopeEntry.collection, scopeEntry.downloadedAt);
         return;
       }
       if (!online) {
-        const regional = await loadFootprintsForBbox(bbox);
-        if (regional.features.length > 0) apply(regional);
+        const regional = await loadFootprintsForBbox(bboxRef.current ?? '');
+        if (regional.features.length > 0) {
+          applyScope(regional);
+          return;
+        }
       }
-    };
-
-    void restoreFromCache();
+      if (!cancelled) {
+        setBuildings({ type: 'FeatureCollection', features: [] });
+        setViewportFootprintsUpdatedAt(null);
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [online, mapScope, bbox, publicCrises.length, crisesLoading, crisisIdsFootprintKey]);
+  }, [footprintScopeKey, mapScope, online, publicCrises.length, crisesLoading]);
 
   const onDownloadViewportFootprints = useCallback(async () => {
-    if (!bbox) return;
+    if (!bbox || !footprintScopeKey) return;
     if (mapScope === 'unspecified') {
       setBuildings({ type: 'FeatureCollection', features: [] });
       setBuildingsError(null);
@@ -474,7 +490,6 @@ export function MapPage() {
       return;
     }
 
-    const fetchKey = buildingsFetchKey(mapScope, bbox);
     setViewportFootprintsFetching(true);
     setBuildingsError(null);
     try {
@@ -490,12 +505,11 @@ export function MapPage() {
         );
         return;
       }
-      const updatedAt = new Date().toISOString();
-      buildingsBboxCacheRef.current[fetchKey] = collection;
-      buildingsCacheRef.current[mapScope === 'all' ? buildingsCacheKey : mapScope] = collection;
-      await saveViewportFootprints(fetchKey, bbox, collection);
-      setBuildings(collection);
-      setViewportFootprintsUpdatedAt(updatedAt);
+      const bundle = await saveScopeFootprints(footprintScopeKey, collection);
+      buildingsScopeCacheRef.current[footprintScopeKey] = bundle.collection;
+      buildingsCacheRef.current[footprintScopeKey] = bundle.collection;
+      setBuildings(bundle.collection);
+      setViewportFootprintsUpdatedAt(bundle.downloadedAt);
       if (failures > 0) {
         setBuildingsError(
           t('map.err.buildingsPartial', { failed: failures, total: crisisIds.length }),
@@ -507,7 +521,7 @@ export function MapPage() {
     } finally {
       setViewportFootprintsFetching(false);
     }
-  }, [bbox, mapScope, crisisIdsForFootprints, online, buildingsCacheKey, t]);
+  }, [bbox, mapScope, footprintScopeKey, crisisIdsForFootprints, online, t]);
 
   useEffect(() => {
     if (!online || !bbox || mapMode === 'new' || inspectOpen) {
@@ -524,11 +538,8 @@ export function MapPage() {
       setMarkers(cached.pins);
       setAllMarkers(cached.all);
       setMarkersError(null);
-      setMarkersLoading(false);
       return;
     }
-
-    setMarkersLoading(false);
 
     const requestedBbox = bbox;
     const requestedScope = mapScope;
@@ -537,7 +548,6 @@ export function MapPage() {
     let cancelled = false;
     const timer = setTimeout(() => {
       setMarkersError(null);
-      setMarkersLoading(true);
       void (async () => {
         const scopeParam =
           requestedScope === 'all' || requestedScope === 'unspecified'
@@ -576,17 +586,12 @@ export function MapPage() {
           setMarkers([]);
           setAllMarkers([]);
           setMarkersError(e instanceof Error ? e.message : String(e));
-        } finally {
-          if (fetchGen === markersFetchGenRef.current) {
-            setMarkersLoading(false);
-          }
         }
       })();
     }, 350);
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      setMarkersLoading(false);
     };
   }, [online, bbox, mapMode, mapScope, refreshKey, inspectOpen]);
 
@@ -918,20 +923,17 @@ export function MapPage() {
   const onSelectScope = useCallback(
     (next: string) => {
       setZoneFitTick(0);
-      if (bboxRef.current) {
-        const bboxKey = buildingsFetchKey(next, bboxRef.current);
-        const bboxCached = buildingsBboxCacheRef.current[bboxKey];
-        if (bboxCached) {
-          setBuildings(bboxCached);
-        } else {
-          setBuildings({ type: 'FeatureCollection', features: [] });
-          setViewportFootprintsUpdatedAt(null);
-        }
-      }
       const scopeKey =
         next === 'all' ? `all:${activeCrises.map((c) => c.id).join(',')}` : next;
+      const scopeCached = buildingsScopeCacheRef.current[scopeKey];
+      if (scopeCached) {
+        setBuildings(scopeCached);
+      } else {
+        setBuildings({ type: 'FeatureCollection', features: [] });
+        setViewportFootprintsUpdatedAt(null);
+      }
       const cachedBuildings = buildingsCacheRef.current[scopeKey];
-      if (cachedBuildings && !bboxRef.current) setBuildings(cachedBuildings);
+      if (cachedBuildings && !scopeCached) setBuildings(cachedBuildings);
       const cachedMarkers = markersCacheRef.current[`${next}:${mapMode}`];
       if (cachedMarkers && bboxRef.current) {
         setMarkers(filterMarkersInBbox(cachedMarkers, bboxRef.current));
@@ -1151,112 +1153,20 @@ export function MapPage() {
           )}
           {activeTopPanel === 'offline' && (
             <div className="map-offline-download-panel">
-              <p className="map-offline-download-title">
-                {t('map.offline.downloadTitle', {
-                  km: DEFAULT_RADIUS_KM,
-                  side: DEFAULT_BOX_SIDE_KM,
-                })}
-              </p>
               {!online && (
                 <p className="map-offline-download-meta">
                   {t('map.offline.reportMode')}
                 </p>
               )}
-              {tileCenter && (
-                <p className="map-offline-download-meta">
-                  {t('map.offline.downloadCenter', {
-                    lat: fmtCoord(tileCenter.lat),
-                    lng: fmtCoord(tileCenter.lng),
-                  })}
-                </p>
-              )}
-              <p className="map-offline-download-meta map-offline-legend-hint">
-                {t('map.offline.previewBoxHint')}
-              </p>
-              <p className="map-offline-download-meta map-offline-legend-hint">
-                {t('map.offline.zoomRangeHint')}
-              </p>
-              <p className="map-offline-download-meta">
-                {offlineTiles.coverage
-                  ? t('map.offline.downloadCoverage', {
-                      pct: Math.round(offlineTiles.coverage.ratio * 100),
-                      cached: offlineTiles.coverage.cached,
-                      total: offlineTiles.coverage.total,
-                    })
-                  : t('map.offline.downloadCoverageUnknown')}
-              </p>
-              {online && crisisIdsForFootprints.length > 0 && (
-                <label className="map-offline-footprint-opt">
-                  <input
-                    type="checkbox"
-                    checked={offlineIncludeFootprints}
-                    onChange={(e) => onToggleOfflineFootprints(e.target.checked)}
-                    disabled={offlineTiles.downloading}
-                  />
-                  <span>{t('map.offline.includeFootprints')}</span>
-                </label>
-              )}
-              {online && crisisIdsForFootprints.length === 0 && (
-                <p className="map-offline-download-meta map-offline-legend-hint">
-                  {t('map.offline.footprintsNeedCrisis')}
-                </p>
-              )}
-              {online && offlineIncludeFootprints && (
-                <p className="map-offline-download-meta map-offline-legend-hint">
-                  {t('map.offline.includeFootprintsHint')}
-                </p>
-              )}
-              {offlineTiles.footprintNote && (
-                <p
-                  className={
-                    offlineTiles.footprintNote.skipped
-                      ? 'map-offline-download-meta error'
-                      : 'map-offline-download-meta ops-form-ok'
-                  }
-                >
-                  {offlineTiles.footprintNote.skipped
-                    ? t(`map.offline.footprintsSkipped.${offlineTiles.footprintNote.reason ?? 'fetch_failed'}`, {
-                        count: offlineTiles.footprintNote.featureCount,
-                        max: MAX_OFFLINE_FOOTPRINT_FEATURES,
-                      })
-                    : t('map.offline.footprintsSaved', {
-                        count: offlineTiles.footprintNote.featureCount,
-                      })}
-                </p>
-              )}
-              {online && (
-                <div className="map-offline-download-actions">
-                  <button
-                    type="button"
-                    className="small primary"
-                    onClick={onDownloadOfflineArea}
-                    disabled={offlineTiles.downloading}
-                  >
-                    {offlineTiles.downloading
-                      ? t('map.offline.downloading')
-                      : t('map.offline.downloadAction')}
-                  </button>
-                  {offlineTiles.downloading && (
-                    <button type="button" className="small" onClick={offlineTiles.cancel}>
-                      {t('common.cancel')}
-                    </button>
-                  )}
+
+              <section className="map-offline-section">
+                <div className="map-offline-section-head">
+                  <p className="map-offline-download-title">{t('map.offline.footprintsSectionTitle')}</p>
+                  <MapPanelHelp title={t('map.offline.footprintsHelpTitle')}>
+                    <p>{t('map.offline.footprintsHelpBody')}</p>
+                  </MapPanelHelp>
                 </div>
-              )}
-              {offlineTiles.downloading && offlineTiles.progress && (
-                <p className="map-offline-download-meta">
-                  {t('map.offline.downloadProgress', {
-                    done: offlineTiles.progress.done,
-                    total: offlineTiles.progress.total,
-                    failed: offlineTiles.progress.failed,
-                  })}
-                </p>
-              )}
-              <div className="map-offline-footprints-viewport">
-                <p className="map-offline-download-title">{t('map.offline.viewportFootprintsTitle')}</p>
-                <p className="map-offline-download-meta map-offline-legend-hint">
-                  {t('map.offline.viewportFootprintsHint')}
-                </p>
+                <p className="map-offline-download-meta">{t('map.offline.footprintsSectionSummary')}</p>
                 <p className="map-offline-download-meta">
                   {viewportFootprintsFetching
                     ? t('map.legend.buildingsLoading')
@@ -1296,12 +1206,99 @@ export function MapPage() {
                         : t('map.offline.viewportFootprintsDownload')}
                   </button>
                 </div>
-                {!online && (
-                  <p className="map-offline-download-meta map-offline-legend-hint">
-                    {t('map.offline.viewportFootprintsOfflineHint')}
+              </section>
+
+              <section className="map-offline-section">
+                <div className="map-offline-section-head">
+                  <p className="map-offline-download-title">
+                    {t('map.offline.tilesSectionTitle', { side: DEFAULT_BOX_SIDE_KM })}
+                  </p>
+                  <MapPanelHelp title={t('map.offline.tilesHelpTitle')}>
+                    <p>{t('map.offline.tilesHelpBody')}</p>
+                  </MapPanelHelp>
+                </div>
+                <p className="map-offline-download-meta">{t('map.offline.tilesSectionSummary')}</p>
+                {tileCenter && (
+                  <p className="map-offline-download-meta">
+                    {t('map.offline.downloadCenter', {
+                      lat: fmtCoord(tileCenter.lat),
+                      lng: fmtCoord(tileCenter.lng),
+                    })}
                   </p>
                 )}
-              </div>
+                <p className="map-offline-download-meta">
+                  {offlineTiles.coverage
+                    ? t('map.offline.downloadCoverage', {
+                        pct: Math.round(offlineTiles.coverage.ratio * 100),
+                        cached: offlineTiles.coverage.cached,
+                        total: offlineTiles.coverage.total,
+                      })
+                    : t('map.offline.downloadCoverageUnknown')}
+                </p>
+                {online && crisisIdsForFootprints.length > 0 && (
+                  <label className="map-offline-footprint-opt">
+                    <input
+                      type="checkbox"
+                      checked={offlineIncludeFootprints}
+                      onChange={(e) => onToggleOfflineFootprints(e.target.checked)}
+                      disabled={offlineTiles.downloading}
+                    />
+                    <span>{t('map.offline.includeFootprints')}</span>
+                  </label>
+                )}
+                {online && crisisIdsForFootprints.length === 0 && (
+                  <p className="map-offline-download-meta map-offline-legend-hint">
+                    {t('map.offline.footprintsNeedCrisis')}
+                  </p>
+                )}
+                {offlineTiles.footprintNote && (
+                  <p
+                    className={
+                      offlineTiles.footprintNote.skipped
+                        ? 'map-offline-download-meta error'
+                        : 'map-offline-download-meta ops-form-ok'
+                    }
+                  >
+                    {offlineTiles.footprintNote.skipped
+                      ? t(`map.offline.footprintsSkipped.${offlineTiles.footprintNote.reason ?? 'fetch_failed'}`, {
+                          count: offlineTiles.footprintNote.featureCount,
+                          max: MAX_OFFLINE_FOOTPRINT_FEATURES,
+                        })
+                      : t('map.offline.footprintsSaved', {
+                          count: offlineTiles.footprintNote.featureCount,
+                        })}
+                  </p>
+                )}
+                {online && (
+                  <div className="map-offline-download-actions">
+                    <button
+                      type="button"
+                      className="small primary"
+                      onClick={onDownloadOfflineArea}
+                      disabled={offlineTiles.downloading}
+                    >
+                      {offlineTiles.downloading
+                        ? t('map.offline.downloading')
+                        : t('map.offline.downloadAction')}
+                    </button>
+                    {offlineTiles.downloading && (
+                      <button type="button" className="small" onClick={offlineTiles.cancel}>
+                        {t('common.cancel')}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {offlineTiles.downloading && offlineTiles.progress && (
+                  <p className="map-offline-download-meta">
+                    {t('map.offline.downloadProgress', {
+                      done: offlineTiles.progress.done,
+                      total: offlineTiles.progress.total,
+                      failed: offlineTiles.progress.failed,
+                    })}
+                  </p>
+                )}
+              </section>
+
               <p className="map-offline-download-meta">
                 {t('map.offline.storageSummary', { count: offlineTiles.cachedTileCount })}
               </p>
@@ -1457,11 +1454,7 @@ export function MapPage() {
         <p className="map-hint map-hint-warn">{t('map.err.markersLoad', { msg: markersError })}</p>
       )}
 
-      {markersLoading && !markersError && (
-        <p className="map-hint">{t('map.legend.reportsLoading')}</p>
-      )}
-
-      {online && mapMode === 'all' && markers.length === 0 && bbox && !buildingsError && !markersError && !markersLoading && (
+      {online && mapMode === 'all' && markers.length === 0 && bbox && !buildingsError && !markersError && (
         <p className="map-hint map-hint-empty">{t('map.hint.noMarkers')}</p>
       )}
 
