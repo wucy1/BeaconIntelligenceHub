@@ -70,6 +70,7 @@ import {
 } from '../ops/polygonUtils';
 import { reportMapLatLng } from '../ops/reportMapPoint';
 import { normalizeLng } from '../utils/mapBbox';
+import { APP_VERSION } from '../version';
 
 L.Icon.Default.mergeOptions({ iconRetinaUrl: iconRetina, iconUrl, shadowUrl: iconShadow });
 
@@ -1194,6 +1195,9 @@ export function OpsMapPage() {
             <LanguageSwitcher compact />
             <OpsUserMenu className="ops-map-user-menu" compact />
           </div>
+          <span className="ops-map-build-version" title="Frontend build version">
+            {APP_VERSION}
+          </span>
           <div className="ops-map-system-tools">
             {canUseWorkMode && shellMode === 'work' && (
               <div className="ops-map-fab-col">

@@ -53,6 +53,7 @@ import {
   markersNearPoint,
 } from '../utils/buildingAtPoint';
 import { filterMarkersInBbox, markersFetchKey, normalizeBboxString, normalizeLng } from '../utils/mapBbox';
+import { APP_VERSION } from '../version';
 
 const DEFAULT_CENTER: [number, number] = [20, 0];
 const DEFAULT_ZOOM = 14;
@@ -1456,6 +1457,9 @@ export function MapPage() {
             {getOpsToken() && <a href="/dashboard">{t('ops.nav.dashboard')}</a>}
             {!getOpsToken() && <a href="/ops/login">{t('ops.nav.login')}</a>}
           </nav>
+          <span className="map-build-version" title="Frontend build version">
+            {APP_VERSION}
+          </span>
         </div>
       </div>
 
