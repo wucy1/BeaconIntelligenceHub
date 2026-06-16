@@ -91,7 +91,11 @@ def resolve_active_crisis_for_report(
             EXISTS (
               SELECT 1 FROM zones z
               WHERE z.crisis_id = c.id
-                AND ST_Intersects(:pt, z.geom)
+                AND (
+                  ST_Intersects(:pt, z.geom)
+                  OR ST_Intersects(ST_Translate(:pt::geometry, 360.0, 0.0), z.geom)
+                  OR ST_Intersects(ST_Translate(:pt::geometry, -360.0, 0.0), z.geom)
+                )
             )
             """
         )
@@ -104,7 +108,11 @@ def resolve_active_crisis_for_report(
               JOIN buildings b ON b.id = CAST(:bid AS uuid)
               WHERE z.crisis_id = c.id
                 AND b.geom IS NOT NULL
-                AND ST_Intersects(b.geom, z.geom)
+                AND (
+                  ST_Intersects(b.geom, z.geom)
+                  OR ST_Intersects(ST_Translate(b.geom::geometry, 360.0, 0.0), z.geom)
+                  OR ST_Intersects(ST_Translate(b.geom::geometry, -360.0, 0.0), z.geom)
+                )
             )
             """
         )

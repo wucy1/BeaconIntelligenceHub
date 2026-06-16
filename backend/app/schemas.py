@@ -81,6 +81,7 @@ class ReportSummary(BaseModel):
     geom: dict[str, Any] | None = None
     description_preview: str
     is_mine: bool = False
+    thumb_url: str | None = None
 
 
 class ReportListResponse(BaseModel):

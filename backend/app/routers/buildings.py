@@ -5,6 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.image_urls import thumb_url_for_report
 from app.models import Report
 from app.reporter import device_id_header, reporter_hash_from_device
 from app.schemas import ReportSummary
@@ -50,6 +51,7 @@ def building_reports(
                 geom=gj,
                 description_preview=r.description[:120] + ("…" if len(r.description) > 120 else ""),
                 is_mine=bool(reporter_hash and r.reporter_hash == reporter_hash),
+                thumb_url=thumb_url_for_report(db, r.id),
             )
         )
     return out

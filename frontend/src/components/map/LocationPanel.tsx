@@ -56,22 +56,25 @@ export function LocationPanel({
   useEffect(() => {
     if (!open) {
       setHistory([]);
+      setLoading(false);
       return;
     }
-    if (buildingId) {
-      setLoading(true);
-      apiGet<ReportSummary[]>(`/v1/buildings/${buildingId}/reports`)
-        .then((rows) => {
-          if (context === 'mine') {
-            setHistory(rows.filter((r) => r.is_mine));
-          } else {
-            setHistory(rows);
-          }
-        })
-        .catch(() => setHistory([]))
-        .finally(() => setLoading(false));
-      return;
-    }
+    if (!buildingId) return;
+    setLoading(true);
+    apiGet<ReportSummary[]>(`/v1/buildings/${buildingId}/reports`)
+      .then((rows) => {
+        if (context === 'mine') {
+          setHistory(rows.filter((r) => r.is_mine));
+        } else {
+          setHistory(rows);
+        }
+      })
+      .catch(() => setHistory([]))
+      .finally(() => setLoading(false));
+  }, [open, buildingId, context]);
+
+  useEffect(() => {
+    if (!open || buildingId) return;
     const fromMarkers = nearbyMarkers.map((m) => ({
       id: m.id,
       damage_level: m.damage_level,
@@ -82,6 +85,7 @@ export function LocationPanel({
       is_mine: m.is_mine,
       thumb_url: m.thumb_url,
     }));
+    setLoading(false);
     setHistory(context === 'mine' ? fromMarkers.filter((r) => r.is_mine) : fromMarkers);
   }, [open, buildingId, nearbyMarkers, context]);
 
@@ -130,7 +134,14 @@ export function LocationPanel({
 
         {focusedMarker?.thumb_url && (
           <figure className="location-panel-focus-thumb">
-            <img src={focusedMarker.thumb_url} alt="" loading="lazy" />
+            <img
+              src={focusedMarker.thumb_url}
+              alt=""
+              loading="lazy"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
           </figure>
         )}
 
@@ -150,7 +161,15 @@ export function LocationPanel({
                 return (
                 <li key={r.id}>
                   {r.thumb_url && (
-                    <img src={r.thumb_url} alt="" className="location-history-thumb" loading="lazy" />
+                    <img
+                      src={r.thumb_url}
+                      alt=""
+                      className="location-history-thumb"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
                   )}
                   <div className="location-history-row">
                     <span className={`damage-pill ${pillClass}`}>
