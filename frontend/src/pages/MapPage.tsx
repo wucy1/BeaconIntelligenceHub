@@ -1058,16 +1058,18 @@ export function MapPage() {
 
       {activeTopPanel && (
         <section className="map-overlay-panel-host">
-          <button
-            type="button"
-            className="map-overlay-panel-close"
-            onClick={() => setActiveTopPanel(null)}
-            aria-label={t('common.cancel')}
-          >
-            ×
-          </button>
           {activeTopPanel === 'contribution' && (
             <>
+              <header className="map-overlay-panel-header">
+                <button
+                  type="button"
+                  className="map-overlay-panel-close"
+                  onClick={() => setActiveTopPanel(null)}
+                  aria-label={t('common.cancel')}
+                >
+                  ×
+                </button>
+              </header>
               <ContributionStrip
                 scope={mapScope}
                 crisisId={scopeCrisisId}
@@ -1153,6 +1155,17 @@ export function MapPage() {
           )}
           {activeTopPanel === 'offline' && (
             <div className="map-offline-download-panel">
+              <header className="map-offline-panel-header">
+                <p className="map-offline-panel-heading">{t('map.overlay.offlinePanel')}</p>
+                <button
+                  type="button"
+                  className="map-overlay-panel-close"
+                  onClick={() => setActiveTopPanel(null)}
+                  aria-label={t('common.cancel')}
+                >
+                  ×
+                </button>
+              </header>
               {!online && (
                 <p className="map-offline-download-meta">
                   {t('map.offline.reportMode')}
@@ -1336,7 +1349,18 @@ export function MapPage() {
             </div>
           )}
           {activeTopPanel === 'legend' && (
-            <MapLegend
+            <>
+              <header className="map-overlay-panel-header">
+                <button
+                  type="button"
+                  className="map-overlay-panel-close"
+                  onClick={() => setActiveTopPanel(null)}
+                  aria-label={t('common.cancel')}
+                >
+                  ×
+                </button>
+              </header>
+              <MapLegend
               buildingCount={buildings.features.length}
               buildingsLoading={viewportFootprintsFetching}
               buildingsError={buildingsError}
@@ -1348,6 +1372,7 @@ export function MapPage() {
                 mapScope !== 'unspecified' && !viewportFootprintsFetching ? flyToDemoFootprints : undefined
               }
             />
+            </>
           )}
         </section>
       )}
