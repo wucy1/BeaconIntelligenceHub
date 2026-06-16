@@ -22,14 +22,28 @@ _BBOX_INTERSECT = """
   )
 """
 
-_ACTIVE_CRISIS_EXCLUSION = """
+_ZONE_INTERSECT_REPORT = """
+(
+  ST_Intersects(r.geom, z.geom)
+  OR ST_Intersects(r.geom, ST_ShiftLongitude(z.geom))
+)
+"""
+
+_ZONE_INTERSECT_BUILDING = """
+(
+  ST_Intersects(b.geom, z.geom)
+  OR ST_Intersects(b.geom, ST_ShiftLongitude(z.geom))
+)
+"""
+
+_ACTIVE_CRISIS_EXCLUSION = f"""
   AND NOT EXISTS (
     SELECT 1 FROM zones z
     JOIN crises c ON c.id = z.crisis_id
     WHERE c.archive_status = 'active'
       AND (
-        (r.geom IS NOT NULL AND ST_Intersects(r.geom, z.geom))
-        OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
+        (r.geom IS NOT NULL AND {_ZONE_INTERSECT_REPORT})
+        OR (b.geom IS NOT NULL AND {_ZONE_INTERSECT_BUILDING})
       )
   )
   AND NOT EXISTS (
@@ -123,8 +137,8 @@ def report_ids_active_crisis_in_bbox(
                       SELECT 1 FROM zones z
                       WHERE z.crisis_id = CAST(:cid AS uuid)
                         AND (
-                          (r.geom IS NOT NULL AND ST_Intersects(r.geom, z.geom))
-                          OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
+                          (r.geom IS NOT NULL AND {_ZONE_INTERSECT_REPORT})
+                          OR (b.geom IS NOT NULL AND {_ZONE_INTERSECT_BUILDING})
                         )
                     )
                     OR EXISTS (

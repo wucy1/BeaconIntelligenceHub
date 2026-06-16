@@ -42,14 +42,14 @@ def _zone_clause(zone_ids: list[UUID] | None, crisis_id: UUID | None = None) -> 
           SELECT 1 FROM zones z
           WHERE z.id = ANY(CAST(:zone_ids AS uuid[]))
             AND r.geom IS NOT NULL
-            AND ST_Intersects(r.geom, z.geom)
+            AND (ST_Intersects(r.geom, z.geom) OR ST_Intersects(r.geom, ST_ShiftLongitude(z.geom)))
         )
         OR EXISTS (
           SELECT 1 FROM zones z
           JOIN buildings b ON b.id = r.building_id
           WHERE z.id = ANY(CAST(:zone_ids AS uuid[]))
             AND b.geom IS NOT NULL
-            AND ST_Intersects(b.geom, z.geom)
+            AND (ST_Intersects(b.geom, z.geom) OR ST_Intersects(b.geom, ST_ShiftLongitude(z.geom)))
         ){crisis_building}
       )
     """,

@@ -187,18 +187,13 @@ function FitOpsMapContent({
 }) {
   const map = useMap();
   const lastFitKeyRef = useRef<string | null>(null);
-  const crisisChangedRef = useRef(false);
-
   useEffect(() => {
-    crisisChangedRef.current = true;
     lastFitKeyRef.current = null;
   }, [crisisId]);
 
   useEffect(() => {
-    if (!crisisId) return;
+    if (skip || !crisisId) return;
     const pinCount = reports.reduce((n, r) => (reportMapLatLng(r) ? n + 1 : n), 0);
-    const allowSkip = skip && !crisisChangedRef.current && pinCount === 0;
-    if (allowSkip) return;
     const fitKey = `${crisisId}:${zones.length}:${pinCount}`;
     if (lastFitKeyRef.current === fitKey) return;
     const bounds = L.latLngBounds([]);
@@ -210,7 +205,6 @@ function FitOpsMapContent({
     if (!bounds.isValid()) return;
     map.fitBounds(bounds, { padding: [48, 48], maxZoom: 15 });
     lastFitKeyRef.current = fitKey;
-    crisisChangedRef.current = false;
   }, [map, reports, zones, crisisId, skip]);
 
   return null;

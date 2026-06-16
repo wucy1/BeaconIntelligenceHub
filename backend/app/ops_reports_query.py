@@ -16,8 +16,8 @@ _ACTIVE_EXCLUSION = """
     JOIN crises c ON c.id = z.crisis_id
     WHERE c.archive_status = 'active'
       AND (
-        (r.geom IS NOT NULL AND ST_Intersects(r.geom, z.geom))
-        OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
+        (r.geom IS NOT NULL AND (ST_Intersects(r.geom, z.geom) OR ST_Intersects(r.geom, ST_ShiftLongitude(z.geom))))
+        OR (b.geom IS NOT NULL AND (ST_Intersects(b.geom, z.geom) OR ST_Intersects(b.geom, ST_ShiftLongitude(z.geom))))
       )
   )
   AND NOT EXISTS (
@@ -33,14 +33,14 @@ _ZONE_SCOPE = """
       SELECT 1 FROM zones z
       WHERE z.id = ANY(CAST(:zone_ids AS uuid[]))
         AND r.geom IS NOT NULL
-        AND ST_Intersects(r.geom, z.geom)
+        AND (ST_Intersects(r.geom, z.geom) OR ST_Intersects(r.geom, ST_ShiftLongitude(z.geom)))
     )
     OR EXISTS (
       SELECT 1 FROM zones z
       JOIN buildings b2 ON b2.id = r.building_id
       WHERE z.id = ANY(CAST(:zone_ids AS uuid[]))
         AND b2.geom IS NOT NULL
-        AND ST_Intersects(b2.geom, z.geom)
+        AND (ST_Intersects(b2.geom, z.geom) OR ST_Intersects(b2.geom, ST_ShiftLongitude(z.geom)))
     )
   )
 """
@@ -51,14 +51,14 @@ _CRISIS_ZONE_INTERSECT = """
       SELECT 1 FROM zones z
       WHERE z.id = ANY(CAST(:zone_ids AS uuid[]))
         AND r.geom IS NOT NULL
-        AND ST_Intersects(r.geom, z.geom)
+        AND (ST_Intersects(r.geom, z.geom) OR ST_Intersects(r.geom, ST_ShiftLongitude(z.geom)))
     )
     OR EXISTS (
       SELECT 1 FROM zones z
       JOIN buildings b2 ON b2.id = r.building_id
       WHERE z.id = ANY(CAST(:zone_ids AS uuid[]))
         AND b2.geom IS NOT NULL
-        AND ST_Intersects(b2.geom, z.geom)
+        AND (ST_Intersects(b2.geom, z.geom) OR ST_Intersects(b2.geom, ST_ShiftLongitude(z.geom)))
     )
   )
 """
@@ -162,8 +162,8 @@ def report_ids_for_crisis_scoped(
             SELECT 1 FROM zones z
             WHERE z.crisis_id = CAST(:cid AS uuid)
               AND (
-                (r.geom IS NOT NULL AND ST_Intersects(r.geom, z.geom))
-                OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
+                (r.geom IS NOT NULL AND (ST_Intersects(r.geom, z.geom) OR ST_Intersects(r.geom, ST_ShiftLongitude(z.geom))))
+                OR (b.geom IS NOT NULL AND (ST_Intersects(b.geom, z.geom) OR ST_Intersects(b.geom, ST_ShiftLongitude(z.geom))))
               )
           )
         )
@@ -275,8 +275,8 @@ def _crisis_query_zone_clause(
             SELECT 1 FROM zones z
             WHERE z.crisis_id = CAST(:cid AS uuid)
               AND (
-                (r.geom IS NOT NULL AND ST_Intersects(r.geom, z.geom))
-                OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
+                (r.geom IS NOT NULL AND (ST_Intersects(r.geom, z.geom) OR ST_Intersects(r.geom, ST_ShiftLongitude(z.geom))))
+                OR (b.geom IS NOT NULL AND (ST_Intersects(b.geom, z.geom) OR ST_Intersects(b.geom, ST_ShiftLongitude(z.geom))))
               )
           )
         )

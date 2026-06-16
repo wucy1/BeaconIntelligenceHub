@@ -128,6 +128,7 @@ export function MapPage() {
   const [allMarkers, setAllMarkers] = useState<MapMarker[]>([]);
   const [placement, setPlacement] = useState<Placement>(emptyPlacement);
   const [inspectOpen, setInspectOpen] = useState(false);
+  const [mapPopupOpen, setMapPopupOpen] = useState(false);
   const [inspectContext, setInspectContext] = useState<LocationPanelContext>('all');
   const [focusedMarker, setFocusedMarker] = useState<MapMarker | null>(null);
   const [inspectMarkers, setInspectMarkers] = useState<MapMarker[]>([]);
@@ -528,17 +529,17 @@ export function MapPage() {
   }, [bbox, mapScope, footprintScopeKey, crisisIdsForFootprints, online, t]);
 
   useEffect(() => {
-    if (!online || !bbox || mapMode === 'new' || inspectOpen) return;
+    if (!online || !bbox || mapMode === 'new' || inspectOpen || mapPopupOpen) return;
     const id = window.setInterval(() => {
       const fetchKey = markersFetchKey(mapScope, bbox, mapMode);
       delete markersBboxCacheRef.current[fetchKey];
       setMarkerPollTick((n) => n + 1);
     }, MARKERS_POLL_MS);
     return () => window.clearInterval(id);
-  }, [online, bbox, mapMode, mapScope, inspectOpen]);
+  }, [online, bbox, mapMode, mapScope, inspectOpen, mapPopupOpen]);
 
   useEffect(() => {
-    if (!online || !bbox || mapMode === 'new' || inspectOpen) {
+    if (!online || !bbox || mapMode === 'new' || inspectOpen || mapPopupOpen) {
       if (mapMode === 'new') {
         setMarkers([]);
         setAllMarkers([]);
@@ -607,7 +608,7 @@ export function MapPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [online, bbox, mapMode, mapScope, refreshKey, markerPollTick, inspectOpen]);
+  }, [online, bbox, mapMode, mapScope, refreshKey, markerPollTick, inspectOpen, mapPopupOpen]);
 
   const showOthers = mapMode === 'all';
 
@@ -1054,6 +1055,7 @@ export function MapPage() {
         reportPin={mapMode === 'new' ? placement.pin : null}
         onMapPlace={onMapPlace}
         onReportPinMove={onReportPinMove}
+        onPopupStateChange={setMapPopupOpen}
         online={online}
         offlineZoomLimits={offlineZoomLimits}
         savedRegions={offlineTiles.regions}

@@ -79,6 +79,7 @@ type Props = {
   reportPin?: { lat: number; lng: number } | null;
   onMapPlace?: (lat: number, lng: number) => void;
   onReportPinMove?: (lat: number, lng: number) => void;
+  onPopupStateChange?: (open: boolean) => void;
   online?: boolean;
   offlineZoomLimits?: OfflineZoomLimits | null;
   savedRegions?: MapRegionMeta[];
@@ -223,6 +224,18 @@ function MapPlaceClick({
       if (!enabled || !onPlace) return;
       onPlace(e.latlng.lat, e.latlng.lng);
     },
+  });
+  return null;
+}
+
+function PopupStateWatcher({
+  onChange,
+}: {
+  onChange?: (open: boolean) => void;
+}) {
+  useMapEvents({
+    popupopen: () => onChange?.(true),
+    popupclose: () => onChange?.(false),
   });
   return null;
 }
@@ -398,6 +411,7 @@ export function ContributorMap({
   reportPin = null,
   onMapPlace,
   onReportPinMove,
+  onPopupStateChange,
   online = true,
   offlineZoomLimits,
   savedRegions = [],
@@ -511,6 +525,7 @@ export function ContributorMap({
       )}
       <BboxWatcher onBboxChange={onBboxChange} />
       <ViewWatcher onViewChange={onViewChange} />
+      <PopupStateWatcher onChange={onPopupStateChange} />
       <FlyTo target={flyTo} onComplete={onFlyComplete} />
       <MapPlaceClick enabled={mapMode === 'new'} onPlace={onMapPlace} />
       {crisisZones.length > 0 && <CrisisZonesLayer zones={crisisZones} />}
