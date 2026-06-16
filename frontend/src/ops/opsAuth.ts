@@ -128,8 +128,11 @@ export function opsCanViewCrisisArchive(user: OpsUserSession | null, crisisId: s
   return (user.zone_ids?.length ?? 0) > 0;
 }
 
-export function opsRoleLabel(role: OpsUserSession['role']): string {
-  if (role === 'system_admin') return '系統管理員';
-  if (role === 'crisis_lead') return '危機 Lead';
-  return 'Coordinator';
+export function opsRoleLabel(
+  role: OpsUserSession['role'],
+  t: (key: string) => string,
+): string {
+  if (role === 'system_admin') return t('ops.role.systemAdmin');
+  if (role === 'crisis_lead') return t('ops.role.crisisLead');
+  return t('ops.role.coordinator');
 }

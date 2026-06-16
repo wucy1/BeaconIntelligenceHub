@@ -47,7 +47,7 @@ function compressViaImageElement(file: File): Promise<File> {
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('無法讀取相片格式'));
+      reject(new Error('Unable to read image format'));
     };
     img.src = url;
   });

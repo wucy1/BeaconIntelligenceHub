@@ -70,7 +70,7 @@ export function Admin() {
     <section className="card">
       <h1>{t('admin.title')}</h1>
       <p>
-        <Link to="/ops/login">營運登入</Link>
+        <Link to="/ops/login">{t('ops.nav.login')}</Link>
       </p>
       <label className="field">
         <span>{t('admin.token')}</span>

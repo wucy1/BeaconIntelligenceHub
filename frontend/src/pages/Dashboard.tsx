@@ -409,7 +409,7 @@ export function Dashboard() {
         <div>
           <h1>{t('dashboard.title')}</h1>
           <p className="muted">
-            {opsUser.email} · {opsRoleLabel(opsUser.role)}
+            {opsUser.email} · {opsRoleLabel(opsUser.role, t)}
             {isAdmin && ` · ${t('dashboard.scopeAdmin')}`}
             {!isAdmin && isLead && ` · ${t('dashboard.scopeLead')}`}
             {!isAdmin && !isLead && ` · ${t('dashboard.scopeCoord')}`}

@@ -82,8 +82,11 @@ export function OpsDashboard() {
   const [apiBanner, setApiBanner] = useState<string | null>(null);
   const [apiWaking, setApiWaking] = useState(false);
   const [crisisFormMsg, setCrisisFormMsg] = useState<string | null>(null);
+  const [crisisFormOk, setCrisisFormOk] = useState(false);
   const [userFormMsg, setUserFormMsg] = useState<string | null>(null);
+  const [userFormOk, setUserFormOk] = useState(false);
   const [leadFormMsg, setLeadFormMsg] = useState<string | null>(null);
+  const [leadFormOk, setLeadFormOk] = useState(false);
   const [coordFormMsg, setCoordFormMsg] = useState<string | null>(null);
   const [demoBuildingMsg, setDemoBuildingMsg] = useState<string | null>(null);
   const [demoBuildingOk, setDemoBuildingOk] = useState(false);
@@ -248,20 +251,24 @@ export function OpsDashboard() {
 
   const createCrisis = async () => {
     if (!isAdmin) {
-      setCrisisFormMsg('僅系統管理員可建立危機');
+      setCrisisFormOk(false);
+      setCrisisFormMsg(t('ops.create.onlyAdmin'));
       return;
     }
     if (!newCrisisSlug.trim() || !newCrisisName.trim()) {
-      setCrisisFormMsg('請填寫 slug 與名稱');
+      setCrisisFormOk(false);
+      setCrisisFormMsg(t('ops.create.slugNameRequired'));
       return;
     }
     if (newCrisisMeta.archive_status === 'active' && !newCrisisMeta.event_start.trim()) {
-      setCrisisFormMsg('設為進行中（active）前須填寫官方起始時間');
+      setCrisisFormOk(false);
+      setCrisisFormMsg(t('ops.create.activeNeedsStart'));
       return;
     }
     setBusy(true);
     setApiBanner(null);
     setCrisisFormMsg(null);
+    setCrisisFormOk(false);
     try {
       const c = await opsPost<OpsCrisis>('/v1/ops/crises', {
         slug: newCrisisSlug.trim(),
@@ -275,12 +282,14 @@ export function OpsDashboard() {
       setNewCrisisSlug('');
       setNewCrisisName('');
       setNewCrisisMeta({ archive_status: 'draft', event_start: '', event_end: '' });
-      setCrisisFormMsg(`已建立「${crisisName(c.name, c.slug)}」`);
+      setCrisisFormOk(true);
+      setCrisisFormMsg(t('ops.create.created', { name: crisisName(c.name, c.slug) }));
       setActiveTab('crises');
       await loadCrises();
       loadAudit();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      setCrisisFormOk(false);
       setCrisisFormMsg(msg);
     } finally {
       setBusy(false);
@@ -387,7 +396,7 @@ export function OpsDashboard() {
   const saveSelectedCrisisMeta = async () => {
     if (!selectedCrisisId || !canEditSelectedCrisis) return;
     if (editCrisisMeta.archive_status === 'active' && !editCrisisMeta.event_start.trim()) {
-      setCrisisEditMsg('設為進行中（active）前須填寫官方起始時間');
+      setCrisisEditMsg(t('ops.create.activeNeedsStart'));
       return;
     }
     setBusy(true);
@@ -414,11 +423,13 @@ export function OpsDashboard() {
 
   const createUser = async () => {
     if (!newUserEmail.trim() || newUserPassword.length < 8) {
+      setUserFormOk(false);
       setUserFormMsg(t('ops.team.needUserFields'));
       return;
     }
     setBusy(true);
     setUserFormMsg(null);
+    setUserFormOk(false);
     try {
       const created = await opsPost<OpsUserRecord>('/v1/ops/users', {
         email: newUserEmail.trim().toLowerCase(),
@@ -430,10 +441,12 @@ export function OpsDashboard() {
       setNewUserPassword('');
       setNewUserName('');
       setOpsUsers((prev) => (prev.some((u) => u.id === created.id) ? prev : [...prev, created]));
+      setUserFormOk(true);
       setUserFormMsg(t('ops.team.userCreated', { email: created.email }));
       await loadUsers();
       loadAudit();
     } catch (e) {
+      setUserFormOk(false);
       setUserFormMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
@@ -442,20 +455,24 @@ export function OpsDashboard() {
 
   const assignCrisisLead = async () => {
     if (!assignLeadUserId || !assignLeadCrisisId) {
+      setLeadFormOk(false);
       setLeadFormMsg(t('ops.team.pickLead'));
       return;
     }
     setBusy(true);
     setLeadFormMsg(null);
+    setLeadFormOk(false);
     const leadEmail = opsUsers.find((u) => u.id === assignLeadUserId)?.email;
     const crisisTitle = assignLeadCrisis ? crisisName(assignLeadCrisis.name, assignLeadCrisis.slug) : '';
     try {
       await opsPost(`/v1/ops/users/${assignLeadUserId}/crises/${assignLeadCrisisId}`, {});
       setAssignLeadUserId('');
+      setLeadFormOk(true);
       setLeadFormMsg(t('ops.team.leadAssigned', { email: leadEmail ?? '', crisis: crisisTitle }));
       await loadUsers();
       loadAudit();
     } catch (e) {
+      setLeadFormOk(false);
       setLeadFormMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
@@ -846,7 +863,7 @@ export function OpsDashboard() {
               <span>{t('ops.create.name')}</span>
               <input
                 className="ops-input"
-                placeholder="2026 台北水患"
+                placeholder={t('ops.create.namePlaceholder')}
                 value={newCrisisName}
                 onChange={(e) => setNewCrisisName(e.target.value)}
               />
@@ -863,7 +880,7 @@ export function OpsDashboard() {
               {busy ? t('ops.create.submitting') : t('ops.create.submit')}
             </button>
             {crisisFormMsg && (
-              <p className={crisisFormMsg.startsWith('已建立') ? 'ops-form-ok' : 'error'}>{crisisFormMsg}</p>
+              <p className={crisisFormOk ? 'ops-form-ok' : 'error'}>{crisisFormMsg}</p>
             )}
           </div>
         </section>
@@ -874,7 +891,7 @@ export function OpsDashboard() {
           <h2>{t('ops.team.title')}</h2>
           {isAdmin && (
             <div className="ops-dash-form">
-              <h3>新增營運人員</h3>
+              <h3>{t('ops.team.addStaff')}</h3>
               <input
                 className="ops-input"
                 placeholder="email"
@@ -884,13 +901,13 @@ export function OpsDashboard() {
               <input
                 className="ops-input"
                 type="password"
-                placeholder="密碼（≥8）"
+                placeholder={t('ops.team.passwordPlaceholder')}
                 value={newUserPassword}
                 onChange={(e) => setNewUserPassword(e.target.value)}
               />
               <input
                 className="ops-input"
-                placeholder="顯示名稱（選填）"
+                placeholder={t('ops.team.displayNameOptional')}
                 value={newUserName}
                 onChange={(e) => setNewUserName(e.target.value)}
               />
@@ -906,25 +923,25 @@ export function OpsDashboard() {
                 </select>
               </label>
               <button type="button" onClick={createUser} disabled={busy}>
-                {busy ? '建立中…' : '建立帳號'}
+                {busy ? t('ops.team.creating') : t('ops.team.createAccount')}
               </button>
               {userFormMsg && (
-                <p className={userFormMsg.includes('@') ? 'ops-form-ok' : 'error'}>{userFormMsg}</p>
+                <p className={userFormOk ? 'ops-form-ok' : 'error'}>{userFormMsg}</p>
               )}
             </div>
           )}
           {isAdmin && (
             <div className="ops-dash-form">
-              <h3>指派危機 Lead</h3>
-              <p className="muted">可為任一危機指派 Lead，與上方「目前操作危機」無關。</p>
+              <h3>{t('ops.team.assignLeadTitle')}</h3>
+              <p className="muted">{t('ops.team.assignLeadHint')}</p>
               <label className="ops-field">
-                危機
+                {t('ops.team.crisisLabel')}
                 <select
                   className="ops-input"
                   value={assignLeadCrisisId}
                   onChange={(e) => setAssignLeadCrisisId(e.target.value)}
                 >
-                  <option value="">選擇危機</option>
+                  <option value="">{t('ops.team.selectCrisis')}</option>
                   {manageableCrises.map((c) => (
                     <option key={c.id} value={c.id}>
                       {crisisName(c.name, c.slug)}
@@ -933,9 +950,9 @@ export function OpsDashboard() {
                 </select>
               </label>
               <label className="ops-field">
-                營運人員
+                {t('ops.team.staffLabel')}
                 <select className="ops-input" value={assignLeadUserId} onChange={(e) => setAssignLeadUserId(e.target.value)}>
-                  <option value="">選擇營運人員</option>
+                  <option value="">{t('ops.team.selectStaff')}</option>
                   {opsUsers.filter((u) => u.role !== 'system_admin').map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.email}
@@ -944,17 +961,17 @@ export function OpsDashboard() {
                 </select>
               </label>
               <button type="button" onClick={assignCrisisLead} disabled={busy || !assignLeadCrisisId || !assignLeadUserId}>
-                設為此危機 Lead
+                {t('ops.team.setLeadButton')}
               </button>
               {leadFormMsg && (
-                <p className={leadFormMsg.includes('請') ? 'error' : 'ops-form-ok'}>{leadFormMsg}</p>
+                <p className={leadFormOk ? 'ops-form-ok' : 'error'}>{leadFormMsg}</p>
               )}
             </div>
           )}
           {canAssignCoord && (
             <div className="ops-dash-form">
-              <h3>指派分區 Coordinator</h3>
-              <p className="muted">請先於營運地圖畫好分區，再指派人員。</p>
+              <h3>{t('ops.team.assignCoordinatorTitle')}</h3>
+              <p className="muted">{t('ops.team.assignCoordinatorHint')}</p>
               {coordAssignableCrises.length > 0 && (
                 <label className="ops-field">
                   {t('ops.crises.select')}
@@ -975,7 +992,7 @@ export function OpsDashboard() {
                 </label>
               )}
               <select className="ops-input" value={assignUserId} onChange={(e) => setAssignUserId(e.target.value)}>
-                <option value="">選擇人員</option>
+                <option value="">{t('ops.team.selectUser')}</option>
                 {(isAdmin ? opsUsers.filter((u) => u.role !== 'system_admin') : assignableUsers).map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.email}
@@ -983,7 +1000,7 @@ export function OpsDashboard() {
                 ))}
               </select>
               <select className="ops-input" value={assignZoneId} onChange={(e) => setAssignZoneId(e.target.value)}>
-                <option value="">選擇分區</option>
+                <option value="">{t('ops.team.selectZone')}</option>
                 {crisisZones.map((z) => (
                   <option key={z.id} value={z.id}>
                     {z.name}
@@ -991,7 +1008,7 @@ export function OpsDashboard() {
                 ))}
               </select>
               <button type="button" onClick={assignZoneToUser} disabled={busy || crisisZones.length === 0}>
-                指派 Coordinator
+                {t('ops.team.assignCoordinatorButton')}
               </button>
               {coordFormMsg && (
                 <p className={coordFormMsg === t('ops.team.coordAssigned') ? 'ops-form-ok' : 'error'}>
@@ -1015,9 +1032,9 @@ export function OpsDashboard() {
                     <ul>
                       {u.crisis_lead_assignments.map((a) => (
                         <li key={`${u.id}-c-${a.crisis_id}`}>
-                          危機 Lead — {a.crisis_slug ?? a.crisis_id.slice(0, 8)}
+                          {t('ops.team.crisisLeadRow')} — {a.crisis_slug ?? a.crisis_id.slice(0, 8)}
                           <button type="button" className="linkish" onClick={() => unassignCrisisLead(u.id, a.crisis_id)}>
-                            移除
+                            {t('ops.common.remove')}
                           </button>
                         </li>
                       ))}
@@ -1027,9 +1044,9 @@ export function OpsDashboard() {
                     <ul>
                       {u.zone_assignments.map((a) => (
                         <li key={`${u.id}-${a.zone_id}`}>
-                          {a.crisis_slug ?? t('ops.team.unknownCrisis')} — {a.zone_name ?? a.zone_id.slice(0, 8)} — coordinator
+                          {a.crisis_slug ?? t('ops.team.unknownCrisis')} — {a.zone_name ?? a.zone_id.slice(0, 8)} — {t('ops.team.assignmentRoleCoordinator')}
                           <button type="button" className="linkish" onClick={() => unassignZone(u.id, a.zone_id)}>
-                            移除
+                            {t('ops.common.remove')}
                           </button>
                         </li>
                       ))}
@@ -1056,7 +1073,7 @@ export function OpsDashboard() {
 
       {activeTab === 'audit' && isAdmin && (
         <section className="ops-dash-section">
-          <h2>稽核紀錄</h2>
+          <h2>{t('ops.tab.audit')}</h2>
           <ul className="ops-audit-list">
             {audit.map((a) => (
               <li key={a.id}>
@@ -1066,7 +1083,7 @@ export function OpsDashboard() {
               </li>
             ))}
           </ul>
-          {audit.length === 0 && <p className="muted">尚無紀錄</p>}
+          {audit.length === 0 && <p className="muted">{t('ops.map.audit.empty')}</p>}
         </section>
       )}
       {resetPwdUser && (

@@ -26,14 +26,14 @@ async function parseOpsJson<T>(res: Response, path: string): Promise<T> {
   const ct = res.headers.get('content-type') ?? '';
   if (!ct.includes('application/json') && text.trimStart().startsWith('<')) {
     throw new Error(
-      `API 回傳 HTML 而非 JSON。請求網址：${apiUrl(path)}；` +
-        '請在 Cloudflare Build 設定 VITE_API_BASE 或清除快取後重試。',
+      `API returned HTML instead of JSON. Request URL: ${apiUrl(path)}; ` +
+        'set VITE_API_BASE in Cloudflare Build or clear cache and retry.',
     );
   }
   try {
     return JSON.parse(text) as T;
   } catch {
-    throw new Error(`無法解析 API 回應：${text.slice(0, 80)}…`);
+    throw new Error(`Failed to parse API response: ${text.slice(0, 80)}...`);
   }
 }
 

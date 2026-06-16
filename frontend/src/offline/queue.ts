@@ -171,7 +171,7 @@ async function presignUpload(
 function isDirectR2PutFailure(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   if (err.message.includes('R2 CORS')) return true;
-  if (err.message.includes('無法連到上傳端點')) return true;
+  if (err.message.includes('Unable to reach upload endpoint')) return true;
   return false;
 }
 
@@ -231,7 +231,7 @@ export async function submitReportOnline(
     await ensureApiReady(soft ? 30_000 : 90_000, { soft });
   }
   if (!globalThis.crypto?.subtle) {
-    throw new Error('此瀏覽器環境無法計算檔案雜湊，請使用 HTTPS 或更換瀏覽器。');
+    throw new Error('This browser environment cannot calculate file hashes. Use HTTPS or switch browsers.');
   }
   const checksum = await sha256Hex(file);
   const uploadCrisisId = presignCrisisId(crisisId);
@@ -240,12 +240,12 @@ export async function submitReportOnline(
     presign = await putUploadFile(uploadCrisisId, file, checksum);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes('上傳圖片失敗') || msg.includes('R2 CORS') || msg.includes('無法連到上傳端點')) {
+    if (msg.includes('Image upload failed') || msg.includes('R2 CORS') || msg.includes('Unable to reach upload endpoint')) {
       throw new Error(
-        `${msg} 系統已嘗試改走 API 代理；若仍失敗請檢查網路、稍後重試，或關閉瀏覽器隱私阻擋（Brave 盾牌、Safari 跨站追蹤等）。`,
+        `${msg} The system already attempted API proxy upload. If it still fails, check network, retry later, or disable strict browser privacy blocking (Brave Shields, Safari cross-site tracking prevention, etc.).`,
       );
     }
-    throw new Error(`上傳圖片失敗：${msg}`);
+    throw new Error(`Image upload failed: ${msg}`);
   }
   const dims = await readImageDims(file);
   try {
@@ -267,7 +267,7 @@ export async function submitReportOnline(
     return { possible_duplicate: Boolean(created.possible_duplicate) };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`建立回報失敗：${msg}`);
+    throw new Error(`Failed to create report: ${msg}`);
   }
 }
 
