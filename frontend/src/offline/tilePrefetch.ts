@@ -3,7 +3,6 @@ import {
   saveRegionMeta,
   type MapRegionMeta,
 } from './tileCache';
-import { prefetchRegionFootprints } from './footprintPrefetch';
 import {
   DEFAULT_RADIUS_KM,
   osmTileUrl,
@@ -29,9 +28,6 @@ export type PrefetchOptions = {
   concurrency?: number;
   signal?: AbortSignal;
   onProgress?: (p: PrefetchProgress) => void;
-  includeFootprints?: boolean;
-  crisisIds?: string[];
-  onFootprintsDone?: (result: { featureCount: number; skipped: boolean; reason?: string }) => void;
 };
 
 const DEFAULT_CONCURRENCY = 6;
@@ -128,40 +124,14 @@ export async function prefetchMapTiles(opts: PrefetchOptions): Promise<PrefetchP
   );
 
   if (!opts.signal?.aborted && failed < total) {
-    const regionId = regionIdForCenter(opts.center, radiusKm);
-    let footprintsIncluded = false;
-    let footprintCount = 0;
-    if (opts.includeFootprints && opts.crisisIds?.length) {
-      try {
-        const fp = await prefetchRegionFootprints({
-          center: opts.center,
-          radiusKm,
-          crisisIds: opts.crisisIds,
-          regionId,
-          signal: opts.signal,
-        });
-        opts.onFootprintsDone?.(fp);
-        if (!fp.skipped) {
-          footprintsIncluded = true;
-          footprintCount = fp.featureCount;
-        }
-      } catch (e) {
-        if (opts.signal?.aborted) {
-          return { done, total, failed };
-        }
-        opts.onFootprintsDone?.({ featureCount: 0, skipped: true, reason: 'fetch_failed' });
-      }
-    }
     const meta: MapRegionMeta = {
-      id: regionId,
+      id: regionIdForCenter(opts.center, radiusKm),
       center: opts.center,
       radiusKm,
       zMin,
       zMax,
       tileCount: total - failed,
       downloadedAt: new Date().toISOString(),
-      footprintsIncluded,
-      footprintCount,
     };
     await saveRegionMeta(meta);
   }

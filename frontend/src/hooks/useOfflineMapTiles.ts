@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { prefetchRegionFootprints } from '../offline/footprintPrefetch';
 import {
   countCachedTiles,
   hasOfflineTilesReady,
   listRegionMeta,
+  loadRegionMeta,
   type MapRegionMeta,
+  saveRegionMeta,
   tileCoverageRatio,
 } from '../offline/tileCache';
 import { prefetchMapTiles, type PrefetchProgress } from '../offline/tilePrefetch';
-import { DEFAULT_RADIUS_KM, type LatLng } from '../offline/tileMath';
+import { DEFAULT_RADIUS_KM, regionIdForCenter, type LatLng } from '../offline/tileMath';
 
 export type FootprintPrefetchNote = {
   featureCount: number;
@@ -33,6 +36,7 @@ export function useOfflineMapTiles(center: LatLng | null) {
   const [cachedTileCount, setCachedTileCount] = useState(0);
   const [footprintNote, setFootprintNote] = useState<FootprintPrefetchNote | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const downloadingRef = useRef(false);
 
   const refreshRegions = useCallback(async () => {
     const [rows, count] = await Promise.all([listRegionMeta(), countCachedTiles()]);
@@ -54,12 +58,17 @@ export function useOfflineMapTiles(center: LatLng | null) {
   }, []);
 
   useEffect(() => {
+    downloadingRef.current = downloading;
+  }, [downloading]);
+
+  useEffect(() => {
     if (!center) {
       setChecking(false);
       setReady(false);
       setCoverage(null);
       return;
     }
+    if (downloadingRef.current) return;
     void refresh(center);
   }, [center?.lat, center?.lng, refresh, center]);
 
@@ -80,10 +89,40 @@ export function useOfflineMapTiles(center: LatLng | null) {
           center: loc,
           signal: ac.signal,
           onProgress: setProgress,
-          includeFootprints: opts?.includeFootprints,
-          crisisIds: opts?.crisisIds,
-          onFootprintsDone: setFootprintNote,
         });
+
+        if (
+          !ac.signal.aborted &&
+          opts?.includeFootprints &&
+          opts.crisisIds?.length &&
+          result.failed < result.total
+        ) {
+          const regionId = regionIdForCenter(loc, DEFAULT_RADIUS_KM);
+          try {
+            const fp = await prefetchRegionFootprints({
+              center: loc,
+              radiusKm: DEFAULT_RADIUS_KM,
+              crisisIds: opts.crisisIds,
+              regionId,
+              signal: ac.signal,
+            });
+            setFootprintNote(fp);
+            const meta = await loadRegionMeta(regionId);
+            if (meta) {
+              await saveRegionMeta({
+                ...meta,
+                footprintsIncluded: !fp.skipped,
+                footprintCount: fp.featureCount,
+              });
+            }
+          } catch (e) {
+            if (ac.signal.aborted) {
+              return result;
+            }
+            setFootprintNote({ featureCount: 0, skipped: true, reason: 'fetch_failed' });
+          }
+        }
+
         await refresh(loc);
         await refreshRegions();
         return result;

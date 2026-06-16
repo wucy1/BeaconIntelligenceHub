@@ -89,7 +89,6 @@ export async function loadFootprintsForBbox(bbox: string): Promise<GeoJSON.Featu
   const seen = new Set<string>();
   const features: GeoJSON.Feature[] = [];
   for (const bundle of bundles) {
-    if (bundle.regionId.startsWith('viewport:')) continue;
     if (!bboxesOverlap(box, bundle.bbox)) continue;
     for (const f of bundle.collection.features) {
       const bid = (f.properties?.building_id as string) ?? '';
