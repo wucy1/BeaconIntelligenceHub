@@ -59,6 +59,7 @@ function bindMarkerPopup(
 ) {
   const popup = L.popup({ maxWidth: 280 }).setContent(popupHtml(m, labels));
   layer.bindPopup(popup);
+  layer.off('popupopen');
   layer.on('popupopen', () => {
     const el = document.querySelector(
       `.marker-popup-btn[data-report-id="${m.id}"]`,
@@ -82,6 +83,7 @@ export function ClusteredReportMarkers({
   const groupRef = useRef<L.MarkerClusterGroup | null>(null);
   const onViewRef = useRef(onViewDetails);
   const labelsRef = useRef(labels);
+  const popupOpenRef = useRef(false);
   onViewRef.current = onViewDetails;
   labelsRef.current = labels;
 
@@ -107,6 +109,7 @@ export function ClusteredReportMarkers({
     }
 
     const group = groupRef.current;
+    if (popupOpenRef.current) return;
     const showActions = mapMode === 'all' || mapMode === 'mine';
     const existingById = new Map<string, TaggedCircleMarker>();
     group.eachLayer((layer) => {
@@ -140,6 +143,11 @@ export function ClusteredReportMarkers({
             fillOpacity: 0.95,
           });
         }
+        if (showActions) {
+          bindMarkerPopup(existing, m, map, labelsRef.current, onViewRef.current);
+        } else {
+          existing.unbindPopup();
+        }
         continue;
       }
 
@@ -163,6 +171,21 @@ export function ClusteredReportMarkers({
       if (!nextIds.has(id)) group.removeLayer(layer);
     }
   }, [markers, showOthers, mapMode, map]);
+
+  useEffect(() => {
+    const onOpen = () => {
+      popupOpenRef.current = true;
+    };
+    const onClose = () => {
+      popupOpenRef.current = false;
+    };
+    map.on('popupopen', onOpen);
+    map.on('popupclose', onClose);
+    return () => {
+      map.off('popupopen', onOpen);
+      map.off('popupclose', onClose);
+    };
+  }, [map]);
 
   useEffect(() => {
     return () => {

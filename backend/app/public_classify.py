@@ -9,7 +9,7 @@ from shapely.geometry import shape
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.models import Crisis, ReportCrisisLink
+from app.models import Crisis
 from app.org_settings import effective_capture_window, get_org_settings
 
 logger = logging.getLogger(__name__)
@@ -174,21 +174,52 @@ def apply_auto_classification(
         )
     if not matched:
         return unspecified
-    existing = (
-        db.query(ReportCrisisLink)
-        .filter(
-            ReportCrisisLink.report_id == report_id,
-            ReportCrisisLink.crisis_id == matched.id,
-        )
-        .first()
-    )
-    if not existing:
-        db.add(
-            ReportCrisisLink(
-                report_id=report_id,
-                crisis_id=matched.id,
-                linked_by=None,
-                link_source="auto_classify",
+    exists = db.execute(
+        text(
+            """
+            SELECT 1
+            FROM report_crisis_links
+            WHERE report_id = CAST(:rid AS uuid)
+              AND crisis_id = CAST(:cid AS uuid)
+            """
+        ),
+        {"rid": str(report_id), "cid": str(matched.id)},
+    ).first()
+    if exists:
+        return unspecified
+    has_link_source = bool(
+        db.execute(
+            text(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'report_crisis_links'
+                  AND column_name = 'link_source'
+                """
             )
+        ).first()
+    )
+    if has_link_source:
+        db.execute(
+            text(
+                """
+                INSERT INTO report_crisis_links (report_id, crisis_id, linked_by, link_source)
+                VALUES (CAST(:rid AS uuid), CAST(:cid AS uuid), NULL, 'auto_classify')
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {"rid": str(report_id), "cid": str(matched.id)},
+        )
+    else:
+        db.execute(
+            text(
+                """
+                INSERT INTO report_crisis_links (report_id, crisis_id, linked_by)
+                VALUES (CAST(:rid AS uuid), CAST(:cid AS uuid), NULL)
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {"rid": str(report_id), "cid": str(matched.id)},
         )
     return unspecified
