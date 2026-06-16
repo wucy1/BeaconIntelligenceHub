@@ -52,7 +52,7 @@ import {
   findBuildingAtPoint,
   markersNearPoint,
 } from '../utils/buildingAtPoint';
-import { filterMarkersInBbox, markersFetchKey, normalizeBboxString } from '../utils/mapBbox';
+import { filterMarkersInBbox, markersFetchKey, normalizeBboxString, normalizeLng } from '../utils/mapBbox';
 
 const DEFAULT_CENTER: [number, number] = [20, 0];
 const DEFAULT_ZOOM = 14;
@@ -192,7 +192,7 @@ export function MapPage() {
     if (publicZones.length === 0) return null;
     const bounds = L.latLngBounds([]);
     for (const z of publicZones) {
-      z.geom.coordinates[0].forEach(([lng, lat]) => bounds.extend([lat, lng]));
+      z.geom.coordinates[0].forEach(([lng, lat]) => bounds.extend([lat, normalizeLng(lng)]));
     }
     return bounds.isValid() ? bounds : null;
   }, [publicZones]);

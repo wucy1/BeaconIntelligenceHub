@@ -1,14 +1,26 @@
+import { normalizeLng } from '../utils/mapBbox';
+
 export type LatLng = { lat: number; lng: number };
 
+/** Leaflet world-copy safe WGS84 polygon (lng in [-180, 180]). */
+export function normalizePolygonLng(geom: GeoJSON.Polygon): GeoJSON.Polygon {
+  return {
+    type: 'Polygon',
+    coordinates: geom.coordinates.map((ring) =>
+      ring.map(([lng, lat]) => [normalizeLng(lng), lat] as [number, number]),
+    ),
+  };
+}
+
 export function polygonToVertices(geom: GeoJSON.Polygon): LatLng[] {
-  const ring = geom.coordinates[0];
+  const ring = normalizePolygonLng(geom).coordinates[0];
   const verts = ring.slice(0, -1).map(([lng, lat]) => ({ lat, lng }));
   return verts;
 }
 
 export function verticesToPolygon(vertices: LatLng[]): GeoJSON.Polygon | null {
   if (vertices.length < 3) return null;
-  const ring = vertices.map((v) => [v.lng, v.lat] as [number, number]);
+  const ring = vertices.map((v) => [normalizeLng(v.lng), v.lat] as [number, number]);
   ring.push(ring[0]);
   return { type: 'Polygon', coordinates: [ring] };
 }

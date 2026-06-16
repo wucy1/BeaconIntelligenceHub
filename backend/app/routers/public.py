@@ -11,6 +11,7 @@ from app.image_urls import thumb_url_for_report
 from app.org_settings import effective_capture_window, get_org_settings
 from app.models import Crisis, Report, ReportImage, Zone
 from app.duplicate import find_possible_duplicate
+from app.geo_normalize import normalize_polygon_geojson
 from app.public_classify import get_unspecified_crisis
 from app.public_reports_query import (
     report_ids_active_crisis_in_bbox,
@@ -113,7 +114,7 @@ def public_zones(
                     {"id": z.id},
                 ).scalar_one()
                 item = _zone_item(z, crisis, idx)
-                item["geom"] = gj
+                item["geom"] = normalize_polygon_geojson(gj)
                 items.append(item)
         return {"items": items, "scope": scope, "crisis_id": None}
     if crisis_id is None:
@@ -131,7 +132,7 @@ def public_zones(
             {"id": z.id},
         ).scalar_one()
         item = _zone_item(z, crisis, 0)
-        item["geom"] = gj
+        item["geom"] = normalize_polygon_geojson(gj)
         items.append(item)
     return {"items": items, "scope": scope, "crisis_id": str(crisis_id)}
 

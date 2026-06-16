@@ -62,12 +62,14 @@ import { useI18n } from '../i18n/I18nContext';
 import {
   formatArea,
   fromDatetimeLocalValue,
+  normalizePolygonLng,
   polygonAreaKm2,
   polygonToVertices,
   verticesToPolygon,
   type LatLng,
 } from '../ops/polygonUtils';
 import { reportMapLatLng } from '../ops/reportMapPoint';
+import { normalizeLng } from '../utils/mapBbox';
 
 L.Icon.Default.mergeOptions({ iconRetinaUrl: iconRetina, iconUrl, shadowUrl: iconShadow });
 
@@ -83,12 +85,16 @@ function readSavedOpsMapView(): { lat: number; lng: number; zoom: number } | nul
     if (typeof parsed.lat !== 'number' || typeof parsed.lng !== 'number') return null;
     return {
       lat: parsed.lat,
-      lng: parsed.lng,
+      lng: normalizeLng(parsed.lng),
       zoom: typeof parsed.zoom === 'number' ? parsed.zoom : DEFAULT_ZOOM,
     };
   } catch {
     return null;
   }
+}
+
+function normalizeOpsZone(zone: OpsZone): OpsZone {
+  return { ...zone, geom: normalizePolygonLng(zone.geom) };
 }
 
 const DAMAGE_COLOR: Record<string, string> = {
@@ -128,12 +134,16 @@ function formatIsoTime(value: string | null | undefined, locale: string): string
 type MapMode = 'browse' | 'draw' | 'edit';
 type PanelKey = 'zone' | 'crisis' | 'audit' | null;
 
+function extendZoneBounds(bounds: L.LatLngBounds, geom: GeoJSON.Polygon) {
+  normalizePolygonLng(geom).coordinates[0].forEach(([lng, lat]) => bounds.extend([lat, lng]));
+}
+
 function FlyToZone({ zone }: { zone: OpsZone | null }) {
   const map = useMap();
   useEffect(() => {
     if (!zone) return;
     const bounds = L.latLngBounds([]);
-    zone.geom.coordinates[0].forEach(([lng, lat]) => bounds.extend([lat, lng]));
+    extendZoneBounds(bounds, zone.geom);
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
   }, [map, zone]);
   return null;
@@ -148,16 +158,18 @@ function FlyToPoint({ point }: { point: [number, number] | null }) {
   return null;
 }
 
-function FitVisibleZones({ zones, tick }: { zones: OpsZone[]; tick: number }) {
+function FitVisibleZones({ zones, reports, tick }: { zones: OpsZone[]; reports: OpsReport[]; tick: number }) {
   const map = useMap();
   useEffect(() => {
     if (!tick || zones.length === 0) return;
     const bounds = L.latLngBounds([]);
-    for (const z of zones) {
-      z.geom.coordinates[0].forEach(([lng, lat]) => bounds.extend([lat, lng]));
+    for (const z of zones) extendZoneBounds(bounds, z.geom);
+    for (const r of reports) {
+      const latlng = reportMapLatLng(r);
+      if (latlng) bounds.extend(latlng);
     }
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
-  }, [map, zones, tick]);
+  }, [map, zones, reports, tick]);
   return null;
 }
 
@@ -174,16 +186,22 @@ function FitOpsMapContent({
 }) {
   const map = useMap();
   const lastFitKeyRef = useRef<string | null>(null);
+  const crisisChangedRef = useRef(false);
 
   useEffect(() => {
-    if (skip || !crisisId) return;
+    crisisChangedRef.current = true;
+    lastFitKeyRef.current = null;
+  }, [crisisId]);
+
+  useEffect(() => {
+    if (!crisisId) return;
     const pinCount = reports.reduce((n, r) => (reportMapLatLng(r) ? n + 1 : n), 0);
+    const allowSkip = skip && !crisisChangedRef.current && pinCount === 0;
+    if (allowSkip) return;
     const fitKey = `${crisisId}:${zones.length}:${pinCount}`;
     if (lastFitKeyRef.current === fitKey) return;
     const bounds = L.latLngBounds([]);
-    for (const z of zones) {
-      z.geom.coordinates[0].forEach(([lng, lat]) => bounds.extend([lat, lng]));
-    }
+    for (const z of zones) extendZoneBounds(bounds, z.geom);
     for (const r of reports) {
       const latlng = reportMapLatLng(r);
       if (latlng) bounds.extend(latlng);
@@ -191,11 +209,8 @@ function FitOpsMapContent({
     if (!bounds.isValid()) return;
     map.fitBounds(bounds, { padding: [48, 48], maxZoom: 15 });
     lastFitKeyRef.current = fitKey;
+    crisisChangedRef.current = false;
   }, [map, reports, zones, crisisId, skip]);
-
-  useEffect(() => {
-    lastFitKeyRef.current = null;
-  }, [crisisId]);
 
   return null;
 }
@@ -327,7 +342,7 @@ export function OpsMapPage() {
   const opsMapZoom = savedOpsMapView?.zoom ?? DEFAULT_ZOOM;
 
   const onOpsMapViewChange = useCallback((view: { lat: number; lng: number; zoom: number }) => {
-    setViewCenter({ lat: view.lat, lng: view.lng });
+    setViewCenter({ lat: view.lat, lng: normalizeLng(view.lng) });
     setViewZoom(view.zoom);
   }, []);
 
@@ -398,7 +413,7 @@ export function OpsMapPage() {
     const q = activeCrisisId ? `?crisis_id=${activeCrisisId}` : '';
     try {
       const d = await opsGet<{ items: OpsZone[] }>(`/v1/ops/zones${q}`);
-      setZones(d.items);
+      setZones(d.items.map(normalizeOpsZone));
     } catch {
       setZones([]);
     }
@@ -1062,7 +1077,7 @@ export function OpsMapPage() {
         />
         <FlyToZone zone={flyZone} />
         <FlyToPoint point={flyPoint} />
-        <FitVisibleZones zones={zonesToFit} tick={zoneFitTick} />
+        <FitVisibleZones zones={zonesToFit} reports={reports} tick={zoneFitTick} />
         {isEditingShape && (mapMode === 'draw' ? canCreateZones : editingZoneId != null) && (
           <OpsPolygonEditor
             vertices={vertices}
@@ -1083,7 +1098,7 @@ export function OpsMapPage() {
           const feature: GeoJSON.Feature<GeoJSON.Polygon> = {
             type: 'Feature',
             properties: { name: z.name },
-            geometry: z.geom,
+            geometry: normalizePolygonLng(z.geom),
           };
           const selected = z.id === selectedZoneId;
           return (

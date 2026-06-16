@@ -2,6 +2,8 @@ import L from 'leaflet';
 import { useEffect, useMemo, useRef } from 'react';
 import { useMap } from 'react-leaflet';
 
+import { normalizePolygonLng } from '../../ops/polygonUtils';
+
 const ZONE_STYLE: L.PathOptions = {
   color: '#475569',
   weight: 1.5,
@@ -38,7 +40,7 @@ export function CrisisZonesLayer({ zones }: Props) {
       features: zones.map((z) => ({
         type: 'Feature',
         properties: { name: z.name, zoneId: z.id, color: z.color },
-        geometry: z.geom,
+        geometry: normalizePolygonLng(z.geom),
       })),
     };
 

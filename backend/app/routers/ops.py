@@ -56,6 +56,7 @@ from app.ops_auth import (
     require_system_admin,
     verify_password,
 )
+from app.geo_normalize import normalize_polygon_geojson
 from app.schemas import OpsReportSummary
 from app.validation import site_status_from_appendix
 from app.zone_scope import principal_can_access_report, resolve_zone_filter_ids
@@ -175,7 +176,10 @@ class ZoneAssignBody(BaseModel):
 
 
 def _polygon_from_geojson(geojson: dict[str, Any]):
-    g = shape(geojson)
+    normalized = normalize_polygon_geojson(geojson)
+    if not normalized:
+        raise HTTPException(status_code=422, detail="geom must be a GeoJSON Polygon")
+    g = shape(normalized)
     if g.geom_type != "Polygon":
         raise HTTPException(status_code=422, detail="geom must be a GeoJSON Polygon")
     return from_shape(g, srid=4326)
@@ -209,7 +213,7 @@ def _zone_out(db: Session, zone: Zone) -> dict:
         "name": zone.name,
         "description": zone.description,
         "parent_zone_id": str(zone.parent_zone_id) if zone.parent_zone_id else None,
-        "geom": gj,
+        "geom": normalize_polygon_geojson(gj),
         "created_at": zone.created_at.isoformat() if zone.created_at else None,
         "updated_at": zone.updated_at.isoformat() if zone.updated_at else None,
     }

@@ -4,6 +4,7 @@ import { CircleMarker, Marker, Polygon, Polyline, useMapEvents } from 'react-lea
 
 import { edgeMidpoints, nearestEdgeInsert } from '../../ops/polygonEditUtils';
 import type { LatLng } from '../../ops/polygonUtils';
+import { normalizeLng } from '../../utils/mapBbox';
 
 const VERTEX_ICON = L.divIcon({
   className: 'ops-vertex-handle',
@@ -42,7 +43,10 @@ function MapVertexHandler({
   useMapEvents({
     click(e) {
       if (allowMapAdd) {
-        onVerticesChange([...vertices, { lat: e.latlng.lat, lng: e.latlng.lng }]);
+        onVerticesChange([
+          ...vertices,
+          { lat: e.latlng.lat, lng: normalizeLng(e.latlng.lng) },
+        ]);
         onSelectVertex(vertices.length);
         return;
       }
@@ -82,7 +86,7 @@ function DraggableVertex({
       eventHandlers={{
         dragend: (ev) => {
           const ll = ev.target.getLatLng();
-          onMove(index, { lat: ll.lat, lng: ll.lng });
+          onMove(index, { lat: ll.lat, lng: normalizeLng(ll.lng) });
         },
         click: (ev) => {
           L.DomEvent.stopPropagation(ev);
