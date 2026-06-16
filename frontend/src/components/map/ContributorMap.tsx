@@ -29,6 +29,7 @@ import { CrisisZonesLayer } from './CrisisZonesLayer';
 import { ClusteredReportMarkers } from './ClusteredReportMarkers';
 import { MapRailZoom } from './MapRailZoom';
 import { DownloadPreviewLayer } from './DownloadPreviewLayer';
+import { MapLayerPanes } from './MapLayerPanes';
 import { OfflineRegionLayers } from './OfflineRegionLayers';
 import type { MapRegionMeta } from '../../offline/tileCache';
 import { PREFETCH_ZOOM_MAX, PREFETCH_ZOOM_MIN } from '../../offline/tileMath';
@@ -430,6 +431,7 @@ export function ContributorMap({
 
   const buildingStyle = useMemo(
     () => ({
+      pane: 'buildings',
       color: '#1155cc',
       weight: 2,
       fillColor: '#3388ff',
@@ -440,16 +442,18 @@ export function ContributorMap({
 
   const onEachBuilding = (feature: GeoJSON.Feature, layer: L.Layer) => {
     const id = (feature.properties?.building_id as string) ?? null;
+    const path = layer as L.Path;
+    path.options.pane = 'buildings';
+    path.bringToFront();
     layer.off('click');
     layer.on({
       click: (e) => {
         if (!id) return;
+        L.DomEvent.stopPropagation(e);
         if (mapModeRef.current === 'new') {
-          L.DomEvent.stopPropagation(e);
           onBuildingSelectRef.current(id);
           return;
         }
-        L.DomEvent.stopPropagation(e);
         const cen = centroidOfFeature(feature);
         if (!cen) return;
         setBuildingPopup({
@@ -487,6 +491,7 @@ export function ContributorMap({
         <OsmTileLayer />
       )}
       <MapRailZoom />
+      <MapLayerPanes />
       {downloadPreview && (
         <DownloadPreviewLayer
           center={downloadPreview.center}
@@ -501,6 +506,7 @@ export function ContributorMap({
           activeRegionId={activeSavedRegionId}
           onSelect={onSavedRegionSelect}
           interactive={mapMode !== 'new'}
+          online={online}
         />
       )}
       <BboxWatcher onBboxChange={onBboxChange} />

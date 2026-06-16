@@ -11,6 +11,8 @@ type Props = {
   onSelect?: (regionId: string) => void;
   /** 新增回報放釘時停用，避免點擊觸發區域置中 */
   interactive?: boolean;
+  /** 連線時僅顯示已下載範圍，不攔截建物 footprint 點擊 */
+  online?: boolean;
 };
 
 function boundsForRegion(r: MapRegionMeta): L.LatLngBounds {
@@ -23,7 +25,9 @@ export function OfflineRegionLayers({
   activeRegionId,
   onSelect,
   interactive = true,
+  online = true,
 }: Props) {
+  const regionInteractive = interactive && !online;
   const map = useMap();
   const groupRef = useRef<L.LayerGroup | null>(null);
   const onSelectRef = useRef(onSelect);
@@ -47,17 +51,21 @@ export function OfflineRegionLayers({
     for (const r of regions) {
       const active = r.id === activeRegionId;
       const rect = L.rectangle(boundsForRegion(r), {
+        pane: 'offline-regions',
         stroke: false,
         fillColor: active ? '#2563eb' : '#3b82f6',
         fillOpacity: active ? 0.28 : 0.18,
-        interactive,
+        interactive: regionInteractive,
       });
-      if (interactive) {
-        rect.on('click', () => onSelectRef.current?.(r.id));
+      if (regionInteractive) {
+        rect.on('click', (ev) => {
+          L.DomEvent.stopPropagation(ev);
+          onSelectRef.current?.(r.id);
+        });
       }
       group.addLayer(rect);
     }
-  }, [regions, activeRegionId, interactive]);
+  }, [regions, activeRegionId, regionInteractive]);
 
   return null;
 }
