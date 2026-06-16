@@ -122,18 +122,51 @@ export function buildDashboardHref(p: OpsBrowseParams): string {
   return s ? `/dashboard?${s}` : '/dashboard';
 }
 
+/** Same semantics as backend org_settings.effective_capture_window. */
+export function effectiveEventCaptureWindow(
+  defaultOpsMonths: number,
+  eventStartIso: string | null | undefined,
+  eventEndIso: string | null | undefined,
+  now: Date = new Date(),
+): { captured_from: string; captured_to: string } {
+  const captureEnd = new Date(now);
+  const captureStart = new Date(captureEnd);
+  captureStart.setMonth(captureStart.getMonth() - defaultOpsMonths);
+
+  if (eventStartIso) {
+    const eventStart = new Date(eventStartIso);
+    if (!Number.isNaN(eventStart.getTime()) && eventStart <= captureEnd && eventStart > captureStart) {
+      captureStart.setTime(eventStart.getTime());
+    }
+  }
+
+  if (eventEndIso) {
+    const eventEnd = new Date(eventEndIso);
+    if (!Number.isNaN(eventEnd.getTime()) && eventEnd < captureEnd) {
+      captureEnd.setTime(eventEnd.getTime());
+    }
+  }
+
+  return {
+    captured_from: captureStart.toISOString(),
+    captured_to: captureEnd.toISOString(),
+  };
+}
+
 export function captureRangeForOpsMap(
   shellMode: 'work' | 'view',
   crisis: OpsCrisis | null | undefined,
   browseFrom: string,
   browseTo: string,
+  defaultOpsMonths: number,
 ): { captured_from: string | null; captured_to: string | null } {
   if (shellMode === 'work') {
     if (crisis?.archive_window_start) {
-      return {
-        captured_from: crisis.archive_window_start,
-        captured_to: crisis.archive_window_end,
-      };
+      return effectiveEventCaptureWindow(
+        defaultOpsMonths,
+        crisis.archive_window_start,
+        crisis.archive_window_end,
+      );
     }
     return browseRangeToApi(browseFrom, browseTo);
   }

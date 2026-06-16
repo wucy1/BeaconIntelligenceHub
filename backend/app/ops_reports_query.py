@@ -45,8 +45,8 @@ _ZONE_SCOPE = """
   )
 """
 
-_CRISIS_ZONE_SCOPE = """
-  AND (
+_CRISIS_ZONE_INTERSECT = """
+  (
     EXISTS (
       SELECT 1 FROM zones z
       WHERE z.id = ANY(CAST(:zone_ids AS uuid[]))
@@ -60,12 +60,11 @@ _CRISIS_ZONE_SCOPE = """
         AND b2.geom IS NOT NULL
         AND ST_Intersects(b2.geom, z.geom)
     )
-    OR EXISTS (
-      SELECT 1 FROM buildings b2
-      WHERE b2.id = r.building_id
-        AND b2.crisis_id = CAST(:cid AS uuid)
-    )
   )
+"""
+
+_CRISIS_ZONE_SCOPE = f"""
+  AND {_CRISIS_ZONE_INTERSECT.strip()}
 """
 
 
@@ -166,11 +165,6 @@ def report_ids_for_crisis_scoped(
                 (r.geom IS NOT NULL AND ST_Intersects(r.geom, z.geom))
                 OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
               )
-          )
-          OR EXISTS (
-            SELECT 1 FROM buildings b2
-            WHERE b2.id = r.building_id
-              AND b2.crisis_id = CAST(:cid AS uuid)
           )
         )
     """
@@ -285,11 +279,6 @@ def _crisis_query_zone_clause(
                 OR (b.geom IS NOT NULL AND ST_Intersects(b.geom, z.geom))
               )
           )
-          OR EXISTS (
-            SELECT 1 FROM buildings b2
-            WHERE b2.id = r.building_id
-              AND b2.crisis_id = CAST(:cid AS uuid)
-          )
         )
     """, {}
 
@@ -304,15 +293,30 @@ def report_ids_crisis_query_scope(
     *,
     geom_snapshots: list[dict[str, Any]] | None = None,
 ) -> list[UUID]:
-    """All reports in browse time + zone for this crisis (query layer; ignores archive links)."""
+    """Reports in browse time + crisis zone slice, plus any already linked to this crisis."""
     time_clause, params = _time_reviewed_clause(captured_from, captured_to, None)
     params["cid"] = str(crisis_id)
-    zone_clause, zone_params = _crisis_query_zone_clause(crisis_id, zone_ids, geom_snapshots)
+    resolved_zone_ids = _crisis_zone_ids(db, crisis_id, zone_ids)
+    zone_clause, zone_params = _crisis_query_zone_clause(crisis_id, resolved_zone_ids, geom_snapshots)
     params.update(zone_params)
+    spatial = zone_clause.strip()
+    if spatial.upper().startswith("AND"):
+        spatial = spatial[3:].strip()
+    linked_clause = """
+      EXISTS (
+        SELECT 1 FROM report_crisis_links l
+        WHERE l.report_id = r.id AND l.crisis_id = CAST(:cid AS uuid)
+      )
+    """
+    if spatial:
+        scope_clause = f"(({spatial}) OR ({linked_clause.strip()}))"
+    else:
+        scope_clause = linked_clause
     sql = f"""
         SELECT r.id FROM reports r
         LEFT JOIN buildings b ON b.id = r.building_id
-        WHERE TRUE {time_clause} {zone_clause}
+        WHERE TRUE {time_clause}
+        AND ({scope_clause})
         ORDER BY r.captured_at_client DESC
         LIMIT :lim
     """

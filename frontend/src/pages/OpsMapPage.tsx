@@ -173,11 +173,13 @@ function FitOpsMapContent({
   skip: boolean;
 }) {
   const map = useMap();
-  const lastCrisisRef = useRef<string | null>(null);
+  const lastFitKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (skip || !crisisId) return;
-    if (lastCrisisRef.current === crisisId) return;
+    const pinCount = reports.reduce((n, r) => (reportMapLatLng(r) ? n + 1 : n), 0);
+    const fitKey = `${crisisId}:${zones.length}:${pinCount}`;
+    if (lastFitKeyRef.current === fitKey) return;
     const bounds = L.latLngBounds([]);
     for (const z of zones) {
       z.geom.coordinates[0].forEach(([lng, lat]) => bounds.extend([lat, lng]));
@@ -188,11 +190,11 @@ function FitOpsMapContent({
     }
     if (!bounds.isValid()) return;
     map.fitBounds(bounds, { padding: [48, 48], maxZoom: 15 });
-    lastCrisisRef.current = crisisId;
+    lastFitKeyRef.current = fitKey;
   }, [map, reports, zones, crisisId, skip]);
 
   useEffect(() => {
-    lastCrisisRef.current = null;
+    lastFitKeyRef.current = null;
   }, [crisisId]);
 
   return null;
@@ -456,6 +458,7 @@ export function OpsMapPage() {
       activeCrisis,
       browseFrom,
       browseTo,
+      defaultOpsMonths,
     );
     if (from) q.set('captured_from', from);
     if (to) q.set('captured_to', to);
@@ -477,7 +480,7 @@ export function OpsMapPage() {
         setCrisisCandidateCount(0);
         setCrisisOtherLinkedCount(0);
       });
-  }, [shellMode, selectedZoneId, browseFrom, browseTo, effectiveReportView, activeCrisisId, activeCrisis]);
+  }, [shellMode, selectedZoneId, browseFrom, browseTo, effectiveReportView, activeCrisisId, activeCrisis, defaultOpsMonths]);
 
   useEffect(() => {
     apiGet<{ default_ops_view_months?: number }>('/v1/public/settings')
@@ -1215,61 +1218,65 @@ export function OpsMapPage() {
       <div className="ops-map-bottom-chrome">
         {shellMode === 'work' && (
           <div className="ops-map-work-bar ops-map-panel-compact">
-            {manageableCrises.length > 0 ? (
-              <label className="ops-map-chip ops-map-crisis-select ops-map-view-field ops-map-work-crisis">
-                <span className="ops-map-view-label">{t('ops.map.workCrisis')}</span>
-                <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
-                  {manageableCrises.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {crisisName(c.name, c.slug)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <span className="ops-map-chip muted ops-map-view-field">{t('ops.map.noCrisis')}</span>
-            )}
-            <span className="ops-map-chip ops-map-work-window ops-map-view-field">
-              <span className="ops-map-view-label">{t('ops.map.workOfficialWindow')}</span>
-              <span className="ops-map-work-window-value">
-                {archiveNeedsOfficialStart
-                  ? t('ops.map.workOfficialWindowUnset')
-                  : t('ops.map.archiveWindowRange', {
-                      from: formatPanelTime(officialRange.archiveFrom, locale),
-                      to: formatPanelTime(officialRange.archiveTo, locale),
-                    })}
-              </span>
-            </span>
-            <div ref={workHelpRef} className="ops-map-chip ops-map-report-count-wrap ops-map-work-stats">
-              <OpsMapReportCount
-                reportView="all"
-                activeCrisisId={activeCrisisId}
-                total={reports.length}
-                linked={crisisLinkedCount}
-                other={crisisOtherLinkedCount}
-                candidate={crisisCandidateCount}
-              />
-              <button
-                type="button"
-                className="ops-map-help-btn"
-                aria-expanded={workHelpOpen}
-                aria-label={t('ops.map.workHelp.button')}
-                onClick={() => setWorkHelpOpen((v) => !v)}
-              >
-                ?
-              </button>
-              {workHelpOpen && (
-                <OpsMapHelpPopover
-                  open={workHelpOpen}
-                  anchorRef={workHelpRef}
-                  onClose={() => setWorkHelpOpen(false)}
-                  titleId="ops-map-work-help-title"
-                  title={t('ops.map.workHelp.title')}
-                >
-                  <p className="ops-map-help-summary">{t('ops.map.workBarHint')}</p>
-                  <p>{t('ops.map.workHelp.body')}</p>
-                </OpsMapHelpPopover>
+            <div className="ops-map-work-bar-row">
+              {manageableCrises.length > 0 ? (
+                <label className="ops-map-chip ops-map-crisis-select ops-map-view-field ops-map-work-crisis">
+                  <span className="ops-map-view-label">{t('ops.map.workCrisis')}</span>
+                  <select value={activeCrisisId} onChange={(e) => setActiveCrisisId(e.target.value)}>
+                    {manageableCrises.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {crisisName(c.name, c.slug)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <span className="ops-map-chip muted ops-map-view-field ops-map-work-crisis">{t('ops.map.noCrisis')}</span>
               )}
+            </div>
+            <div className="ops-map-work-bar-row ops-map-work-bar-row-split">
+              <span className="ops-map-chip ops-map-work-window ops-map-view-field">
+                <span className="ops-map-view-label">{t('ops.map.workOfficialWindow')}</span>
+                {archiveNeedsOfficialStart ? (
+                  <span className="ops-map-work-window-value">{t('ops.map.workOfficialWindowUnset')}</span>
+                ) : (
+                  <span className="ops-map-work-window-range">
+                    <span>{formatPanelTime(officialRange.archiveFrom, locale)}</span>
+                    <span>{formatPanelTime(officialRange.archiveTo, locale)}</span>
+                  </span>
+                )}
+              </span>
+              <div ref={workHelpRef} className="ops-map-chip ops-map-report-count-wrap ops-map-work-stats">
+                <OpsMapReportCount
+                  reportView="all"
+                  activeCrisisId={activeCrisisId}
+                  total={reports.length}
+                  linked={crisisLinkedCount}
+                  other={crisisOtherLinkedCount}
+                  candidate={crisisCandidateCount}
+                />
+                <button
+                  type="button"
+                  className="ops-map-help-btn"
+                  aria-expanded={workHelpOpen}
+                  aria-label={t('ops.map.workHelp.button')}
+                  onClick={() => setWorkHelpOpen((v) => !v)}
+                >
+                  ?
+                </button>
+                {workHelpOpen && (
+                  <OpsMapHelpPopover
+                    open={workHelpOpen}
+                    anchorRef={workHelpRef}
+                    onClose={() => setWorkHelpOpen(false)}
+                    titleId="ops-map-work-help-title"
+                    title={t('ops.map.workHelp.title')}
+                  >
+                    <p className="ops-map-help-summary">{t('ops.map.workBarHint')}</p>
+                    <p>{t('ops.map.workHelp.body')}</p>
+                  </OpsMapHelpPopover>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -1293,7 +1300,6 @@ export function OpsMapPage() {
                 </button>
               )}
             </div>
-            <p className="ops-map-browse-slice-hint muted">{t('ops.map.browseSliceHint')}</p>
             <div className="ops-map-view-panel ops-map-panel-compact">
             <div className="ops-map-view-row">
               <label className="ops-map-chip ops-map-view-field">
@@ -1393,6 +1399,7 @@ export function OpsMapPage() {
                   >
                     <p className="ops-map-help-summary">{t(`ops.map.viewHint.${reportView}`)}</p>
                     <p>{t(`ops.map.viewHelp.${reportView}`)}</p>
+                    <p className="muted ops-map-help-foot">{t('ops.map.browseSliceHint')}</p>
                   </OpsMapHelpPopover>
                 )}
               </div>
