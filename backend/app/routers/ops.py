@@ -422,7 +422,15 @@ def _report_geom_json(db: Session, report_id: UUID, building_id: UUID | None):
         return gj
     if building_id:
         return db.execute(
-            text("SELECT ST_AsGeoJSON(ST_Centroid(geom))::json FROM buildings WHERE id = :bid"),
+            text(
+                """
+                SELECT ST_AsGeoJSON(
+                  COALESCE(ST_PointOnSurface(geom), ST_Centroid(geom))
+                )::json
+                FROM buildings
+                WHERE id = :bid AND geom IS NOT NULL
+                """
+            ),
             {"bid": building_id},
         ).scalar_one_or_none()
     return None

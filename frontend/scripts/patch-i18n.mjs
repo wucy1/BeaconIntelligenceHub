@@ -147,6 +147,10 @@ const t = {
     'ops.buildings.centralHubTitle': '总部统一建筑物轮廓（建置中）',
     'ops.buildings.centralHubUnderConstruction':
       '此功能建置中：日后由总部团队统一维护各危机建筑物 footprint，危机 lead 仅需挂载至地图，无需各自上传 GeoJSON。下方示范导入与文件上传仍供测试使用。',
+    'ops.map.workOfficialWindow': '官方时间窗',
+    'ops.map.workOfficialWindowUnset': '尚未设定 — 归档前请先设定',
+    'ops.map.browseSliceHint': '检视模式使用下方查询时间与筛选，不会改变工作模式的归档范围。',
+    'ops.map.archiveBrowseDiffersHint': '网址上的检视时间与下方官方归档时间窗不同。归档预览仅使用官方时间窗。',
   },
 };
 

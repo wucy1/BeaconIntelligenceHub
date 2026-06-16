@@ -51,6 +51,7 @@ import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { OpsUserMenu } from '../components/OpsUserMenu';
 import { applyOpsProfileLocaleIfSet } from '../ops/applyOpsLocale';
 import { OsmTileLayer } from '../components/map/CachedOsmTileLayer';
+import { MapViewWatcher } from '../components/map/MapViewWatcher';
 import { OpsDatetimeField } from '../components/ops/OpsDatetimeField';
 import { OpsMapClearSelection } from '../components/ops/OpsMapClearSelection';
 import { OpsMapHelpPopover } from '../components/ops/OpsMapHelpPopover';
@@ -66,11 +67,29 @@ import {
   verticesToPolygon,
   type LatLng,
 } from '../ops/polygonUtils';
+import { reportMapLatLng } from '../ops/reportMapPoint';
 
 L.Icon.Default.mergeOptions({ iconRetinaUrl: iconRetina, iconUrl, shadowUrl: iconShadow });
 
 const DEFAULT_CENTER: [number, number] = [25.03, 121.56];
 const DEFAULT_ZOOM = 11;
+const OPS_MAP_CENTER_STORAGE_KEY = 'bih-map-center:ops';
+
+function readSavedOpsMapView(): { lat: number; lng: number; zoom: number } | null {
+  try {
+    const raw = localStorage.getItem(OPS_MAP_CENTER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { lat?: number; lng?: number; zoom?: number };
+    if (typeof parsed.lat !== 'number' || typeof parsed.lng !== 'number') return null;
+    return {
+      lat: parsed.lat,
+      lng: parsed.lng,
+      zoom: typeof parsed.zoom === 'number' ? parsed.zoom : DEFAULT_ZOOM,
+    };
+  } catch {
+    return null;
+  }
+}
 
 const DAMAGE_COLOR: Record<string, string> = {
   minimal: '#16a34a',
@@ -139,6 +158,43 @@ function FitVisibleZones({ zones, tick }: { zones: OpsZone[]; tick: number }) {
     }
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
   }, [map, zones, tick]);
+  return null;
+}
+
+function FitOpsMapContent({
+  reports,
+  zones,
+  crisisId,
+  skip,
+}: {
+  reports: OpsReport[];
+  zones: OpsZone[];
+  crisisId: string;
+  skip: boolean;
+}) {
+  const map = useMap();
+  const lastCrisisRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (skip || !crisisId) return;
+    if (lastCrisisRef.current === crisisId) return;
+    const bounds = L.latLngBounds([]);
+    for (const z of zones) {
+      z.geom.coordinates[0].forEach(([lng, lat]) => bounds.extend([lat, lng]));
+    }
+    for (const r of reports) {
+      const latlng = reportMapLatLng(r);
+      if (latlng) bounds.extend(latlng);
+    }
+    if (!bounds.isValid()) return;
+    map.fitBounds(bounds, { padding: [48, 48], maxZoom: 15 });
+    lastCrisisRef.current = crisisId;
+  }, [map, reports, zones, crisisId, skip]);
+
+  useEffect(() => {
+    lastCrisisRef.current = null;
+  }, [crisisId]);
+
   return null;
 }
 
@@ -257,6 +313,33 @@ export function OpsMapPage() {
   const [zonesRevision, setZonesRevision] = useState(0);
   const [zoneFitTick, setZoneFitTick] = useState(0);
   const [defaultOpsMonths, setDefaultOpsMonths] = useState(2);
+  const savedOpsMapView = useMemo(() => readSavedOpsMapView(), []);
+  const [viewCenter, setViewCenter] = useState<{ lat: number; lng: number } | null>(
+    savedOpsMapView ? { lat: savedOpsMapView.lat, lng: savedOpsMapView.lng } : null,
+  );
+  const [viewZoom, setViewZoom] = useState<number | null>(savedOpsMapView?.zoom ?? null);
+  const opsMapCenter = useMemo((): [number, number] => {
+    if (savedOpsMapView) return [savedOpsMapView.lat, savedOpsMapView.lng];
+    return DEFAULT_CENTER;
+  }, [savedOpsMapView]);
+  const opsMapZoom = savedOpsMapView?.zoom ?? DEFAULT_ZOOM;
+
+  const onOpsMapViewChange = useCallback((view: { lat: number; lng: number; zoom: number }) => {
+    setViewCenter({ lat: view.lat, lng: view.lng });
+    setViewZoom(view.zoom);
+  }, []);
+
+  useEffect(() => {
+    if (!viewCenter || viewZoom == null) return;
+    try {
+      localStorage.setItem(
+        OPS_MAP_CENTER_STORAGE_KEY,
+        JSON.stringify({ lat: viewCenter.lat, lng: viewCenter.lng, zoom: viewZoom }),
+      );
+    } catch {
+      // ignore storage failures
+    }
+  }, [viewCenter, viewZoom]);
 
   const zonesToFit = useMemo(() => zones, [zones]);
 
@@ -944,22 +1027,36 @@ export function OpsMapPage() {
     setShellMode(next);
   };
 
+  const showArchiveLinkStyles =
+    shellMode === 'work' ||
+    (shellMode === 'view' && effectiveReportView === 'all' && Boolean(activeCrisisId));
+
   return (
     <div className={`map-page ops-map-page ops-shell-${shellMode}`}>
       <MapContainer
-        center={DEFAULT_CENTER}
-        zoom={DEFAULT_ZOOM}
+        center={opsMapCenter}
+        zoom={opsMapZoom}
         zoomControl={false}
         className="contributor-map"
         style={{ cursor: mapMode === 'draw' || mapMode === 'edit' ? 'crosshair' : undefined }}
       >
         <OsmTileLayer />
+        <MapViewWatcher onViewChange={onOpsMapViewChange} />
+        <FitOpsMapContent
+          reports={reports}
+          zones={zones}
+          crisisId={activeCrisisId}
+          skip={Boolean(savedOpsMapView)}
+        />
         <OpsMapRailControls
           zoneFitVisible={zones.length > 0}
           zoneFitTitle={t('map.crisis.showZones')}
           onZoneFit={() => setZoneFitTick((n) => n + 1)}
         />
-        <OpsMapClearSelection enabled={mapMode === 'browse' && Boolean(selectedZoneId)} onClear={clearZoneSelection} />
+        <OpsMapClearSelection
+          enabled={shellMode === 'view' && mapMode === 'browse' && Boolean(selectedZoneId)}
+          onClear={clearZoneSelection}
+        />
         <FlyToZone zone={flyZone} />
         <FlyToPoint point={flyPoint} />
         <FitVisibleZones zones={zonesToFit} tick={zoneFitTick} />
@@ -997,9 +1094,10 @@ export function OpsMapPage() {
               }}
               onEachFeature={(_f, layer) => {
                 const path = layer as L.Path;
-                path.options.interactive = mapMode === 'browse';
+                const zoneClickable = shellMode === 'view' && mapMode === 'browse';
+                path.options.interactive = zoneClickable;
                 layer.off('click');
-                if (mapMode !== 'browse') return;
+                if (!zoneClickable) return;
                 layer.on('click', (ev) => {
                   L.DomEvent.stopPropagation(ev);
                   setSelectedReportId(null);
@@ -1018,23 +1116,24 @@ export function OpsMapPage() {
         })}
 
         {reports.map((r) => {
-          if (!r.geom) return null;
-          const [lng, lat] = r.geom.coordinates;
-          const isCandidate = r.crisis_link_status === 'candidate';
-          const isOtherLinked = r.crisis_link_status === 'other_linked';
+          const latlng = reportMapLatLng(r);
+          if (!latlng) return null;
+          const [lat, lng] = latlng;
+          const isCandidate = showArchiveLinkStyles && r.crisis_link_status === 'candidate';
+          const isOtherLinked = showArchiveLinkStyles && r.crisis_link_status === 'other_linked';
           const baseColor = DAMAGE_COLOR[r.damage_level] ?? '#64748b';
-          const color = isCandidate ? '#7c3aed' : baseColor;
+          const strokeColor = isCandidate ? '#6d28d9' : isOtherLinked ? '#b45309' : baseColor;
           return (
             <CircleMarker
               key={r.id}
               center={[lat, lng]}
-              radius={selectedReportId === r.id ? 9 : isCandidate ? 5 : 6}
+              radius={selectedReportId === r.id ? 10 : isCandidate ? 7 : 6}
               pathOptions={{
-                color: selectedReportId === r.id ? '#0f172a' : isOtherLinked ? '#b45309' : color,
-                fillColor: isCandidate ? '#ede9fe' : baseColor,
-                fillOpacity: isCandidate ? 0.75 : 0.85,
-                weight: isCandidate || isOtherLinked ? 2.5 : 2,
-                dashArray: isCandidate ? '4 3' : isOtherLinked ? '2 2' : undefined,
+                color: selectedReportId === r.id ? '#0f172a' : strokeColor,
+                fillColor: baseColor,
+                fillOpacity: 0.92,
+                weight: isCandidate || isOtherLinked ? 3 : 2,
+                dashArray: isCandidate ? '5 4' : isOtherLinked ? '2 2' : undefined,
               }}
               eventHandlers={{
                 click: (e) => {
@@ -1130,6 +1229,17 @@ export function OpsMapPage() {
             ) : (
               <span className="ops-map-chip muted ops-map-view-field">{t('ops.map.noCrisis')}</span>
             )}
+            <span className="ops-map-chip ops-map-work-window ops-map-view-field">
+              <span className="ops-map-view-label">{t('ops.map.workOfficialWindow')}</span>
+              <span className="ops-map-work-window-value">
+                {archiveNeedsOfficialStart
+                  ? t('ops.map.workOfficialWindowUnset')
+                  : t('ops.map.archiveWindowRange', {
+                      from: formatPanelTime(officialRange.archiveFrom, locale),
+                      to: formatPanelTime(officialRange.archiveTo, locale),
+                    })}
+              </span>
+            </span>
             <div ref={workHelpRef} className="ops-map-chip ops-map-report-count-wrap ops-map-work-stats">
               <OpsMapReportCount
                 reportView="all"
@@ -1183,6 +1293,7 @@ export function OpsMapPage() {
                 </button>
               )}
             </div>
+            <p className="ops-map-browse-slice-hint muted">{t('ops.map.browseSliceHint')}</p>
             <div className="ops-map-view-panel ops-map-panel-compact">
             <div className="ops-map-view-row">
               <label className="ops-map-chip ops-map-view-field">
@@ -1410,7 +1521,7 @@ export function OpsMapPage() {
           )}
           {browseDiffersFromOfficial && (
             <p className="ops-archive-warn" role="status">
-              {t('ops.map.queryDiffersFromOfficial')}
+              {t('ops.map.archiveBrowseDiffersHint')}
             </p>
           )}
           {archiveNeedsOfficialStart && (

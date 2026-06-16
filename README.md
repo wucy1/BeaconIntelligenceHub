@@ -123,6 +123,7 @@ Do **not** use `--fill-english` for release builds; it only scaffolds missing ke
 | `docs/DEPLOYMENT.md` | Cloudflare, Neon, R2, env vars |
 | `docs/CRISIS_LIFECYCLE.md` | Draft → active → archived |
 | `docs/CLASSIFICATION_AND_ZONES.md` | Zones, archive links, auto-classify |
+| `docs/OPS_MAP_WORK_BROWSE.md` | Ops map Work vs Browse modes |
 | `docs/OFFLINE.md` | PWA offline map & sync |
 | `docs/ROADMAP_PROGRESS.md` | Phase status and next milestones |
 | `docs/tutorial.md` | Walkthrough |

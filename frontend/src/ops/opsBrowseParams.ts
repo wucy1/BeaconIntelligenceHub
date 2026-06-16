@@ -128,11 +128,14 @@ export function captureRangeForOpsMap(
   browseFrom: string,
   browseTo: string,
 ): { captured_from: string | null; captured_to: string | null } {
-  if (shellMode === 'work' && crisis?.archive_window_start) {
-    return {
-      captured_from: crisis.archive_window_start,
-      captured_to: crisis.archive_window_end,
-    };
+  if (shellMode === 'work') {
+    if (crisis?.archive_window_start) {
+      return {
+        captured_from: crisis.archive_window_start,
+        captured_to: crisis.archive_window_end,
+      };
+    }
+    return browseRangeToApi(browseFrom, browseTo);
   }
   return browseRangeToApi(browseFrom, browseTo);
 }
