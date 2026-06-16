@@ -69,6 +69,8 @@ type Placement = {
 type TopPanelKey = 'contribution' | 'offline' | 'legend' | null;
 
 const OFFLINE_INCLUDE_FOOTPRINTS_KEY = 'bih-offline-include-footprints';
+/** Refresh other users' map markers while online (same bbox, no pan). */
+const MARKERS_POLL_MS = 30_000;
 
 function emptyPlacement(): Placement {
   return { buildingId: null, buildingName: null, pin: null };
@@ -145,6 +147,7 @@ export function MapPage() {
   } | null>(null);
   const [locatePending, setLocatePending] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [markerPollTick, setMarkerPollTick] = useState(0);
   /** 每次開啟「新增」表單遞增，強制 ReportSheet 重掛載以免殘留編輯資料 */
   const [formSession, setFormSession] = useState(0);
   const [duplicateBanner, setDuplicateBanner] = useState(false);
@@ -524,6 +527,16 @@ export function MapPage() {
   }, [bbox, mapScope, footprintScopeKey, crisisIdsForFootprints, online, t]);
 
   useEffect(() => {
+    if (!online || !bbox || mapMode === 'new' || inspectOpen) return;
+    const id = window.setInterval(() => {
+      const fetchKey = markersFetchKey(mapScope, bbox, mapMode);
+      delete markersBboxCacheRef.current[fetchKey];
+      setMarkerPollTick((n) => n + 1);
+    }, MARKERS_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [online, bbox, mapMode, mapScope, inspectOpen]);
+
+  useEffect(() => {
     if (!online || !bbox || mapMode === 'new' || inspectOpen) {
       if (mapMode === 'new') {
         setMarkers([]);
@@ -593,7 +606,7 @@ export function MapPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [online, bbox, mapMode, mapScope, refreshKey, inspectOpen]);
+  }, [online, bbox, mapMode, mapScope, refreshKey, markerPollTick, inspectOpen]);
 
   const showOthers = mapMode === 'all';
 

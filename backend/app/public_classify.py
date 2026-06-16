@@ -72,50 +72,65 @@ def resolve_active_crisis_for_report(
     building_id: UUID | None,
     captured_at: datetime,
 ) -> Crisis | None:
-    """Match active crisis by report time window and zone intersection (newest crisis first)."""
+    """Match active crisis by time window and zone scope (newest crisis first).
+
+    Zone scope mirrors batch archive: report GPS point, building footprint, or
+    building crisis assignment when footprints exist; GPS-only when they do not.
+    """
     org = get_org_settings(db)
     report_geom = _report_geom(geom_geojson)
-
-    if report_geom is not None:
-        rows = db.execute(
-            text(
-                """
-                SELECT c.id, c.archive_window_start, c.archive_window_end
-                FROM crises c
-                WHERE c.archive_status = 'active' AND c.slug <> 'unspecified'
-                  AND EXISTS (
-                    SELECT 1 FROM zones z
-                    WHERE z.crisis_id = c.id AND ST_Intersects(:pt, z.geom)
-                  )
-                ORDER BY c.created_at DESC
-                """
-            ),
-            {"pt": report_geom},
-        ).fetchall()
-    elif building_id is not None:
-        rows = db.execute(
-            text(
-                """
-                SELECT c.id, c.archive_window_start, c.archive_window_end
-                FROM crises c
-                JOIN buildings b ON b.id = CAST(:bid AS uuid)
-                WHERE c.archive_status = 'active' AND c.slug <> 'unspecified'
-                  AND (
-                    b.crisis_id = c.id
-                    OR EXISTS (
-                      SELECT 1 FROM zones z
-                      WHERE z.crisis_id = c.id
-                        AND b.geom IS NOT NULL
-                        AND ST_Intersects(b.geom, z.geom)
-                    )
-                  )
-                ORDER BY c.created_at DESC
-                """
-            ),
-            {"bid": str(building_id)},
-        ).fetchall()
-    else:
+    if report_geom is None and building_id is None:
         return None
+
+    match_parts: list[str] = []
+    params: dict = {}
+    if report_geom is not None:
+        params["pt"] = report_geom
+        match_parts.append(
+            """
+            EXISTS (
+              SELECT 1 FROM zones z
+              WHERE z.crisis_id = c.id
+                AND ST_Intersects(:pt, z.geom)
+            )
+            """
+        )
+    if building_id is not None:
+        params["bid"] = str(building_id)
+        match_parts.append(
+            """
+            EXISTS (
+              SELECT 1 FROM zones z
+              JOIN buildings b ON b.id = CAST(:bid AS uuid)
+              WHERE z.crisis_id = c.id
+                AND b.geom IS NOT NULL
+                AND ST_Intersects(b.geom, z.geom)
+            )
+            """
+        )
+        match_parts.append(
+            """
+            EXISTS (
+              SELECT 1 FROM buildings b
+              WHERE b.id = CAST(:bid AS uuid)
+                AND b.crisis_id = c.id
+            )
+            """
+        )
+
+    scope_sql = " OR ".join(match_parts)
+    rows = db.execute(
+        text(
+            f"""
+            SELECT c.id, c.archive_window_start, c.archive_window_end
+            FROM crises c
+            WHERE c.archive_status = 'active' AND c.slug <> 'unspecified'
+              AND ({scope_sql})
+            ORDER BY c.created_at DESC
+            """
+        ),
+        params,
+    ).fetchall()
 
     for row in rows:
         if not _capture_in_crisis_window(

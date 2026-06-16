@@ -631,6 +631,10 @@ export function OpsDashboard() {
               </Link>
             </p>
           )}
+          <section className="ops-buildings-section ops-buildings-section--future ops-ai-section">
+            <h3>{t('ops.ai.sectionTitle')}</h3>
+            <p className="ops-under-construction">{t('ops.ai.underConstruction')}</p>
+          </section>
         </section>
       )}
 

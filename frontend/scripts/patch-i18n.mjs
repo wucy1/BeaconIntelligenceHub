@@ -161,6 +161,23 @@ for (const locale of Object.keys(t)) {
   console.log('updated', locale);
 }
 
+for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json') && x !== 'en.json')) {
+  const file = path.join(dir, f);
+  const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+  let filled = 0;
+  for (const k of Object.keys(en)) {
+    if (!(k in j)) {
+      j[k] = en[k];
+      filled += 1;
+    }
+  }
+  if (filled > 0) {
+    const sorted = Object.fromEntries(Object.keys(j).sort().map((k) => [k, j[k]]));
+    fs.writeFileSync(file, `${JSON.stringify(sorted, null, 2)}\n`, 'utf8');
+    console.log('filled', filled, 'from en in', f);
+  }
+}
+
 for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
   const j = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
   const missing = Object.keys(en).filter((k) => !(k in j));

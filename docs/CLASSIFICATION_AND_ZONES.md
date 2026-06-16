@@ -53,6 +53,16 @@
 5. **人員**（system_admin）：新增營運人員、指派分區 lead/coordinator
 6. **稽核**：檢視近期操作紀錄
 
+## 建物 footprint 與歸檔
+
+| 階段 | 行為 |
+|------|------|
+| 初期（無 footprint） | 自動／手動歸檔皆依 **回報 GPS 點** 與分區相交 |
+| footprint 匯入後 | 手動歸檔與 **自動歸檔** 皆額外納入：**建物 polygon 跨分區**、**建物已掛該危機** |
+| Contributor 離線 footprint | 僅供地圖顯示／選建物；歸檔以伺服器 `buildings` 表為準 |
+
+自動歸檔（`auto_classify`）在提交時執行，語意與批次歸檔 `_zone_clause` 對齊：有 `building_id` 時不因 centroid 在區外而漏掉跨區建物。
+
 ## 權限矩陣
 
 | 能力 | system_admin | 危機 lead | 分區 coordinator |

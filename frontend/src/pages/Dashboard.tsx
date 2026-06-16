@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { apiBase, wakeApiBackend } from '../api';
+import { DashboardMap } from '../components/ops/DashboardMap';
 import { DashboardReviewModal } from '../components/ops/DashboardReviewModal';
 import { useI18n } from '../i18n/I18nContext';
 import { isManageableCrisis } from '../ops/crisisUtils';
@@ -108,6 +109,7 @@ export function Dashboard() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
   const [reviewId, setReviewId] = useState<string | null>(null);
+  const [exportLatestOnly, setExportLatestOnly] = useState(false);
 
   const manageableCrises = useMemo(() => crises.filter(isManageableCrisis), [crises]);
   const activeCrisis = manageableCrises.find((c) => c.id === crisisId);
@@ -646,13 +648,37 @@ export function Dashboard() {
         </section>
       )}
 
+      {showReports && !reportsLoading && data.items.some((r) => r.geom) && (
+        <section className="ops-dash-section dashboard-map-section">
+          <h2>{t('dashboard.mapTitle')}</h2>
+          <p className="muted">{t('dashboard.mapHint')}</p>
+          <DashboardMap items={data.items} />
+        </section>
+      )}
+
       {exportCrisisId && showReports && !reportsLoading && (
         <section className="ops-dash-section">
           <h2>{t('dashboard.exportTitle')}</h2>
           <p className="muted">{t('dashboard.exportImageHint')}</p>
+          <label className="ops-checkbox-field dashboard-export-latest">
+            <input
+              type="checkbox"
+              checked={exportLatestOnly}
+              onChange={(e) => setExportLatestOnly(e.target.checked)}
+            />
+            <span>{t('dashboard.exportLatestOnly')}</span>
+          </label>
           <p className="ops-export-links">
-            <a href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=csv`}>{t('dashboard.exportCsv')}</a>
-            <a href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=geojson`}>{t('dashboard.exportGeojson')}</a>
+            <a
+              href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=csv${exportLatestOnly ? '&latest=1' : ''}`}
+            >
+              {t('dashboard.exportCsv')}
+            </a>
+            <a
+              href={`${api}/v1/export?crisis_id=${exportCrisisId}&format=geojson${exportLatestOnly ? '&latest=1' : ''}`}
+            >
+              {t('dashboard.exportGeojson')}
+            </a>
           </p>
         </section>
       )}
