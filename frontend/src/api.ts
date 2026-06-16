@@ -4,7 +4,7 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 const API_FALLBACK_BASE = import.meta.env.VITE_API_FALLBACK ?? 'https://beaconintelligencehub.onrender.com';
 const DEFAULT_TIMEOUT_MS = 45_000;
 const SUBMIT_TIMEOUT_MS = 90_000;
-/** GeoJSON footprint 單次請求可能較大（冷啟動 + 數百棟多邊形） */
+/** GeoJSON footprint requests can be large on cold start. */
 export const BUILDINGS_FETCH_TIMEOUT_MS = 120_000;
 const WAKE_PROBE_TIMEOUT_MS = 25_000;
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
@@ -56,7 +56,7 @@ export function apiUrl(path: string): string {
 }
 
 export function effectiveApiRoot(): string {
-  return resolveApiBase('/v1/health') || '(本站 /v1，僅本機 dev proxy)';
+  return resolveApiBase('/v1/health') || '(site /v1 via local dev proxy)';
 }
 
 function sleep(ms: number): Promise<void> {
@@ -78,11 +78,11 @@ function isTransientFetchError(e: unknown): boolean {
 
 function connectionErrorMessage(): string {
   if (isLocalDevHost()) {
-    return '無法連線本機 API，請確認 uvicorn 已啟動（port 8000）。';
+    return 'Cannot reach local API. Confirm uvicorn is running on port 8000.';
   }
   return (
-    '後端暫時無法連線（Render 冷啟動常需 30–60 秒）。' +
-    ' 系統會自動重試；若仍失敗請稍後再按「重新連線」。'
+    'Backend is temporarily unreachable (Render cold start may take 30–60s). ' +
+    'The app retries automatically; if it still fails, try reconnect shortly.'
   );
 }
 
@@ -96,7 +96,7 @@ async function fetchOnce(url: string, init?: RequestInit, timeoutMs = DEFAULT_TI
   }
 }
 
-/** 帶自動重試的 fetch（Render 冷啟動／503 時重試） */
+/** Fetch with auto-retry for cold starts and 503s. */
 export async function apiFetch(
   path: string,
   init?: RequestInit,
@@ -124,7 +124,7 @@ export async function apiFetch(
   }
 
   if (lastError instanceof DOMException && lastError.name === 'AbortError') {
-    throw new Error(`API 請求逾時（${timeoutMs / 1000}s）。${connectionErrorMessage()}`);
+    throw new Error(`API request timed out (${timeoutMs / 1000}s). ${connectionErrorMessage()}`);
   }
   if (lastError instanceof TypeError || lastError instanceof DOMException) {
     throw new Error(`${connectionErrorMessage()}`);
@@ -132,7 +132,7 @@ export async function apiFetch(
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-/** 喚醒 Render 後端（進入營運台時可先呼叫） */
+/** Wake backend proactively before ops workflows. */
 export async function wakeApiBackend(): Promise<boolean> {
   return probeApiReady();
 }
@@ -161,7 +161,7 @@ async function probeApiReady(): Promise<boolean> {
   }
 }
 
-/** 提交回報／同步佇列前：等待 API + Neon 就緒（冷啟動可能需 1–2 分鐘） */
+/** Wait until API + Neon are ready before submit/sync. */
 export async function ensureApiReady(
   timeoutMs = 90_000,
   opts?: { soft?: boolean },
@@ -175,13 +175,13 @@ export async function ensureApiReady(
   }
   if (opts?.soft) return;
   throw new Error(
-    '後端尚在喚醒中（Render + Neon 常需 1–2 分鐘）。請稍後再按「立即同步」或「重新連線」。',
+    'Backend is still waking up (Render + Neon may take 1–2 minutes). Please retry sync/reconnect shortly.',
   );
 }
 
 export function formatApiError(status: number, text: string): string {
   if (status === 503 && !text.trim()) {
-    return '後端暫時無法服務（可能正在喚醒或資料庫未連線），請稍後重試。';
+    return 'Backend is temporarily unavailable (possibly waking up or DB disconnected). Please retry shortly.';
   }
   try {
     const j = JSON.parse(text) as { hint?: string; detail?: string; error?: string };
@@ -192,7 +192,7 @@ export function formatApiError(status: number, text: string): string {
     /* not JSON */
   }
   if (text === 'Internal Server Error' || !text.trim()) {
-    return `${status} — 後端錯誤，請至 Render Logs 查看。`;
+    return `${status} — Backend error. Check Render logs for details.`;
   }
   return `${status} ${text}`;
 }
@@ -204,15 +204,15 @@ async function parseJson<T>(res: Response): Promise<T> {
   }
   const ct = res.headers.get('content-type') ?? '';
   if (!ct.includes('application/json') && text.trimStart().startsWith('<')) {
-    const base = API_BASE || API_FALLBACK_BASE || '(未設定 VITE_API_BASE)';
+    const base = API_BASE || API_FALLBACK_BASE || '(VITE_API_BASE not set)';
     throw new Error(
-      `API 回傳 HTML 而非 JSON。請確認 VITE_API_BASE=${base}，並清除瀏覽器快取後重試。`,
+      `API returned HTML instead of JSON. Verify VITE_API_BASE=${base}, then clear browser cache and retry.`,
     );
   }
   try {
     return JSON.parse(text) as T;
   } catch {
-    throw new Error(`無法解析 API 回應：${text.slice(0, 80)}…`);
+    throw new Error(`Unable to parse API response: ${text.slice(0, 80)}…`);
   }
 }
 
@@ -325,15 +325,15 @@ export async function apiPutRaw(
   }
 
   if (lastError instanceof DOMException && lastError.name === 'AbortError') {
-    throw new Error(`圖片上傳逾時（${timeoutMs / 1000}s）。${connectionErrorMessage()}`);
+    throw new Error(`Image upload timed out (${timeoutMs / 1000}s). ${connectionErrorMessage()}`);
   }
   if (lastError instanceof TypeError) {
     if (target.includes('r2.cloudflarestorage.com')) {
       throw new Error(
-        '圖片上傳失敗（R2 CORS）。請在 R2 bucket 設定允許本站網域 PUT/GET，或暫改 UPLOAD_VIA_API=true。',
+        'Image upload failed (R2 CORS). Allow this site origin for PUT/GET in the R2 bucket, or set UPLOAD_VIA_API=true.',
       );
     }
-    throw new Error(`圖片上傳失敗：無法連到上傳端點。${connectionErrorMessage()}`);
+    throw new Error(`Image upload failed: unable to reach upload endpoint. ${connectionErrorMessage()}`);
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }

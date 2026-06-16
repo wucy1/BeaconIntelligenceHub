@@ -540,6 +540,8 @@ export function MapPage() {
 
   useEffect(() => {
     if (!online || !bbox || mapMode === 'new' || inspectOpen || mapPopupOpen) {
+      // Invalidate in-flight marker fetches while any popup is open.
+      if (mapPopupOpen) markersFetchGenRef.current += 1;
       if (mapMode === 'new') {
         setMarkers([]);
         setAllMarkers([]);

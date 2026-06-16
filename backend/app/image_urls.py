@@ -15,8 +15,7 @@ def thumb_url_for_report(db: Session, report_id) -> str | None:
 
 
 def thumb_url_for_object_key(object_key: str) -> str:
-    # Always route through /v1/files so every image request gets a fresh R2 presign.
-    # Direct presigned URLs can expire while markers are cached on the map.
-    if r2_enabled(settings):
-        return f"{settings.public_base_url.rstrip('/')}/v1/files?key={quote(object_key, safe='')}"
-    return f"{settings.public_base_url.rstrip('/')}/v1/files?key={quote(object_key, safe='')}"
+    # Always use same-origin /v1/files so clients avoid cross-origin image policy issues
+    # and each request gets a fresh backend presign for R2.
+    _ = r2_enabled(settings)
+    return f"/v1/files?key={quote(object_key, safe='')}"
