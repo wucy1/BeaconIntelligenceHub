@@ -8,3 +8,4 @@ venv/
 backend/storage/
 *.log
 .DS_Store
+docs/submission/
