@@ -11,7 +11,7 @@ import {
   pinFillColor,
   type DisplayMapMarker,
 } from '../../utils/mapMarkers';
-import { mediaUrl } from '../../utils/mediaUrl';
+import { hydratePopupThumbs, popupThumbHtml } from '../../utils/popupThumb';
 
 type Labels = {
   damageLabel: (level: string) => string;
@@ -52,10 +52,7 @@ function popupHtml(m: DisplayMapMarker, labels: Labels): string {
       : m.pinDisplay === 'demolished'
         ? labels.siteDemolished
         : labels.damageLabel(m.displayDamageLevel);
-  const thumbSrc = mediaUrl(m.thumb_url);
-  const thumb = thumbSrc
-    ? `<img src="${thumbSrc}" alt="" style="max-width:120px;border-radius:6px;display:block" onerror="this.onerror=null;this.style.display='none';" />`
-    : '';
+  const thumb = popupThumbHtml(m.thumb_url);
   const count =
     m.reportCount > 1
       ? `<p style="margin:0.25rem 0 0;font-size:0.78rem;color:#64748b">${labels.reportCount(m.reportCount)}</p>`
@@ -82,6 +79,8 @@ function bindMarkerPopup(
     const el = document.querySelector(
       `.marker-popup-btn[data-report-id="${m.id}"]`,
     ) as HTMLButtonElement | null;
+    const popupRoot = el?.closest('.leaflet-popup-content');
+    if (popupRoot) hydratePopupThumbs(popupRoot);
     if (!el) return;
     el.onclick = () => {
       map.closePopup();

@@ -2831,6 +2831,13 @@ button.danger {
   gap: 0.45rem;
 }
 
+.ops-datetime-popover-portal {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+  max-width: calc(100vw - 1rem);
+}
+
 .ops-datetime-popover-row {
   display: flex;
   flex-direction: column;
@@ -2853,6 +2860,18 @@ button.danger {
   justify-content: flex-end;
   gap: 0.35rem;
   margin-top: 0.15rem;
+}
+
+@media (max-width: 640px) {
+  .ops-datetime-popover-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ops-datetime-popover-actions .small {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 .ops-map-help-popover-portal {

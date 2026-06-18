@@ -8,6 +8,7 @@ import {
   resolveGroupDisplay,
   type MapPinDisplay,
 } from '../../utils/mapMarkers';
+import { hydratePopupThumbs, popupThumbHtml } from '../../utils/popupThumb';
 import type { MapMarker } from './ContributorMap';
 
 const BASE_STYLE: L.PathOptions = {
@@ -80,7 +81,8 @@ function buildingPopupHtml(
   const actionsBlock = showActions
     ? `<div class="marker-popup-actions"><button type="button" class="primary small building-popup-btn" data-building-id="${buildingId}">${labels.viewDetails}</button></div>`
     : '';
-  return `<div class="marker-popup building-popup"><p class="building-popup-name"><strong>${name}</strong></p>${reportsBlock}${latestBlock}${countBlock}${actionsBlock}</div>`;
+  const thumb = latest ? popupThumbHtml(latest.thumb_url) : '';
+  return `<div class="marker-popup building-popup">${thumb}<p class="building-popup-name"><strong>${name}</strong></p>${reportsBlock}${latestBlock}${countBlock}${actionsBlock}</div>`;
 }
 
 export function BuildingFootprintsLayer({
@@ -144,6 +146,8 @@ export function BuildingFootprintsLayer({
       const btn = document.querySelector(
         `.building-popup-btn[data-building-id="${buildingId}"]`,
       ) as HTMLButtonElement | null;
+      const popupRoot = btn?.closest('.leaflet-popup-content');
+      if (popupRoot) hydratePopupThumbs(popupRoot);
       if (!btn) return;
       btn.onclick = () => {
         mapInst.closePopup();

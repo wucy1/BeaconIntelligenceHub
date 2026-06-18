@@ -6,7 +6,7 @@
 ## Scene 1 — Open app (0:00–0:15)
 
 1. Open the BIH web app (or installed PWA / Capacitor build).
-2. Switch UI language if needed (EN / 简中 / AR / FR / RU / ES).
+2. Switch UI language if needed (EN, 繁中, 简中, AR, FR, RU, ES, DE, PT).
 3. On **Home**, tap the active crisis (e.g. *Demo Earthquake — Taipei AOI*).
 
 ## Scene 2 — Photo & damage (0:15–0:45)
@@ -37,7 +37,7 @@
 13. Open **Dashboard** → enable **Latest per building** to see UNDP versioning.
 14. Review analytics (damage counts, totals).
 15. Download **Export CSV** or **Export GeoJSON** (latest or all).
-16. (Admin) Open **Admin**, enter token, mark reports reviewed/flagged.
+16. (Ops) Open **Operations console** (`/ops/login`), sign in, review reports on the map or Dashboard, and run archive when needed.
 
 ## Checklist for recording
 

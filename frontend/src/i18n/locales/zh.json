@@ -436,7 +436,7 @@
   "ops.map.officialEnd": "官方结束时间",
   "ops.map.officialEndOptional": "结束时间可留空，表示事件尚未结束。",
   "ops.map.officialStart": "官方起始时间（必填）",
-  "ops.map.queryDiffersFromOfficial": "目前查询区间与官方归档区间不同；地图标记依查询条件显示。",
+  "ops.map.queryDiffersFromOfficial": "目前查询区间与官方归档区间不同；工作模式地图标记一律使用官方时间窗。",
   "ops.map.queryPanel": "查询报表",
   "ops.map.report.flag": "加旗标",
   "ops.map.report.markReviewed": "标记审核",
