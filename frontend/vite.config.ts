@@ -40,6 +40,8 @@ export default defineConfig({
       filename: 'sw.js',
       manifest: false,
       workbox: {
+        // Main bundle includes Leaflet + map stack (~2.1 MiB); default 2 MiB fails CI precache.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/v1\//, /^\/health/],
         cleanupOutdatedCaches: true,
