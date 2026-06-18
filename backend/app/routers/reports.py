@@ -165,6 +165,10 @@ def create_report(
         raise HTTPException(status_code=500, detail=f"Report constraint error: {err}") from exc
     db.refresh(report)
     try:
+        before_links = db.execute(
+            text("SELECT COUNT(*)::int FROM report_crisis_links WHERE report_id = CAST(:rid AS uuid)"),
+            {"rid": str(report.id)},
+        ).scalar_one()
         apply_auto_classification(
             db,
             report_id=report.id,
@@ -173,6 +177,17 @@ def create_report(
             captured_at=payload.captured_at_client,
         )
         db.commit()
+        after_links = db.execute(
+            text("SELECT COUNT(*)::int FROM report_crisis_links WHERE report_id = CAST(:rid AS uuid)"),
+            {"rid": str(report.id)},
+        ).scalar_one()
+        if after_links == before_links:
+            logger.warning(
+                "auto_classify created no link for report %s (building=%s, has_geom=%s)",
+                report.id,
+                payload.building_id,
+                payload.geom is not None,
+            )
     except Exception as exc:
         db.rollback()
         logger.exception("auto_classify failed for report %s", report.id)

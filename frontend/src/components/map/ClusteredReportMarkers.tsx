@@ -11,6 +11,7 @@ import {
   pinFillColor,
   type DisplayMapMarker,
 } from '../../utils/mapMarkers';
+import { mediaUrl } from '../../utils/mediaUrl';
 
 type Labels = {
   damageLabel: (level: string) => string;
@@ -51,8 +52,9 @@ function popupHtml(m: DisplayMapMarker, labels: Labels): string {
       : m.pinDisplay === 'demolished'
         ? labels.siteDemolished
         : labels.damageLabel(m.displayDamageLevel);
-  const thumb = m.thumb_url
-    ? `<img src="${m.thumb_url}" alt="" style="max-width:120px;border-radius:6px;display:block" onerror="this.onerror=null;this.style.display='none';" />`
+  const thumbSrc = mediaUrl(m.thumb_url);
+  const thumb = thumbSrc
+    ? `<img src="${thumbSrc}" alt="" style="max-width:120px;border-radius:6px;display:block" onerror="this.onerror=null;this.style.display='none';" />`
     : '';
   const count =
     m.reportCount > 1

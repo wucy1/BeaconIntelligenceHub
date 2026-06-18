@@ -1,11 +1,33 @@
-import { apiUrl } from '../api';
+import { apiUrl, resolveApiBase } from '../api';
 
-/** Resolve API-relative media paths (e.g. /v1/files?key=…) for use in img src. */
+function rewriteFilesPath(path: string): string | null {
+  const idx = path.indexOf('/v1/files');
+  if (idx < 0) return null;
+  const suffix = path.slice(idx + '/v1/files'.length);
+  const base = resolveApiBase('/v1/files');
+  return `${base}/v1/files${suffix}`;
+}
+
+/** Resolve API media paths for use in img src (handles relative and misconfigured absolute URLs). */
 export function mediaUrl(path: string | null | undefined): string | null {
   if (!path) return null;
-  if (path.startsWith('http') || path.startsWith('blob:') || path.startsWith('data:')) {
+  if (path.startsWith('blob:') || path.startsWith('data:')) return path;
+
+  const rewritten = rewriteFilesPath(path);
+  if (rewritten) return rewritten;
+
+  if (path.startsWith('http')) {
+    try {
+      const host = new URL(path).hostname;
+      if ((host === '127.0.0.1' || host === 'localhost') && path.includes('/v1/files')) {
+        return rewriteFilesPath(path);
+      }
+    } catch {
+      /* ignore */
+    }
     return path;
   }
+
   return apiUrl(path);
 }
 

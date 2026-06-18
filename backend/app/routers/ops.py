@@ -60,6 +60,7 @@ from app.geo_normalize import normalize_polygon_geojson
 from app.schemas import OpsReportSummary
 from app.validation import site_status_from_appendix
 from app.public_classify import backfill_auto_classification
+from app.zone_scope import principal_can_access_report, resolve_zone_filter_ids
 
 router = APIRouter(prefix="/v1/ops", tags=["ops"])
 
@@ -960,8 +961,9 @@ def ops_auto_classify_backfill(
     db.commit()
     log_ops_action(
         db,
-        user_id=principal.user_id,
+        actor_user_id=principal.user_id,
         action="auto_classify.backfill",
+        entity_type="system",
         detail={"limit": limit, **result},
     )
     db.commit()

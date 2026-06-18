@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from app.config import settings
 from app.db_url import is_placeholder_database_url
 from app.database import SessionLocal
-from app.public_classify import backfill_auto_classification
+from app.public_classify import backfill_auto_classification, _ensure_auto_classify_link_source
 from app.routers import admin, analytics, buildings, crises, export, files, health, ops, public, reports, uploads
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,15 @@ async def lifespan(_app: FastAPI):
     else:
         # 不在啟動階段阻塞連線：Neon 冷啟動常 >5s，會導致 Render health check 逾時。
         print("[BIH] API ready; DB status via GET /health/ready")
+        try:
+            db = SessionLocal()
+            try:
+                _ensure_auto_classify_link_source(db)
+                db.commit()
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("auto_classify migration ensure skipped")
         asyncio.create_task(_startup_auto_classify_backfill())
     yield
 

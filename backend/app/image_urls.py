@@ -15,8 +15,9 @@ def thumb_url_for_report(db: Session, report_id) -> str | None:
 
 
 def thumb_url_for_object_key(object_key: str) -> str:
-    # Absolute URL so img src works when frontend and API are on different origins.
-    # Each GET still hits /v1/files for a fresh R2 presign when R2 is enabled.
+    """Return /v1/files path; frontend mediaUrl() rewrites to the live API origin."""
     _ = r2_enabled(settings)
     base = settings.public_base_url.rstrip("/")
-    return f"{base}/v1/files?key={quote(object_key, safe='')}"
+    if base and "127.0.0.1" not in base and "localhost" not in base:
+        return f"{base}/v1/files?key={quote(object_key, safe='')}"
+    return f"/v1/files?key={quote(object_key, safe='')}"

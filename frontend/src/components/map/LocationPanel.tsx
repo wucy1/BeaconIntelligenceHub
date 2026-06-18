@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiGet } from '../../api';
 import type { MapMarker } from './ContributorMap';
 import { useI18n } from '../../i18n/I18nContext';
-import { normalizeThumbUrl } from '../../utils/mediaUrl';
+import { normalizeThumbUrl, mediaUrl } from '../../utils/mediaUrl';
 import {
   chipClassForCondition,
   siteConditionFromFields,
@@ -137,7 +137,7 @@ export function LocationPanel({
         {focusedMarker?.thumb_url && (
           <figure className="location-panel-focus-thumb">
             <img
-              src={focusedMarker.thumb_url}
+              src={mediaUrl(focusedMarker.thumb_url) ?? ''}
               alt=""
               loading="lazy"
               onError={(e) => {
@@ -164,7 +164,7 @@ export function LocationPanel({
                 <li key={r.id}>
                   {r.thumb_url && (
                     <img
-                      src={r.thumb_url}
+                      src={mediaUrl(r.thumb_url) ?? ''}
                       alt=""
                       className="location-history-thumb"
                       loading="lazy"

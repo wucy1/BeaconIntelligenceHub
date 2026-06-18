@@ -7,6 +7,7 @@ from uuid import UUID
 from geoalchemy2.shape import from_shape
 from shapely.geometry import shape
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Crisis
@@ -194,6 +195,12 @@ def apply_auto_classification(
             captured_at=captured_at,
         )
     if not matched:
+        logger.debug(
+            "auto_classify: no active crisis match (report=%s building=%s has_geom=%s)",
+            report_id,
+            building_id,
+            geom_geojson is not None,
+        )
         return unspecified
     exists = db.execute(
         text(
@@ -208,17 +215,31 @@ def apply_auto_classification(
     ).first()
     if exists:
         return unspecified
-    _ensure_auto_classify_link_source(db)
-    db.execute(
-        text(
-            """
-            INSERT INTO report_crisis_links (report_id, crisis_id, linked_by, link_source)
-            VALUES (CAST(:rid AS uuid), CAST(:cid AS uuid), NULL, 'auto_classify')
-            ON CONFLICT DO NOTHING
-            """
-        ),
-        {"rid": str(report_id), "cid": str(matched.id)},
-    )
+    try:
+        with db.begin_nested():
+            db.execute(
+                text(
+                    """
+                    INSERT INTO report_crisis_links (report_id, crisis_id, linked_by, link_source)
+                    VALUES (CAST(:rid AS uuid), CAST(:cid AS uuid), NULL, 'auto_classify')
+                    ON CONFLICT DO NOTHING
+                    """
+                ),
+                {"rid": str(report_id), "cid": str(matched.id)},
+            )
+    except IntegrityError:
+        _ensure_auto_classify_link_source(db)
+        db.execute(
+            text(
+                """
+                INSERT INTO report_crisis_links (report_id, crisis_id, linked_by, link_source)
+                VALUES (CAST(:rid AS uuid), CAST(:cid AS uuid), NULL, 'auto_classify')
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {"rid": str(report_id), "cid": str(matched.id)},
+        )
+    logger.info("auto_classify linked report %s to crisis %s", report_id, matched.id)
     return unspecified
 
 
