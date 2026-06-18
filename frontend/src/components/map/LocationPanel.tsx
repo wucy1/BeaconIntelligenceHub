@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiGet } from '../../api';
 import type { MapMarker } from './ContributorMap';
 import { useI18n } from '../../i18n/I18nContext';
+import { normalizeThumbUrl } from '../../utils/mediaUrl';
 import {
   chipClassForCondition,
   siteConditionFromFields,
@@ -63,10 +64,11 @@ export function LocationPanel({
     setLoading(true);
     apiGet<ReportSummary[]>(`/v1/buildings/${buildingId}/reports`)
       .then((rows) => {
+        const normalized = rows.map(normalizeThumbUrl);
         if (context === 'mine') {
-          setHistory(rows.filter((r) => r.is_mine));
+          setHistory(normalized.filter((r) => r.is_mine));
         } else {
-          setHistory(rows);
+          setHistory(normalized);
         }
       })
       .catch(() => setHistory([]))

@@ -134,6 +134,10 @@ def report_ids_active_crisis_in_bbox(
                   {_BBOX_INTERSECT}
                   AND (
                     EXISTS (
+                      SELECT 1 FROM report_crisis_links l
+                      WHERE l.report_id = r.id AND l.crisis_id = CAST(:cid AS uuid)
+                    )
+                    OR EXISTS (
                       SELECT 1 FROM zones z
                       WHERE z.crisis_id = CAST(:cid AS uuid)
                         AND (
@@ -148,13 +152,7 @@ def report_ids_active_crisis_in_bbox(
                     )
                     OR (
                       NOT EXISTS (SELECT 1 FROM zones z WHERE z.crisis_id = CAST(:cid AS uuid))
-                      AND (
-                        r.crisis_id = CAST(:cid AS uuid)
-                        OR EXISTS (
-                          SELECT 1 FROM report_crisis_links l
-                          WHERE l.report_id = r.id AND l.crisis_id = CAST(:cid AS uuid)
-                        )
-                      )
+                      AND r.crisis_id = CAST(:cid AS uuid)
                     )
                   )
                 ORDER BY r.captured_at_client DESC

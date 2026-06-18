@@ -53,6 +53,7 @@ import {
   markersNearPoint,
 } from '../utils/buildingAtPoint';
 import { filterMarkersInBbox, markersFetchKey, normalizeBboxString, normalizeLng } from '../utils/mapBbox';
+import { normalizeThumbUrl } from '../utils/mediaUrl';
 import { APP_VERSION } from '../version';
 
 const DEFAULT_CENTER: [number, number] = [20, 0];
@@ -580,8 +581,14 @@ export function MapPage() {
         const applyResults = (pinItems: MapMarker[], aggregateItems: MapMarker[]) => {
           if (cancelled || fetchGen !== markersFetchGenRef.current) return;
           if (scopeRef.current !== requestedScope) return;
-          const pinFiltered = filterMarkersInBbox(pinItems, requestedBbox);
-          const allFiltered = filterMarkersInBbox(aggregateItems, requestedBbox);
+          const pinFiltered = filterMarkersInBbox(
+            pinItems.map(normalizeThumbUrl),
+            requestedBbox,
+          );
+          const allFiltered = filterMarkersInBbox(
+            aggregateItems.map(normalizeThumbUrl),
+            requestedBbox,
+          );
           setMarkers(pinFiltered);
           setAllMarkers(allFiltered);
           markersCacheRef.current[`${requestedScope}:${mapMode}`] = pinFiltered;
@@ -1037,7 +1044,7 @@ export function MapPage() {
         buildings={buildings}
         markers={markers}
         buildingMarkers={allMarkers}
-        selectedBuildingId={placement.buildingId}
+        selectedBuildingId={mapMode === 'new' ? placement.buildingId : null}
         userPosition={geo.position}
         showOthers={showOthers}
         onBuildingSelect={onBuildingSelect}

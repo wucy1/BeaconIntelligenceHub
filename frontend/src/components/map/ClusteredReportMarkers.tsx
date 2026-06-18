@@ -29,7 +29,19 @@ type Props = {
   onViewDetails: (m: MapMarker) => void;
 };
 
-type TaggedCircleMarker = L.CircleMarker & { _bihId?: string };
+type TaggedCircleMarker = L.CircleMarker & { _bihId?: string; _bihPopupSig?: string };
+
+function popupSignature(m: DisplayMapMarker): string {
+  return [
+    m.id,
+    m.thumb_url ?? '',
+    m.displayDamageLevel,
+    m.pinDisplay,
+    m.reportCount,
+    m.captured_at_client,
+    m.is_mine,
+  ].join('|');
+}
 
 function popupHtml(m: DisplayMapMarker, labels: Labels): string {
   const statusLine =
@@ -57,6 +69,9 @@ function bindMarkerPopup(
   labels: Labels,
   onViewDetails: (m: MapMarker) => void,
 ) {
+  const sig = popupSignature(m);
+  if (layer._bihPopupSig === sig) return;
+  layer._bihPopupSig = sig;
   const popup = L.popup({ maxWidth: 280 }).setContent(popupHtml(m, labels));
   layer.bindPopup(popup);
   layer.off('popupopen');

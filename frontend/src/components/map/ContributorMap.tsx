@@ -2,7 +2,7 @@ import L from 'leaflet';
 import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   CircleMarker,
   GeoJSON,
@@ -454,7 +454,7 @@ export function ContributorMap({
     [],
   );
 
-  const onEachBuilding = (feature: GeoJSON.Feature, layer: L.Layer) => {
+  const onEachBuilding = useCallback((feature: GeoJSON.Feature, layer: L.Layer) => {
     const id = (feature.properties?.building_id as string) ?? null;
     const path = layer as L.Path;
     path.options.pane = 'buildings';
@@ -478,7 +478,22 @@ export function ContributorMap({
         });
       },
     });
-  };
+  }, []);
+
+  const getBuildingStyle = useCallback(
+    (feature?: GeoJSON.Feature) => {
+      const id = feature?.properties?.building_id as string | undefined;
+      const selected = Boolean(id && id === selectedBuildingId);
+      const damage = id ? buildingDamageMap.get(id) : undefined;
+      const { fillColor, fillOpacity } = buildingFootprintStyle(damage, selected);
+      return {
+        ...buildingStyle,
+        fillColor,
+        fillOpacity,
+      };
+    },
+    [selectedBuildingId, buildingDamageMap, buildingStyle],
+  );
 
   return (
     <MapContainer
@@ -543,17 +558,7 @@ export function ContributorMap({
         <GeoJSON
           key="buildings-layer"
           data={buildings}
-          style={(feature) => {
-            const id = feature?.properties?.building_id as string | undefined;
-            const selected = Boolean(id && id === selectedBuildingId);
-            const damage = id ? buildingDamageMap.get(id) : undefined;
-            const { fillColor, fillOpacity } = buildingFootprintStyle(damage, selected);
-            return {
-              ...buildingStyle,
-              fillColor,
-              fillOpacity,
-            };
-          }}
+          style={getBuildingStyle}
           onEachFeature={onEachBuilding}
         />
       )}

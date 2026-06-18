@@ -10,6 +10,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import { UNSPECIFIED_CRISIS_ID } from '../../constants/crisis';
 import { enqueueReport, submitReportOnline } from '../../offline/queue';
 import { compressImage } from '../../utils/imageCompress';
+import { mediaUrl } from '../../utils/mediaUrl';
 import {
   fieldsFromSiteCondition,
   siteConditionFromFields,
@@ -137,7 +138,7 @@ export function ReportSheet({
         setLang(r.description_language);
         setCapturedAt(toLocalDatetime(r.captured_at_client));
         setAppendix({ ...DEFAULT_APPENDIX, ...r.appendix_answers });
-        setPreview(r.image_url ?? null);
+        setPreview(mediaUrl(r.image_url ?? null));
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
