@@ -529,18 +529,20 @@ export function MapPage() {
     }
   }, [bbox, mapScope, footprintScopeKey, crisisIdsForFootprints, online, t]);
 
+  const blockMarkerRefresh = mapPopupOpen || inspectOpen;
+
   useEffect(() => {
-    if (!online || !bbox || mapMode === 'new' || inspectOpen || mapPopupOpen) return;
+    if (!online || !bbox || mapMode === 'new' || blockMarkerRefresh) return;
     const id = window.setInterval(() => {
       const fetchKey = markersFetchKey(mapScope, bbox, mapMode);
       delete markersBboxCacheRef.current[fetchKey];
       setMarkerPollTick((n) => n + 1);
     }, MARKERS_POLL_MS);
     return () => window.clearInterval(id);
-  }, [online, bbox, mapMode, mapScope, inspectOpen, mapPopupOpen]);
+  }, [online, bbox, mapMode, mapScope, blockMarkerRefresh]);
 
   useEffect(() => {
-    if (!online || !bbox || mapMode === 'new' || inspectOpen || mapPopupOpen) {
+    if (!online || !bbox || mapMode === 'new' || blockMarkerRefresh) {
       // Invalidate in-flight marker fetches while any popup is open.
       if (mapPopupOpen) markersFetchGenRef.current += 1;
       if (mapMode === 'new') {
@@ -617,7 +619,7 @@ export function MapPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [online, bbox, mapMode, mapScope, refreshKey, markerPollTick, inspectOpen, mapPopupOpen]);
+  }, [online, bbox, mapMode, mapScope, refreshKey, markerPollTick, blockMarkerRefresh, mapPopupOpen]);
 
   const showOthers = mapMode === 'all';
 
@@ -1065,6 +1067,7 @@ export function MapPage() {
         onMapPlace={onMapPlace}
         onReportPinMove={onReportPinMove}
         onPopupStateChange={setMapPopupOpen}
+        interactionPaused={blockMarkerRefresh}
         online={online}
         offlineZoomLimits={offlineZoomLimits}
         savedRegions={offlineTiles.regions}

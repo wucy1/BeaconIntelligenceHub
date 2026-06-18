@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+import asyncio
+import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,7 +9,31 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.config import settings
 from app.db_url import is_placeholder_database_url
+from app.database import SessionLocal
+from app.public_classify import backfill_auto_classification
 from app.routers import admin, analytics, buildings, crises, export, files, health, ops, public, reports, uploads
+
+logger = logging.getLogger(__name__)
+
+
+async def _startup_auto_classify_backfill() -> None:
+    await asyncio.sleep(3)
+    try:
+        db = SessionLocal()
+        try:
+            result = backfill_auto_classification(db, limit=500)
+            db.commit()
+            if result["linked"] > 0:
+                logger.info(
+                    "auto-classify backfill linked %s of %s reports",
+                    result["linked"],
+                    result["processed"],
+                )
+        finally:
+            db.close()
+    except Exception:
+        logger.exception("auto-classify backfill skipped")
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -20,6 +46,7 @@ async def lifespan(_app: FastAPI):
     else:
         # 不在啟動階段阻塞連線：Neon 冷啟動常 >5s，會導致 Render health check 逾時。
         print("[BIH] API ready; DB status via GET /health/ready")
+        asyncio.create_task(_startup_auto_classify_backfill())
     yield
 
 

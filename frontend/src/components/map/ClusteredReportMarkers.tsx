@@ -27,6 +27,7 @@ type Props = {
   mapMode: 'all' | 'mine' | 'new';
   labels: Labels;
   onViewDetails: (m: MapMarker) => void;
+  interactionPaused?: boolean;
 };
 
 type TaggedCircleMarker = L.CircleMarker & { _bihId?: string; _bihPopupSig?: string };
@@ -93,6 +94,7 @@ export function ClusteredReportMarkers({
   mapMode,
   labels,
   onViewDetails,
+  interactionPaused = false,
 }: Props) {
   const map = useMap();
   const groupRef = useRef<L.MarkerClusterGroup | null>(null);
@@ -124,7 +126,7 @@ export function ClusteredReportMarkers({
     }
 
     const group = groupRef.current;
-    if (popupOpenRef.current) return;
+    if (popupOpenRef.current || interactionPaused) return;
     const showActions = mapMode === 'all' || mapMode === 'mine';
     const existingById = new Map<string, TaggedCircleMarker>();
     group.eachLayer((layer) => {
@@ -185,7 +187,7 @@ export function ClusteredReportMarkers({
     for (const [id, layer] of existingById) {
       if (!nextIds.has(id)) group.removeLayer(layer);
     }
-  }, [markers, showOthers, mapMode, map]);
+  }, [markers, showOthers, mapMode, map, interactionPaused]);
 
   useEffect(() => {
     const onOpen = () => {

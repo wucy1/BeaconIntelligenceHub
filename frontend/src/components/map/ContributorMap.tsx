@@ -2,13 +2,11 @@ import L from 'leaflet';
 import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import {
   CircleMarker,
-  GeoJSON,
   MapContainer,
   Marker,
-  Popup,
   useMap,
   useMapEvents,
 } from 'react-leaflet';
@@ -16,9 +14,8 @@ import {
 import 'leaflet/dist/leaflet.css';
 
 import { useI18n } from '../../i18n/I18nContext';
-import { centroidOfFeature } from '../../utils/buildingAtPoint';
 import { normalizeBboxString } from '../../utils/mapBbox';
-import { buildingDisplayById, buildingFootprintStyle, resolveGroupDisplay } from '../../utils/mapMarkers';
+import { buildingDisplayById } from '../../utils/mapMarkers';
 import {
   MapZoomLimits,
   OfflineOsmTileLayer,
@@ -26,6 +23,7 @@ import {
   type OfflineZoomLimits,
 } from './CachedOsmTileLayer';
 import { CrisisZonesLayer } from './CrisisZonesLayer';
+import { BuildingFootprintsLayer } from './BuildingFootprintsLayer';
 import { ClusteredReportMarkers } from './ClusteredReportMarkers';
 import { MapRailZoom } from './MapRailZoom';
 import { DownloadPreviewLayer } from './DownloadPreviewLayer';
@@ -80,6 +78,8 @@ type Props = {
   onMapPlace?: (lat: number, lng: number) => void;
   onReportPinMove?: (lat: number, lng: number) => void;
   onPopupStateChange?: (open: boolean) => void;
+  /** Pause marker cluster updates while popup or inspect panel is open. */
+  interactionPaused?: boolean;
   online?: boolean;
   offlineZoomLimits?: OfflineZoomLimits | null;
   savedRegions?: MapRegionMeta[];
@@ -314,77 +314,6 @@ function FitLatLngBoundsOnce({
   return null;
 }
 
-function BuildingPopupContent({
-  buildingId,
-  buildingName,
-  markers,
-  mapMode,
-  onViewDetails,
-}: {
-  buildingId: string;
-  buildingName: string | null;
-  markers: MapMarker[];
-  mapMode: 'all' | 'mine' | 'new';
-  onViewDetails: (buildingId: string) => void;
-}) {
-  const { t } = useI18n();
-  const map = useMap();
-  const atBuilding = markers.filter((m) => m.building_id === buildingId);
-  const sorted = [...atBuilding].sort(
-    (a, b) =>
-      new Date(b.captured_at_client).getTime() - new Date(a.captured_at_client).getTime(),
-  );
-  const latest = sorted[0];
-  const { pinDisplay, displayDamageLevel } = resolveGroupDisplay(atBuilding);
-  const label =
-    pinDisplay === 'repaired'
-      ? t('report.siteStatus.repaired')
-      : pinDisplay === 'demolished'
-        ? t('report.siteStatus.demolished')
-        : t(`report.damage.${displayDamageLevel as 'minimal' | 'partial' | 'complete'}`);
-  const showActions = mapMode === 'all' || mapMode === 'mine';
-
-  return (
-    <div className="marker-popup building-popup">
-      <p className="building-popup-name">
-        <strong>{buildingName ?? `${buildingId.slice(0, 8)}…`}</strong>
-      </p>
-      {atBuilding.length === 0 ? (
-        <p className="muted">{t('map.popup.noReportsAtBuilding')}</p>
-      ) : (
-        <p>
-          <span className="muted">{t('map.popup.worstDamage')}: </span>
-          <strong>{label}</strong>
-        </p>
-      )}
-      {latest && (
-        <time dateTime={latest.captured_at_client}>
-          {t('map.popup.latestReport')}: {new Date(latest.captured_at_client).toLocaleString()}
-        </time>
-      )}
-      {atBuilding.length > 1 && (
-        <p className="marker-popup-count muted">
-          {t('map.popup.buildingReportCount', { count: atBuilding.length })}
-        </p>
-      )}
-      {showActions && (
-        <div className="marker-popup-actions">
-          <button
-            type="button"
-            className="primary small"
-            onClick={() => {
-              map.closePopup();
-              onViewDetails(buildingId);
-            }}
-          >
-            {t('map.popup.viewDetails')}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function ContributorMap({
   buildings,
   markers,
@@ -412,6 +341,7 @@ export function ContributorMap({
   onMapPlace,
   onReportPinMove,
   onPopupStateChange,
+  interactionPaused = false,
   online = true,
   offlineZoomLimits,
   savedRegions = [],
@@ -421,79 +351,32 @@ export function ContributorMap({
   regionFitTick = 0,
   downloadPreview = null,
 }: Props) {
+  const { t } = useI18n();
   const markersForBuildings = buildingMarkers ?? markers;
   const buildingDamageMap = useMemo(
     () => buildingDisplayById(markersForBuildings),
     [markersForBuildings],
   );
 
+  const buildingPopupLabels = useMemo(
+    () => ({
+      noReports: t('map.popup.noReportsAtBuilding'),
+      worstDamage: t('map.popup.worstDamage'),
+      latestReport: t('map.popup.latestReport'),
+      buildingReportCount: (count: number) => t('map.popup.buildingReportCount', { count }),
+      viewDetails: t('map.popup.viewDetails'),
+      damageLabel: (level: string) =>
+        t(`report.damage.${level as 'minimal' | 'partial' | 'complete'}`),
+      siteRepaired: t('report.siteStatus.repaired'),
+      siteDemolished: t('report.siteStatus.demolished'),
+    }),
+    [t],
+  );
+
   const mapModeRef = useRef(mapMode);
   mapModeRef.current = mapMode;
   const onBuildingSelectRef = useRef(onBuildingSelect);
   onBuildingSelectRef.current = onBuildingSelect;
-
-  const [buildingPopup, setBuildingPopup] = useState<{
-    buildingId: string;
-    buildingName: string | null;
-    lat: number;
-    lng: number;
-  } | null>(null);
-
-  useEffect(() => {
-    if (mapMode === 'new') setBuildingPopup(null);
-  }, [mapMode]);
-
-  const buildingStyle = useMemo(
-    () => ({
-      pane: 'buildings',
-      color: '#1155cc',
-      weight: 2,
-      fillColor: '#3388ff',
-      fillOpacity: 0.28,
-    }),
-    [],
-  );
-
-  const onEachBuilding = useCallback((feature: GeoJSON.Feature, layer: L.Layer) => {
-    const id = (feature.properties?.building_id as string) ?? null;
-    const path = layer as L.Path;
-    path.options.pane = 'buildings';
-    path.bringToFront();
-    layer.off('click');
-    layer.on({
-      click: (e) => {
-        if (!id) return;
-        L.DomEvent.stopPropagation(e);
-        if (mapModeRef.current === 'new') {
-          onBuildingSelectRef.current(id);
-          return;
-        }
-        const cen = centroidOfFeature(feature);
-        if (!cen) return;
-        setBuildingPopup({
-          buildingId: id,
-          buildingName: (feature.properties?.name as string) ?? null,
-          lat: cen.lat,
-          lng: cen.lng,
-        });
-      },
-    });
-  }, []);
-
-  const getBuildingStyle = useCallback(
-    (feature?: GeoJSON.Feature) => {
-      const id = feature?.properties?.building_id as string | undefined;
-      const selected = Boolean(id && id === selectedBuildingId);
-      const damage = id ? buildingDamageMap.get(id) : undefined;
-      const { fillColor, fillOpacity } = buildingFootprintStyle(damage, selected);
-      return {
-        ...buildingStyle,
-        fillColor,
-        fillOpacity,
-      };
-    },
-    [selectedBuildingId, buildingDamageMap, buildingStyle],
-  );
 
   return (
     <MapContainer
@@ -555,11 +438,15 @@ export function ContributorMap({
       )}
 
       {buildings.features.length > 0 && (
-        <GeoJSON
-          key="buildings-layer"
-          data={buildings}
-          style={getBuildingStyle}
-          onEachFeature={onEachBuilding}
+        <BuildingFootprintsLayer
+          buildings={buildings}
+          buildingDamageMap={buildingDamageMap}
+          selectedBuildingId={selectedBuildingId}
+          mapMode={mapMode}
+          markersForBuildings={markersForBuildings}
+          labels={buildingPopupLabels}
+          onBuildingSelect={onBuildingSelect}
+          onBuildingViewDetails={onBuildingViewDetails}
         />
       )}
 
@@ -575,27 +462,6 @@ export function ContributorMap({
         <ReportPinMarker pin={reportPin} onMove={onReportPinMove} />
       )}
 
-      {buildingPopup && (mapMode === 'all' || mapMode === 'mine') && (
-        <Popup
-          key={buildingPopup.buildingId}
-          position={[buildingPopup.lat, buildingPopup.lng]}
-          autoPan={false}
-          closeOnClick={false}
-          eventHandlers={{ remove: () => setBuildingPopup(null) }}
-        >
-          <BuildingPopupContent
-            buildingId={buildingPopup.buildingId}
-            buildingName={buildingPopup.buildingName}
-            markers={markersForBuildings}
-            mapMode={mapMode}
-            onViewDetails={(id) => {
-              setBuildingPopup(null);
-              onBuildingViewDetails(id);
-            }}
-          />
-        </Popup>
-      )}
-
       {mapMode !== 'new' && markers.length > 0 && (
         <ClusteredReportMarkers
           markers={markers}
@@ -603,6 +469,7 @@ export function ContributorMap({
           mapMode={mapMode}
           labels={markerPopupLabels}
           onViewDetails={onMarkerViewDetails}
+          interactionPaused={interactionPaused}
         />
       )}
     </MapContainer>

@@ -27,23 +27,46 @@ def _capture_in_crisis_window(
     event_end: datetime | None,
     public_months: int,
 ) -> bool:
-    """Match batch-archive semantics: official window when set, else rolling public months."""
+    """Match org_settings.effective_capture_window (same as ops map browse)."""
     at = _as_utc(captured_at)
-    if event_start is not None:
-        if at < _as_utc(event_start):
-            return False
-    else:
-        rolling_start, _ = effective_capture_window(
-            months=public_months,
-            event_start=None,
-            event_end=event_end,
-            now=at,
+    start, end = effective_capture_window(
+        months=public_months,
+        event_start=event_start,
+        event_end=event_end,
+        now=at,
+    )
+    return _as_utc(start) <= at <= _as_utc(end)
+
+
+def _ensure_auto_classify_link_source(db: Session) -> None:
+    """Apply migration 013 when production DB still has the old link_source CHECK."""
+    row = db.execute(
+        text(
+            """
+            SELECT pg_get_constraintdef(c.oid) AS def
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            WHERE t.relname = 'report_crisis_links'
+              AND c.conname = 'report_crisis_links_link_source_check'
+            """
         )
-        if at < _as_utc(rolling_start):
-            return False
-    if event_end is not None and at > _as_utc(event_end):
-        return False
-    return True
+    ).mappings().first()
+    if row and row.get("def") and "auto_classify" in str(row["def"]):
+        return
+    db.execute(
+        text(
+            "ALTER TABLE report_crisis_links DROP CONSTRAINT IF EXISTS report_crisis_links_link_source_check"
+        )
+    )
+    db.execute(
+        text(
+            """
+            ALTER TABLE report_crisis_links ADD CONSTRAINT report_crisis_links_link_source_check
+              CHECK (link_source IN ('batch_archive', 'manual', 'primary', 'auto_classify'))
+            """
+        )
+    )
+    db.flush()
 
 
 def get_unspecified_crisis(db: Session) -> Crisis:
@@ -93,8 +116,7 @@ def resolve_active_crisis_for_report(
               WHERE z.crisis_id = c.id
                 AND (
                   ST_Intersects(:pt, z.geom)
-                  OR ST_Intersects(ST_Translate(:pt::geometry, 360.0, 0.0), z.geom)
-                  OR ST_Intersects(ST_Translate(:pt::geometry, -360.0, 0.0), z.geom)
+                  OR ST_Intersects(:pt, ST_ShiftLongitude(z.geom))
                 )
             )
             """
@@ -110,8 +132,7 @@ def resolve_active_crisis_for_report(
                 AND b.geom IS NOT NULL
                 AND (
                   ST_Intersects(b.geom, z.geom)
-                  OR ST_Intersects(ST_Translate(b.geom::geometry, 360.0, 0.0), z.geom)
-                  OR ST_Intersects(ST_Translate(b.geom::geometry, -360.0, 0.0), z.geom)
+                  OR ST_Intersects(b.geom, ST_ShiftLongitude(z.geom))
                 )
             )
             """
@@ -187,39 +208,66 @@ def apply_auto_classification(
     ).first()
     if exists:
         return unspecified
-    has_link_source = bool(
-        db.execute(
-            text(
-                """
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                  AND table_name = 'report_crisis_links'
-                  AND column_name = 'link_source'
-                """
-            )
-        ).first()
+    _ensure_auto_classify_link_source(db)
+    db.execute(
+        text(
+            """
+            INSERT INTO report_crisis_links (report_id, crisis_id, linked_by, link_source)
+            VALUES (CAST(:rid AS uuid), CAST(:cid AS uuid), NULL, 'auto_classify')
+            ON CONFLICT DO NOTHING
+            """
+        ),
+        {"rid": str(report_id), "cid": str(matched.id)},
     )
-    if has_link_source:
-        db.execute(
-            text(
-                """
-                INSERT INTO report_crisis_links (report_id, crisis_id, linked_by, link_source)
-                VALUES (CAST(:rid AS uuid), CAST(:cid AS uuid), NULL, 'auto_classify')
-                ON CONFLICT DO NOTHING
-                """
-            ),
-            {"rid": str(report_id), "cid": str(matched.id)},
-        )
-    else:
-        db.execute(
-            text(
-                """
-                INSERT INTO report_crisis_links (report_id, crisis_id, linked_by)
-                VALUES (CAST(:rid AS uuid), CAST(:cid AS uuid), NULL)
-                ON CONFLICT DO NOTHING
-                """
-            ),
-            {"rid": str(report_id), "cid": str(matched.id)},
-        )
     return unspecified
+
+
+def backfill_auto_classification(db: Session, *, limit: int = 500) -> dict:
+    """Re-run auto classification for reports that have no crisis link yet."""
+    rows = db.execute(
+        text(
+            """
+            SELECT r.id,
+                   ST_AsGeoJSON(r.geom)::json AS geom,
+                   r.building_id,
+                   r.captured_at_client
+            FROM reports r
+            WHERE NOT EXISTS (
+              SELECT 1 FROM report_crisis_links l WHERE l.report_id = r.id
+            )
+            ORDER BY r.received_at_server DESC
+            LIMIT :lim
+            """
+        ),
+        {"lim": limit},
+    ).mappings().all()
+    linked = 0
+    for row in rows:
+        before = db.execute(
+            text(
+                """
+                SELECT COUNT(*)::int FROM report_crisis_links
+                WHERE report_id = CAST(:rid AS uuid)
+                """
+            ),
+            {"rid": str(row["id"])},
+        ).scalar_one()
+        apply_auto_classification(
+            db,
+            report_id=row["id"],
+            geom_geojson=row["geom"],
+            building_id=row["building_id"],
+            captured_at=row["captured_at_client"],
+        )
+        after = db.execute(
+            text(
+                """
+                SELECT COUNT(*)::int FROM report_crisis_links
+                WHERE report_id = CAST(:rid AS uuid)
+                """
+            ),
+            {"rid": str(row["id"])},
+        ).scalar_one()
+        if after > before:
+            linked += 1
+    return {"processed": len(rows), "linked": linked}

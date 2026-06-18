@@ -59,7 +59,7 @@ from app.ops_auth import (
 from app.geo_normalize import normalize_polygon_geojson
 from app.schemas import OpsReportSummary
 from app.validation import site_status_from_appendix
-from app.zone_scope import principal_can_access_report, resolve_zone_filter_ids
+from app.public_classify import backfill_auto_classification
 
 router = APIRouter(prefix="/v1/ops", tags=["ops"])
 
@@ -947,6 +947,25 @@ def ops_archive_preview(
         "zone_ids": [str(z) for z in zone_ids],
         "zone_count": len(zone_ids),
     }
+
+
+@router.post("/auto-classify/backfill")
+def ops_auto_classify_backfill(
+    limit: int = Query(500, ge=1, le=5000),
+    principal: OpsPrincipal = Depends(get_ops_principal),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Re-run contributor auto-classification for reports missing crisis links."""
+    result = backfill_auto_classification(db, limit=limit)
+    db.commit()
+    log_ops_action(
+        db,
+        user_id=principal.user_id,
+        action="auto_classify.backfill",
+        detail={"limit": limit, **result},
+    )
+    db.commit()
+    return result
 
 
 @router.post("/crises/{crisis_id}/archive-run")

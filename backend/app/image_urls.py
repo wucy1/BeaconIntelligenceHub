@@ -15,7 +15,8 @@ def thumb_url_for_report(db: Session, report_id) -> str | None:
 
 
 def thumb_url_for_object_key(object_key: str) -> str:
-    # Always use same-origin /v1/files so clients avoid cross-origin image policy issues
-    # and each request gets a fresh backend presign for R2.
+    # Absolute URL so img src works when frontend and API are on different origins.
+    # Each GET still hits /v1/files for a fresh R2 presign when R2 is enabled.
     _ = r2_enabled(settings)
-    return f"/v1/files?key={quote(object_key, safe='')}"
+    base = settings.public_base_url.rstrip("/")
+    return f"{base}/v1/files?key={quote(object_key, safe='')}"
