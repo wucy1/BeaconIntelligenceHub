@@ -17,6 +17,7 @@ import {
   type SiteCondition,
 } from '../../utils/siteCondition';
 import { AppendixFields } from '../AppendixFields';
+import { ApiImage } from '../ApiImage';
 import { PhotoPicker } from '../PhotoPicker';
 import { SiteConditionField } from './SiteConditionField';
 
@@ -334,12 +335,12 @@ export function ReportSheet({
                 <h3 className="form-section-title">{t('report.photo')}</h3>
                 <PhotoPicker onSelect={setFile} />
                 {preview && (
-                  <img src={preview} alt="" className="report-sheet-preview" loading="lazy" />
+                  <ApiImage src={preview} alt="" className="report-sheet-preview" />
                 )}
               </section>
             )}
             {mode === 'edit' && preview && (
-              <img src={preview} alt="" className="report-sheet-preview" loading="lazy" />
+              <ApiImage src={preview} alt="" className="report-sheet-preview" />
             )}
 
             <SiteConditionField value={siteCondition} onChange={setSiteCondition} />

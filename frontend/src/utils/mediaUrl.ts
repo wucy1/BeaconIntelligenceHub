@@ -1,5 +1,11 @@
 import { apiUrl, resolveApiBase } from '../api';
 
+export function apiImagePath(path: string): string {
+  const idx = path.indexOf('/v1/files');
+  if (idx >= 0) return path.slice(idx);
+  return path;
+}
+
 function rewriteFilesPath(path: string): string | null {
   const idx = path.indexOf('/v1/files');
   if (idx < 0) return null;

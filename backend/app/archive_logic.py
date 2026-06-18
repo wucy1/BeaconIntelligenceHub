@@ -157,3 +157,30 @@ def count_linked_in_scope(
             params,
         ).scalar_one()
     )
+
+
+def report_matches_archive_scope(
+    db: Session,
+    report_id: UUID,
+    crisis_id: UUID,
+    zone_ids: list[UUID] | None,
+    captured_from: datetime | None,
+    captured_to: datetime | None,
+) -> bool:
+    """Same spatial + time rules as batch archive for a single report row."""
+    time_filter, time_params = _time_clause(captured_from, captured_to)
+    zone_filter, zone_params = _zone_clause(zone_ids, crisis_id)
+    params = {"rid": str(report_id), **time_params, **zone_params}
+    row = db.execute(
+        text(
+            f"""
+            SELECT 1 FROM reports r
+            LEFT JOIN buildings b ON b.id = r.building_id
+            WHERE r.id = CAST(:rid AS uuid)
+              {time_filter}
+              {zone_filter}
+            """
+        ),
+        params,
+    ).first()
+    return row is not None

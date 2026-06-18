@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 
 import { apiGet } from '../../api';
+import { ApiImage } from '../ApiImage';
 import { useI18n } from '../../i18n/I18nContext';
-import { mediaUrl } from '../../utils/mediaUrl';
 
 type ReportDetail = {
   id: string;
@@ -80,7 +80,7 @@ export function DashboardReviewModal({
           <div className="ops-review-modal-body">
             {detail.image_url && (
               <figure className="ops-review-modal-image">
-                <img src={mediaUrl(detail.image_url) ?? ''} alt="" />
+                <ApiImage src={detail.image_url} alt="" />
               </figure>
             )}
             <dl className="ops-review-dl">

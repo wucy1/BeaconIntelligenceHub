@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { apiGet } from '../../api';
+import { ApiImage } from '../ApiImage';
 import type { MapMarker } from './ContributorMap';
 import { useI18n } from '../../i18n/I18nContext';
-import { normalizeThumbUrl, mediaUrl } from '../../utils/mediaUrl';
+import { normalizeThumbUrl } from '../../utils/mediaUrl';
 import {
   chipClassForCondition,
   siteConditionFromFields,
@@ -136,14 +137,7 @@ export function LocationPanel({
 
         {focusedMarker?.thumb_url && (
           <figure className="location-panel-focus-thumb">
-            <img
-              src={mediaUrl(focusedMarker.thumb_url) ?? ''}
-              alt=""
-              loading="lazy"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
+            <ApiImage src={focusedMarker.thumb_url} alt="" className="" />
           </figure>
         )}
 
@@ -163,15 +157,7 @@ export function LocationPanel({
                 return (
                 <li key={r.id}>
                   {r.thumb_url && (
-                    <img
-                      src={mediaUrl(r.thumb_url) ?? ''}
-                      alt=""
-                      className="location-history-thumb"
-                      loading="lazy"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
+                    <ApiImage src={r.thumb_url} alt="" className="location-history-thumb" />
                   )}
                   <div className="location-history-row">
                     <span className={`damage-pill ${pillClass}`}>

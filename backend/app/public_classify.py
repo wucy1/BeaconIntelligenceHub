@@ -4,39 +4,14 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from geoalchemy2.shape import from_shape
-from shapely.geometry import shape
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import Crisis
-from app.org_settings import effective_capture_window, get_org_settings
+from app.archive_logic import report_matches_archive_scope
+from app.models import Crisis, Zone
 
 logger = logging.getLogger(__name__)
-
-
-def _as_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-
-def _capture_in_crisis_window(
-    captured_at: datetime,
-    event_start: datetime | None,
-    event_end: datetime | None,
-    public_months: int,
-) -> bool:
-    """Match org_settings.effective_capture_window (same as ops map browse)."""
-    at = _as_utc(captured_at)
-    start, end = effective_capture_window(
-        months=public_months,
-        event_start=event_start,
-        event_end=event_end,
-        now=at,
-    )
-    return _as_utc(start) <= at <= _as_utc(end)
 
 
 def _ensure_auto_classify_link_source(db: Session) -> None:
@@ -77,101 +52,31 @@ def get_unspecified_crisis(db: Session) -> Crisis:
     return c
 
 
-def _report_geom(geom_geojson: dict | None):
-    if not geom_geojson:
-        return None
-    try:
-        g = shape(geom_geojson)
-        if g.geom_type == "Point":
-            return from_shape(g, srid=4326)
-    except Exception:
-        return None
-    return None
-
-
 def resolve_active_crisis_for_report(
     db: Session,
     *,
-    geom_geojson: dict | None,
-    building_id: UUID | None,
+    report_id: UUID,
     captured_at: datetime,
 ) -> Crisis | None:
-    """Match active crisis by time window and zone scope (newest crisis first).
-
-    Zone scope mirrors batch archive: report GPS point, building footprint, or
-    building crisis assignment when footprints exist; GPS-only when they do not.
-    """
-    org = get_org_settings(db)
-    report_geom = _report_geom(geom_geojson)
-    if report_geom is None and building_id is None:
-        return None
-
-    match_parts: list[str] = []
-    params: dict = {}
-    if report_geom is not None:
-        params["pt"] = report_geom
-        match_parts.append(
-            """
-            EXISTS (
-              SELECT 1 FROM zones z
-              WHERE z.crisis_id = c.id
-                AND (
-                  ST_Intersects(:pt, z.geom)
-                  OR ST_Intersects(:pt, ST_ShiftLongitude(z.geom))
-                )
-            )
-            """
-        )
-    if building_id is not None:
-        params["bid"] = str(building_id)
-        match_parts.append(
-            """
-            EXISTS (
-              SELECT 1 FROM zones z
-              JOIN buildings b ON b.id = CAST(:bid AS uuid)
-              WHERE z.crisis_id = c.id
-                AND b.geom IS NOT NULL
-                AND (
-                  ST_Intersects(b.geom, z.geom)
-                  OR ST_Intersects(b.geom, ST_ShiftLongitude(z.geom))
-                )
-            )
-            """
-        )
-        match_parts.append(
-            """
-            EXISTS (
-              SELECT 1 FROM buildings b
-              WHERE b.id = CAST(:bid AS uuid)
-                AND b.crisis_id = c.id
-            )
-            """
-        )
-
-    scope_sql = " OR ".join(match_parts)
-    rows = db.execute(
-        text(
-            f"""
-            SELECT c.id, c.archive_window_start, c.archive_window_end
-            FROM crises c
-            WHERE c.archive_status = 'active' AND c.slug <> 'unspecified'
-              AND ({scope_sql})
-            ORDER BY c.created_at DESC
-            """
-        ),
-        params,
-    ).fetchall()
-
-    for row in rows:
-        if not _capture_in_crisis_window(
-            captured_at,
-            row.archive_window_start,
-            row.archive_window_end,
-            org.default_public_report_months,
-        ):
+    """Pick newest active crisis whose batch-archive scope contains this report."""
+    crises = (
+        db.query(Crisis)
+        .filter(Crisis.archive_status == "active", Crisis.slug != "unspecified")
+        .order_by(Crisis.created_at.desc())
+        .all()
+    )
+    for crisis in crises:
+        zone_ids = [z.id for z in db.query(Zone).filter(Zone.crisis_id == crisis.id).all()]
+        if not zone_ids:
             continue
-        crisis = db.query(Crisis).filter(Crisis.id == row.id).first()
-        if crisis:
+        if report_matches_archive_scope(
+            db,
+            report_id,
+            crisis.id,
+            zone_ids,
+            crisis.archive_window_start,
+            crisis.archive_window_end,
+        ):
             return crisis
     return None
 
@@ -180,26 +85,24 @@ def apply_auto_classification(
     db: Session,
     *,
     report_id: UUID,
-    geom_geojson: dict | None,
-    building_id: UUID | None,
+    geom_geojson: dict | None = None,
+    building_id: UUID | None = None,
     captured_at: datetime,
     matched: Crisis | None = None,
 ) -> Crisis | None:
     """Create auto_classify link when report matches an active crisis; always returns unspecified bucket."""
+    _ = geom_geojson, building_id
     unspecified = get_unspecified_crisis(db)
     if matched is None:
         matched = resolve_active_crisis_for_report(
             db,
-            geom_geojson=geom_geojson,
-            building_id=building_id,
+            report_id=report_id,
             captured_at=captured_at,
         )
     if not matched:
-        logger.debug(
-            "auto_classify: no active crisis match (report=%s building=%s has_geom=%s)",
+        logger.info(
+            "auto_classify: no crisis scope match for report %s",
             report_id,
-            building_id,
-            geom_geojson is not None,
         )
         return unspecified
     exists = db.execute(
@@ -248,10 +151,7 @@ def backfill_auto_classification(db: Session, *, limit: int = 500) -> dict:
     rows = db.execute(
         text(
             """
-            SELECT r.id,
-                   ST_AsGeoJSON(r.geom)::json AS geom,
-                   r.building_id,
-                   r.captured_at_client
+            SELECT r.id, r.captured_at_client
             FROM reports r
             WHERE NOT EXISTS (
               SELECT 1 FROM report_crisis_links l WHERE l.report_id = r.id
@@ -276,8 +176,6 @@ def backfill_auto_classification(db: Session, *, limit: int = 500) -> dict:
         apply_auto_classification(
             db,
             report_id=row["id"],
-            geom_geojson=row["geom"],
-            building_id=row["building_id"],
             captured_at=row["captured_at_client"],
         )
         after = db.execute(
