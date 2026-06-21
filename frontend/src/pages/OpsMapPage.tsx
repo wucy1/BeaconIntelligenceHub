@@ -55,6 +55,7 @@ import { MapViewWatcher } from '../components/map/MapViewWatcher';
 import { OpsDatetimeField } from '../components/ops/OpsDatetimeField';
 import { OpsMapClearSelection } from '../components/ops/OpsMapClearSelection';
 import { OpsMapHelpPopover } from '../components/ops/OpsMapHelpPopover';
+import { OpsMapReportCountTip } from '../components/ops/OpsMapReportCountTip';
 import { OpsMapRailControls } from '../components/ops/OpsMapRailControls';
 import { OpsMapShellToggle, type OpsMapShellMode } from '../components/ops/OpsMapShellToggle';
 import { OpsPolygonEditor } from '../components/ops/OpsPolygonEditor';
@@ -224,7 +225,7 @@ function crisisReportCountLabel(
 type ReportCountDisplay = {
   primary: string;
   secondary?: string;
-  tooltip: string;
+  tooltipLines: string[];
 };
 
 function buildReportCountDisplay(
@@ -245,13 +246,13 @@ function buildReportCountDisplay(
 
   if (reportView === 'crisis') {
     const primary = crisisReportCountLabel(t, total, linkedPinCount);
-    return { primary, tooltip: primary };
+    return { primary, tooltipLines: [primary] };
   }
 
   if (reportView === 'all' && activeCrisisId) {
     const primary = crisisReportCountLabel(t, linked, linkedPinCount);
     const secondary = t('ops.map.reportCountMeta', { total, other, candidate });
-    return { primary, secondary, tooltip: `${primary}\n${secondary}` };
+    return { primary, secondary, tooltipLines: [primary, secondary] };
   }
 
   const totalPinCount = countDisplayPinGroups(reports);
@@ -259,7 +260,7 @@ function buildReportCountDisplay(
     totalPinCount > 0 && totalPinCount < total
       ? t('ops.map.reportCountWithPins', { count: total, pins: totalPinCount })
       : t('ops.map.reportCount', { count: total });
-  return { primary, tooltip: primary };
+  return { primary, tooltipLines: [primary] };
 }
 
 function OpsMapReportCount({
@@ -280,7 +281,7 @@ function OpsMapReportCount({
   reports: OpsReport[];
 }) {
   const { t } = useI18n();
-  const { primary, secondary, tooltip } = buildReportCountDisplay(
+  const { primary, secondary, tooltipLines } = buildReportCountDisplay(
     t,
     reportView,
     activeCrisisId,
@@ -292,12 +293,7 @@ function OpsMapReportCount({
   );
 
   return (
-    <span className="ops-map-report-count" title={tooltip}>
-      <strong className="ops-map-report-count-primary">{primary}</strong>
-      {secondary ? (
-        <span className="ops-map-report-count-secondary">{secondary}</span>
-      ) : null}
-    </span>
+    <OpsMapReportCountTip primary={primary} secondary={secondary} tooltipLines={tooltipLines} />
   );
 }
 

@@ -2286,7 +2286,51 @@ button.danger {
   max-width: 100%;
   font-size: 0.72rem;
   line-height: 1.25;
-  cursor: help;
+}
+
+.ops-map-report-count-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+}
+
+.ops-map-report-count-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.ops-map-report-count-tip {
+  padding: 0.5rem 0.65rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.ops-map-report-count-tip p {
+  margin: 0;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.ops-map-report-count-tip-primary {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ops-map-report-count-tip p:not(.ops-map-report-count-tip-primary) {
+  margin-top: 0.25rem;
+  font-size: 0.65rem;
+  color: #64748b;
 }
 
 .ops-map-report-count-primary {

@@ -448,6 +448,7 @@
   "ops.map.reportCountLinked": "{{count}} archivés",
   "ops.map.reportCountMeta": "{{total}} au total · {{other}} autres · {{candidate}} non liés",
   "ops.map.reportCountPinsNote": "Signalements = soumissions enregistrées dans cette tranche. Pins = groupes sur la carte publique (même bâtiment ou GPS proche fusionnés en un pin). La carte ops affiche un marqueur par signalement ; les pins correspondent à la carte publique.",
+  "ops.map.reportCountExpand": "Afficher le décompte complet",
   "ops.map.reportCountThisCrisis": "{{count}} cette crise",
   "ops.map.reportCountThisCrisisWithPins": "{{count}} cette crise ({{pins}} pins)",
   "ops.map.reportPanelTitle": "Signalement",

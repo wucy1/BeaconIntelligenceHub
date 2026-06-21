@@ -448,6 +448,7 @@
   "ops.map.reportCountLinked": "{{count}} مؤرشف",
   "ops.map.reportCountMeta": "{{total}} إجمالي · {{other}} أخرى · {{candidate}} غير مرتبط",
   "ops.map.reportCountPinsNote": "التقارير = الإرسالات المخزنة في هذا المقطع. Pins = مجموعات العرض على الخريطة العامة (نفس المبنى أو GPS قريب يُدمج في pin واحد). خريطة العمليات تعرض marker لكل تقرير؛ عدد pins يطابق الخريطة العامة.",
+  "ops.map.reportCountExpand": "إظهار العدد الكامل",
   "ops.map.reportCountThisCrisis": "{{count}} هذه الأزمة",
   "ops.map.reportCountThisCrisisWithPins": "{{count}} هذه الأزمة ({{pins}} pins)",
   "ops.map.reportPanelTitle": "تقرير",

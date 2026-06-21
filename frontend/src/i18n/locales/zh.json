@@ -448,6 +448,7 @@
   "ops.map.reportCountLinked": "已归档 {{count}} 笔",
   "ops.map.reportCountMeta": "共 {{total}} · 他 {{other}} · 未归档 {{candidate}}",
   "ops.map.reportCountPinsNote": "回报笔数（reports）= 此切片内已储存的提交笔数。Pin 数 = 前台公开地图的显示点（同一建物或相近 GPS 合并为一 pin）。下方营运地图仍是一笔回报一个 marker；括号内 pin 数与前台一致。",
+  "ops.map.reportCountExpand": "点击显示完整回报计数",
   "ops.map.reportCountThisCrisis": "此危机 {{count}} 笔",
   "ops.map.reportCountThisCrisisWithPins": "此危机 {{count}} 笔 ({{pins}} pins)",
   "ops.map.reportPanelTitle": "回报",

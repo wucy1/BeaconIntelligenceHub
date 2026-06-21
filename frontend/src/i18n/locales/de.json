@@ -448,6 +448,7 @@
   "ops.map.reportCountLinked": "{{count}} archiviert",
   "ops.map.reportCountMeta": "{{total}} gesamt · {{other}} andere · {{candidate}} nicht verknüpft",
   "ops.map.reportCountPinsNote": "Meldungen = gespeicherte Einreichungen in diesem Slice. Pins = Anzeigegruppen auf der öffentlichen Karte (gleiches Gebäude oder nahes GPS zu einem Pin). Die Ops-Karte zeigt einen Marker pro Meldung; Pin-Zahlen entsprechen der öffentlichen Karte.",
+  "ops.map.reportCountExpand": "Vollständige Meldungszahl anzeigen",
   "ops.map.reportCountThisCrisis": "{{count}} diese Krise",
   "ops.map.reportCountThisCrisisWithPins": "{{count}} diese Krise ({{pins}} Pins)",
   "ops.map.reportPanelTitle": "Meldung",
