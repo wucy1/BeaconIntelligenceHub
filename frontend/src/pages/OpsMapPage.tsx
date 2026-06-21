@@ -68,7 +68,7 @@ import {
   verticesToPolygon,
   type LatLng,
 } from '../ops/polygonUtils';
-import { reportMapLatLng } from '../ops/reportMapPoint';
+import { countDisplayPinGroups, reportMapLatLng } from '../ops/reportMapPoint';
 import { normalizeLng } from '../utils/mapBbox';
 import { APP_VERSION } from '../version';
 
@@ -210,6 +210,17 @@ function FitOpsMapContent({
   return null;
 }
 
+function crisisReportCountLabel(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  reportCount: number,
+  pinCount: number,
+): string {
+  if (pinCount > 0 && pinCount < reportCount) {
+    return t('ops.map.reportCountThisCrisisWithPins', { count: reportCount, pins: pinCount });
+  }
+  return t('ops.map.reportCountThisCrisis', { count: reportCount });
+}
+
 function OpsMapReportCount({
   reportView,
   activeCrisisId,
@@ -217,6 +228,7 @@ function OpsMapReportCount({
   linked,
   other,
   candidate,
+  reports,
 }: {
   reportView: 'crisis' | 'unspecified' | 'all';
   activeCrisisId: string;
@@ -224,14 +236,21 @@ function OpsMapReportCount({
   linked: number;
   other: number;
   candidate: number;
+  reports: OpsReport[];
 }) {
   const { t } = useI18n();
+
+  const linkedReports =
+    reportView === 'crisis'
+      ? reports
+      : reports.filter((r) => r.crisis_link_status === 'linked');
+  const linkedPinCount = countDisplayPinGroups(linkedReports);
 
   if (reportView === 'crisis') {
     return (
       <span className="ops-map-report-count">
         <strong className="ops-map-report-count-primary">
-          {t('ops.map.reportCountThisCrisis', { count: total })}
+          {crisisReportCountLabel(t, total, linkedPinCount)}
         </strong>
       </span>
     );
@@ -241,7 +260,7 @@ function OpsMapReportCount({
     return (
       <span className="ops-map-report-count">
         <strong className="ops-map-report-count-primary">
-          {t('ops.map.reportCountThisCrisis', { count: linked })}
+          {crisisReportCountLabel(t, linked, linkedPinCount)}
         </strong>
         <span className="ops-map-report-count-secondary">
           {t('ops.map.reportCountMeta', { total, other, candidate })}
@@ -250,9 +269,14 @@ function OpsMapReportCount({
     );
   }
 
+  const totalPinCount = countDisplayPinGroups(reports);
   return (
     <span className="ops-map-report-count">
-      <strong className="ops-map-report-count-primary">{t('ops.map.reportCount', { count: total })}</strong>
+      <strong className="ops-map-report-count-primary">
+        {totalPinCount > 0 && totalPinCount < total
+          ? t('ops.map.reportCountWithPins', { count: total, pins: totalPinCount })
+          : t('ops.map.reportCount', { count: total })}
+      </strong>
     </span>
   );
 }
@@ -1267,6 +1291,7 @@ export function OpsMapPage() {
                   linked={crisisLinkedCount}
                   other={crisisOtherLinkedCount}
                   candidate={crisisCandidateCount}
+                  reports={reports}
                 />
                 <button
                   type="button"
@@ -1392,6 +1417,7 @@ export function OpsMapPage() {
                   linked={crisisLinkedCount}
                   other={crisisOtherLinkedCount}
                   candidate={crisisCandidateCount}
+                  reports={reports}
                 />
                 <button
                   type="button"
