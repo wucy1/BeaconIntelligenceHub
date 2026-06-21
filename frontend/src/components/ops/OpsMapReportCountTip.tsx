@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { useI18n } from '../../i18n/context';
+import { useI18n } from '../../i18n/I18nContext';
 
 type Props = {
   primary: string;
