@@ -464,6 +464,7 @@
   "ops.map.reportCountCrisis": "共 {{total}} 筆（此危機 {{linked}} · 他危機 {{other}} · 未歸檔 {{candidate}}）",
   "ops.map.reportCountLinked": "已歸檔 {{count}} 筆",
   "ops.map.reportCountMeta": "共 {{total}} · 他 {{other}} · 未歸檔 {{candidate}}",
+  "ops.map.reportCountPinsNote": "回報筆數（reports）= 此切片內已儲存的提交筆數。Pin 數 = 前台公開地圖的顯示點（同一建物或相近 GPS 合併為一 pin）。下方營運地圖仍是一筆回報一個 marker；括號內 pin 數與前台一致。",
   "ops.map.reportCountThisCrisis": "此危機 {{count}} 筆",
   "ops.map.reportCountThisCrisisWithPins": "此危機 {{count}} 筆 ({{pins}} pins)",
   "ops.map.saveReport": "儲存報表",

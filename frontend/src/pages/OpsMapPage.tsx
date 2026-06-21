@@ -221,6 +221,47 @@ function crisisReportCountLabel(
   return t('ops.map.reportCountThisCrisis', { count: reportCount });
 }
 
+type ReportCountDisplay = {
+  primary: string;
+  secondary?: string;
+  tooltip: string;
+};
+
+function buildReportCountDisplay(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  reportView: 'crisis' | 'unspecified' | 'all',
+  activeCrisisId: string,
+  total: number,
+  linked: number,
+  other: number,
+  candidate: number,
+  reports: OpsReport[],
+): ReportCountDisplay {
+  const linkedReports =
+    reportView === 'crisis'
+      ? reports
+      : reports.filter((r) => r.crisis_link_status === 'linked');
+  const linkedPinCount = countDisplayPinGroups(linkedReports);
+
+  if (reportView === 'crisis') {
+    const primary = crisisReportCountLabel(t, total, linkedPinCount);
+    return { primary, tooltip: primary };
+  }
+
+  if (reportView === 'all' && activeCrisisId) {
+    const primary = crisisReportCountLabel(t, linked, linkedPinCount);
+    const secondary = t('ops.map.reportCountMeta', { total, other, candidate });
+    return { primary, secondary, tooltip: `${primary}\n${secondary}` };
+  }
+
+  const totalPinCount = countDisplayPinGroups(reports);
+  const primary =
+    totalPinCount > 0 && totalPinCount < total
+      ? t('ops.map.reportCountWithPins', { count: total, pins: totalPinCount })
+      : t('ops.map.reportCount', { count: total });
+  return { primary, tooltip: primary };
+}
+
 function OpsMapReportCount({
   reportView,
   activeCrisisId,
@@ -239,44 +280,23 @@ function OpsMapReportCount({
   reports: OpsReport[];
 }) {
   const { t } = useI18n();
+  const { primary, secondary, tooltip } = buildReportCountDisplay(
+    t,
+    reportView,
+    activeCrisisId,
+    total,
+    linked,
+    other,
+    candidate,
+    reports,
+  );
 
-  const linkedReports =
-    reportView === 'crisis'
-      ? reports
-      : reports.filter((r) => r.crisis_link_status === 'linked');
-  const linkedPinCount = countDisplayPinGroups(linkedReports);
-
-  if (reportView === 'crisis') {
-    return (
-      <span className="ops-map-report-count">
-        <strong className="ops-map-report-count-primary">
-          {crisisReportCountLabel(t, total, linkedPinCount)}
-        </strong>
-      </span>
-    );
-  }
-
-  if (reportView === 'all' && activeCrisisId) {
-    return (
-      <span className="ops-map-report-count">
-        <strong className="ops-map-report-count-primary">
-          {crisisReportCountLabel(t, linked, linkedPinCount)}
-        </strong>
-        <span className="ops-map-report-count-secondary">
-          {t('ops.map.reportCountMeta', { total, other, candidate })}
-        </span>
-      </span>
-    );
-  }
-
-  const totalPinCount = countDisplayPinGroups(reports);
   return (
-    <span className="ops-map-report-count">
-      <strong className="ops-map-report-count-primary">
-        {totalPinCount > 0 && totalPinCount < total
-          ? t('ops.map.reportCountWithPins', { count: total, pins: totalPinCount })
-          : t('ops.map.reportCount', { count: total })}
-      </strong>
+    <span className="ops-map-report-count" title={tooltip}>
+      <strong className="ops-map-report-count-primary">{primary}</strong>
+      {secondary ? (
+        <span className="ops-map-report-count-secondary">{secondary}</span>
+      ) : null}
     </span>
   );
 }
@@ -1312,6 +1332,7 @@ export function OpsMapPage() {
                   >
                     <p className="ops-map-help-summary">{t('ops.map.workBarHint')}</p>
                     <p>{t('ops.map.workHelp.body')}</p>
+                    <p className="muted ops-map-help-foot">{t('ops.map.reportCountPinsNote')}</p>
                   </OpsMapHelpPopover>
                 )}
               </div>
@@ -1438,6 +1459,7 @@ export function OpsMapPage() {
                   >
                     <p className="ops-map-help-summary">{t(`ops.map.viewHint.${reportView}`)}</p>
                     <p>{t(`ops.map.viewHelp.${reportView}`)}</p>
+                    <p className="muted ops-map-help-foot">{t('ops.map.reportCountPinsNote')}</p>
                     <p className="muted ops-map-help-foot">{t('ops.map.browseSliceHint')}</p>
                   </OpsMapHelpPopover>
                 )}

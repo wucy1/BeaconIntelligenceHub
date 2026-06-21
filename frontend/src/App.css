@@ -2286,6 +2286,7 @@ button.danger {
   max-width: 100%;
   font-size: 0.72rem;
   line-height: 1.25;
+  cursor: help;
 }
 
 .ops-map-report-count-primary {

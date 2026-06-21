@@ -447,6 +447,7 @@
   "ops.map.reportCountCrisis": "{{total}} en total (esta crisis {{linked}} · otras {{other}} · sin vincular {{candidate}})",
   "ops.map.reportCountLinked": "{{count}} archivados",
   "ops.map.reportCountMeta": "{{total}} en total · {{other}} otras · {{candidate}} sin vincular",
+  "ops.map.reportCountPinsNote": "Informes = envíos almacenados en este segmento. Pins = grupos en el mapa público (mismo edificio o GPS cercano fusionados en un pin). El mapa ops muestra un marcador por informe; los pins coinciden con el mapa público.",
   "ops.map.reportCountThisCrisis": "{{count}} esta crisis",
   "ops.map.reportCountThisCrisisWithPins": "{{count}} esta crisis ({{pins}} pins)",
   "ops.map.reportPanelTitle": "Informe",

@@ -441,6 +441,7 @@
   "ops.map.reportCountThisCrisis": "{{count}} this crisis",
   "ops.map.reportCountThisCrisisWithPins": "{{count}} this crisis ({{pins}} pins)",
   "ops.map.reportCountMeta": "{{total}} total · {{other}} other · {{candidate}} unlinked",
+  "ops.map.reportCountPinsNote": "Reports = stored submissions in this slice. Pins = public contributor map display groups (same building or nearby GPS merged into one pin). The ops map below shows one marker per report; pin counts match the public map.",
   "ops.map.noCrisis": "No crisis ·",
   "ops.map.timeFrom": "From",
   "ops.map.timeTo": "To",
