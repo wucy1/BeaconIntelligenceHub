@@ -19,7 +19,6 @@ import { buildingDisplayById } from '../../utils/mapMarkers';
 import {
   MapZoomLimits,
   OfflineOsmTileLayer,
-  OsmTileLayer,
   type OfflineZoomLimits,
 } from './CachedOsmTileLayer';
 import { CrisisZonesLayer } from './CrisisZonesLayer';
@@ -387,20 +386,16 @@ export function ContributorMap({
       zoomControl={false}
       worldCopyJump={false}
     >
-      {!online ? (
-        <>
-          <OfflineOsmTileLayer />
-          <MapZoomLimits
-            offlineZoomLimits={
-              offlineZoomLimits ?? {
-                minZoom: PREFETCH_ZOOM_MIN,
-                maxZoom: PREFETCH_ZOOM_MAX,
-              }
+      <OfflineOsmTileLayer />
+      {!online && (
+        <MapZoomLimits
+          offlineZoomLimits={
+            offlineZoomLimits ?? {
+              minZoom: PREFETCH_ZOOM_MIN,
+              maxZoom: PREFETCH_ZOOM_MAX,
             }
-          />
-        </>
-      ) : (
-        <OsmTileLayer />
+          }
+        />
       )}
       <MapRailZoom />
       <MapLayerPanes />

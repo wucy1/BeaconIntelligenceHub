@@ -10,14 +10,18 @@
 | 覆蓋率檢查 | 以所需瓦片集合計算已快取比例（顯示於地圖下載面板） |
 | 離線區域導覽 | 橘色（連線預覽）／藍色（已存）方框；離線點選後飛至 z17，可自由縮放（超出快取可能灰屏） |
 | PWA / Service Worker | **離線可開首頁**（預快取 `index.html` + assets；runtime cache OSM tiles + 必要 API） |
+| 弱網可達性探測 | 不只信 `navigator.onLine`；same-origin 探測連續失敗則視為有效離線（燈號／標記輪詢／佇列閘道） |
+| 底圖 cache-first | 貢獻者地圖一律先讀 IndexedDB 瓦片，再視需要打 OSM；弱網時已下載區不易變灰 |
 
 ## 地圖為何會變灰？
 
-底圖使用 **OpenStreetMap 線上瓦片**（`tile.openstreetmap.org`）。離線時：
+底圖使用 **OpenStreetMap** 瓦片，但貢獻者端會先查本機 IndexedDB：
 
-1. 瀏覽器只能顯示已快取的瓦片。
-2. 平移/縮放到未快取區域會請求新瓦片。
-3. 請求失敗後 Leaflet 會出現灰底。
+1. 有快取 → 立即顯示。
+2. 無快取且有效連線 → 向 OSM 請求（逾時則灰底，不長時間掛起）。
+3. 無快取且離線／弱網判定離線 → 灰底。
+
+因此：**未下載區域**離線仍可能灰；**已下載區域**在弱網下應仍可看。手動飛航模式與「介面仍 online 但實際不通」的弱網，行為應對齊。
 
 ## 現場建議流程（一般民眾/救援隊）
 
@@ -34,11 +38,19 @@
 4. 切成離線（飛航模式 / DevTools Offline）。
 5. 重新開 `https://beacon.cila.workers.dev/`：應可進入首頁並看到介面（地圖顯示以已快取瓦片為主）。
 
+## 弱網驗證（補充）
+
+1. 下載周邊地圖後，用 Chrome Network 模擬 Slow 3G 或間歇斷線。
+2. 右上角連線燈號應在探測連續失敗後轉為 offline（不必等飛航模式）。
+3. 已下載範圍內平移：不應大片變灰。
+4. 恢復網路後燈號回 online，標記輪詢恢復。
+
 ## 技術備註
 
 - 瓦片儲存在 IndexedDB：`map_tiles`。
 - 區域中繼資料儲存在 IndexedDB：`map_regions`。
 - 共用 DB 版本提升至 `v3`（`openOfflineDb()`）。
+- 有效連線狀態：`frontend/src/offline/connectivity.ts`（`useOnlineStatus` 訂閱）。
 - 若下載不完整，離線仍可填報，但地圖可能局部灰屏。
 
 ## 合規與範圍

@@ -1,21 +1,19 @@
 import { useEffect, useState } from 'react';
 
-/** Reactive wrapper for navigator.onLine + window events. */
-export function useOnlineStatus(): boolean {
-  const [online, setOnline] = useState(
-    () => typeof navigator !== 'undefined' && navigator.onLine,
-  );
+import {
+  isEffectivelyOnline,
+  subscribeEffectiveOnline,
+} from '../offline/connectivity';
 
-  useEffect(() => {
-    const onOnline = () => setOnline(true);
-    const onOffline = () => setOnline(false);
-    window.addEventListener('online', onOnline);
-    window.addEventListener('offline', onOffline);
-    return () => {
-      window.removeEventListener('online', onOnline);
-      window.removeEventListener('offline', onOffline);
-    };
-  }, []);
+/**
+ * Effective online status: navigator.onLine plus same-origin reachability probes.
+ * Weak/dead networks where navigator.onLine stays true are treated as offline
+ * after consecutive probe failures.
+ */
+export function useOnlineStatus(): boolean {
+  const [online, setOnline] = useState(() => isEffectivelyOnline());
+
+  useEffect(() => subscribeEffectiveOnline(setOnline), []);
 
   return online;
 }

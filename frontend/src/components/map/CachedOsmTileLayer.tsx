@@ -2,6 +2,7 @@ import L from 'leaflet';
 import { useEffect } from 'react';
 import { TileLayer, useMap } from 'react-leaflet';
 
+import { isEffectivelyOnline } from '../../offline/connectivity';
 import { getTileBlob, putTileBlob } from '../../offline/tileCache';
 import { osmTileUrl, PREFETCH_ZOOM_MAX } from '../../offline/tileMath';
 
@@ -10,13 +11,14 @@ export const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 
 const DEFAULT_MIN_ZOOM = 1;
 const DEFAULT_MAX_ZOOM = 22;
+const NETWORK_TILE_TIMEOUT_MS = 8000;
 
 export type OfflineZoomLimits = {
   minZoom: number;
   maxZoom: number;
 };
 
-/** 與 OpsMapPage 相同：標準 OSM 瓦片，不額外設定 crossOrigin / invalidateSize。 */
+/** Ops map: standard OSM tiles (online ops console). */
 export function OsmTileLayer() {
   return <TileLayer url={OSM_TILE_URL} attribution={ATTRIBUTION} />;
 }
@@ -33,6 +35,43 @@ function cacheTileFromUrl(z: number, x: number, y: number, url: string): void {
     });
 }
 
+function loadNetworkTile(
+  tile: HTMLImageElement,
+  z: number,
+  x: number,
+  y: number,
+  finish: (err?: Error) => void,
+): void {
+  const url = osmTileUrl(z, x, y);
+  let settled = false;
+  const timer = window.setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    tile.removeAttribute('src');
+    tile.style.background = '#d4d4d8';
+    finish();
+  }, NETWORK_TILE_TIMEOUT_MS);
+
+  const onLoad = () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    finish();
+    cacheTileFromUrl(z, x, y, url);
+  };
+  const onError = () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    tile.style.background = '#d4d4d8';
+    finish();
+  };
+
+  L.DomEvent.on(tile, 'load', onLoad);
+  L.DomEvent.on(tile, 'error', onError);
+  tile.src = url;
+}
+
 const CachedLayer = L.TileLayer.extend({
   createTile(this: L.TileLayer, coords: L.Coords, done: L.DoneCallback) {
     const tile = document.createElement('img') as HTMLImageElement;
@@ -47,30 +86,25 @@ const CachedLayer = L.TileLayer.extend({
       done(err, tile);
     };
 
-    L.DomEvent.on(tile, 'load', () => {
-      finish();
-      const src = tile.src;
-      if (src.startsWith('http')) {
-        const { x, y } = coords;
-        cacheTileFromUrl(coords.z, x, y, src);
-      }
-    });
-    L.DomEvent.on(tile, 'error', () => finish());
-
     const { x, y } = coords;
     const z = coords.z;
-    const online = typeof navigator !== 'undefined' ? navigator.onLine : true;
-
-    if (online) {
-      tile.src = osmTileUrl(z, x, y);
-      return tile;
-    }
 
     void getTileBlob(z, x, y).then((cached) => {
       if (cached) {
+        L.DomEvent.on(tile, 'load', () => finish());
+        L.DomEvent.on(tile, 'error', () => {
+          tile.style.background = '#d4d4d8';
+          finish();
+        });
         tile.src = URL.createObjectURL(cached);
         return;
       }
+
+      if (isEffectivelyOnline()) {
+        loadNetworkTile(tile, z, x, y, finish);
+        return;
+      }
+
       tile.style.background = '#d4d4d8';
       finish();
     });
