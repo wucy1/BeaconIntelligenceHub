@@ -301,16 +301,14 @@ export function MapPage() {
     }
   }, [online, reloadCrises]);
 
+  /** 進入離線：綁定最近已下載區域（縮放上限）。有既有視角時不自動飛走，避免弱網探測抖動把使用者拉回下載中心。 */
   useEffect(() => {
-    if (online) {
-      offlineRegionBootstrappedRef.current = false;
-      return;
-    }
-    if (offlineTiles.regions.length === 0 || activeRegionId) return;
+    if (online) return;
+    if (offlineTiles.regions.length === 0) return;
     if (mapMode === 'new' || placement.pin) return;
-    if (offlineRegionBootstrappedRef.current) return;
-    offlineRegionBootstrappedRef.current = true;
-    const point = tileCenter ?? { lat: mapCenter[0], lng: mapCenter[1] };
+
+    const point =
+      tileCenter ?? viewCenter ?? { lat: mapCenter[0], lng: mapCenter[1] };
     let pick = offlineTiles.regions[0];
     let bestD = Infinity;
     for (const r of offlineTiles.regions) {
@@ -321,7 +319,20 @@ export function MapPage() {
         pick = r;
       }
     }
-    goToRegion(pick, { adjustZoom: true });
+
+    if (!activeRegionId) {
+      setActiveRegionId(pick.id);
+    }
+
+    if (offlineRegionBootstrappedRef.current) return;
+    offlineRegionBootstrappedRef.current = true;
+    // Remembered or already-panned view: stay put (refresh already restores localStorage).
+    if (savedView || viewCenter) return;
+    setFlyTarget({
+      lat: pick.center.lat,
+      lng: pick.center.lng,
+      zoom: PREFETCH_ZOOM_MAX,
+    });
   }, [
     online,
     offlineTiles.regions,
@@ -329,8 +340,9 @@ export function MapPage() {
     mapMode,
     placement.pin,
     tileCenter,
+    viewCenter,
     mapCenter,
-    goToRegion,
+    savedView,
   ]);
 
   const setPinWithDetect = useCallback(
