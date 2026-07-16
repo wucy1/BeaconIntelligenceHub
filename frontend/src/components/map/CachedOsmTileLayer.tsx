@@ -4,13 +4,15 @@ import { TileLayer, useMap } from 'react-leaflet';
 
 import { isEffectivelyOnline } from '../../offline/connectivity';
 import { getTileBlob, putTileBlob } from '../../offline/tileCache';
-import { osmTileUrl, PREFETCH_ZOOM_MAX } from '../../offline/tileMath';
+import { osmTileUrl } from '../../offline/tileMath';
 
 const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>';
 export const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
 const DEFAULT_MIN_ZOOM = 1;
 const DEFAULT_MAX_ZOOM = 22;
+/** OSM raster tiles are published up to z19. */
+const ONLINE_TILE_MAX_ZOOM = 19;
 const NETWORK_TILE_TIMEOUT_MS = 8000;
 
 export type OfflineZoomLimits = {
@@ -20,7 +22,7 @@ export type OfflineZoomLimits = {
 
 /** Ops map: standard OSM tiles (online ops console). */
 export function OsmTileLayer() {
-  return <TileLayer url={OSM_TILE_URL} attribution={ATTRIBUTION} />;
+  return <TileLayer url={OSM_TILE_URL} attribution={ATTRIBUTION} maxZoom={ONLINE_TILE_MAX_ZOOM} />;
 }
 
 function cacheTileFromUrl(z: number, x: number, y: number, url: string): void {
@@ -57,16 +59,20 @@ function loadNetworkTile(
     settled = true;
     clearTimeout(timer);
     finish();
+    // Best-effort IndexedDB write (needs CORS on fetch; display does not).
     cacheTileFromUrl(z, x, y, url);
   };
   const onError = () => {
     if (settled) return;
     settled = true;
     clearTimeout(timer);
+    tile.removeAttribute('src');
     tile.style.background = '#d4d4d8';
     finish();
   };
 
+  // Do not set crossOrigin — OSM often loads for display without ACAO;
+  // anonymous mode turns those into broken-image tiles (gray at low z).
   L.DomEvent.on(tile, 'load', onLoad);
   L.DomEvent.on(tile, 'error', onError);
   tile.src = url;
@@ -77,7 +83,6 @@ const CachedLayer = L.TileLayer.extend({
     const tile = document.createElement('img') as HTMLImageElement;
     tile.alt = '';
     tile.setAttribute('role', 'presentation');
-    tile.crossOrigin = 'anonymous';
 
     let finished = false;
     const finish = (err?: Error) => {
@@ -93,6 +98,7 @@ const CachedLayer = L.TileLayer.extend({
       if (cached) {
         L.DomEvent.on(tile, 'load', () => finish());
         L.DomEvent.on(tile, 'error', () => {
+          tile.removeAttribute('src');
           tile.style.background = '#d4d4d8';
           finish();
         });
@@ -100,7 +106,11 @@ const CachedLayer = L.TileLayer.extend({
         return;
       }
 
-      if (isEffectivelyOnline()) {
+      // Prefer navigator.onLine for "try network" so a lagging reachability
+      // probe does not blank uncached low-z tiles while the UI still looks online.
+      const tryNetwork =
+        (typeof navigator !== 'undefined' && navigator.onLine) || isEffectivelyOnline();
+      if (tryNetwork) {
         loadNetworkTile(tile, z, x, y, finish);
         return;
       }
@@ -119,9 +129,11 @@ export function OfflineOsmTileLayer() {
   useEffect(() => {
     const layer = new (CachedLayer as unknown as typeof L.TileLayer)('', {
       attribution: ATTRIBUTION,
-      maxZoom: PREFETCH_ZOOM_MAX,
+      // Allow low-z world view online; offline MapZoomLimits still caps to prefetch range.
+      maxZoom: ONLINE_TILE_MAX_ZOOM,
+      maxNativeZoom: ONLINE_TILE_MAX_ZOOM,
+      minZoom: DEFAULT_MIN_ZOOM,
       keepBuffer: 4,
-      crossOrigin: true,
     });
     layer.addTo(map);
 
