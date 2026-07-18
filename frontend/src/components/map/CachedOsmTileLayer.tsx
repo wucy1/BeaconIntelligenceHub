@@ -159,8 +159,9 @@ export function MapZoomLimits({
     map.setMaxBounds(undefined);
 
     const z = map.getZoom();
+    // Only clamp zoom-in past cached tiles. Never snap zoom upward — Leaflet's
+    // setMinZoom would otherwise yank z when connectivity flaps to offline.
     if (z > maxZoom) map.setZoom(maxZoom);
-    else if (z < minZoom) map.setZoom(minZoom);
 
     return () => {
       map.setMinZoom(DEFAULT_MIN_ZOOM);

@@ -21,6 +21,7 @@ import { UNSPECIFIED_CRISIS_ID } from '../constants/crisis';
 import { NYC_DEMO_MAP_VIEW } from '../constants/nycDemoFootprints';
 import { usePublicCrises } from '../hooks/usePublicCrises';
 import { useGeolocation } from '../hooks/useGeolocation';
+import { useNavigatorOnline } from '../hooks/useNavigatorOnline';
 import { useOfflineMapTiles } from '../hooks/useOfflineMapTiles';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import {
@@ -44,7 +45,6 @@ import { getOpsToken } from '../ops/opsAuth';
 import {
   DEFAULT_BOX_SIDE_KM,
   PREFETCH_ZOOM_MAX,
-  PREFETCH_ZOOM_MIN,
 } from '../offline/tileMath';
 import {
   buildingFeatureById,
@@ -109,6 +109,7 @@ export function MapPage() {
   const [searchParams] = useSearchParams();
   const urlBootstrappedRef = useRef(false);
   const online = useOnlineStatus();
+  const networkOnline = useNavigatorOnline();
   const wasOfflineRef = useRef(false);
   const geo = useGeolocation();
   const bboxRef = useRef<string | null>(null);
@@ -156,7 +157,6 @@ export function MapPage() {
   const [duplicateBanner, setDuplicateBanner] = useState(false);
   /** 首次取得 GPS 後自動飛一次（同意定位或 ◎），避免一直停在台北示範預設中心 */
   const autoFlewToUserRef = useRef(false);
-  const offlineRegionBootstrappedRef = useRef(false);
   const [activeRegionId, setActiveRegionId] = useState<string | null>(null);
   const [activeTopPanel, setActiveTopPanel] = useState<TopPanelKey>(null);
   const [pendingReports, setPendingReports] = useState<PendingReportSummary[]>([]);
@@ -230,17 +230,17 @@ export function MapPage() {
   }, [bbox, geo.position, mapCenter]);
   const offlineTiles = useOfflineMapTiles(tileCenter);
 
-  /** 離線時鎖在已下載的縮放級，避免放大到無瓦片的灰屏 */
+  /** Hard offline only: clamp max zoom. Do not raise minZoom (Leaflet setMinZoom snaps the view). */
   const offlineZoomLimits = useMemo(() => {
-    if (online) return null;
+    if (networkOnline) return null;
     const active = activeRegionId
       ? offlineTiles.regions.find((r) => r.id === activeRegionId)
       : offlineTiles.regions[0];
     return {
-      minZoom: active?.zMin ?? PREFETCH_ZOOM_MIN,
+      minZoom: 1,
       maxZoom: Math.min(active?.zMax ?? PREFETCH_ZOOM_MAX, PREFETCH_ZOOM_MAX),
     };
-  }, [online, activeRegionId, offlineTiles.regions]);
+  }, [networkOnline, activeRegionId, offlineTiles.regions]);
 
   /** 中心紅框：永遠顯示，由圖層直接跟隨 map.getCenter()，不經 React state */
   const downloadPreview = useMemo(
@@ -293,7 +293,6 @@ export function MapPage() {
       wasOfflineRef.current = true;
       return;
     }
-    setActiveRegionId(null);
     if (wasOfflineRef.current) {
       wasOfflineRef.current = false;
       reloadCrises();
@@ -301,11 +300,16 @@ export function MapPage() {
     }
   }, [online, reloadCrises]);
 
-  /** 進入離線：綁定最近已下載區域（縮放上限）。有既有視角時不自動飛走，避免弱網探測抖動把使用者拉回下載中心。 */
   useEffect(() => {
-    if (online) return;
+    if (networkOnline) setActiveRegionId(null);
+  }, [networkOnline]);
+
+  /** Hard offline: bind nearest saved region for UI only — never auto-fly (probe flaps were yanking the map). */
+  useEffect(() => {
+    if (networkOnline) return;
     if (offlineTiles.regions.length === 0) return;
     if (mapMode === 'new' || placement.pin) return;
+    if (activeRegionId) return;
 
     const point =
       tileCenter ?? viewCenter ?? { lat: mapCenter[0], lng: mapCenter[1] };
@@ -319,22 +323,9 @@ export function MapPage() {
         pick = r;
       }
     }
-
-    if (!activeRegionId) {
-      setActiveRegionId(pick.id);
-    }
-
-    if (offlineRegionBootstrappedRef.current) return;
-    offlineRegionBootstrappedRef.current = true;
-    // Remembered or already-panned view: stay put (refresh already restores localStorage).
-    if (savedView || viewCenter) return;
-    setFlyTarget({
-      lat: pick.center.lat,
-      lng: pick.center.lng,
-      zoom: PREFETCH_ZOOM_MAX,
-    });
+    setActiveRegionId(pick.id);
   }, [
-    online,
+    networkOnline,
     offlineTiles.regions,
     activeRegionId,
     mapMode,
@@ -342,7 +333,6 @@ export function MapPage() {
     tileCenter,
     viewCenter,
     mapCenter,
-    savedView,
   ]);
 
   const setPinWithDetect = useCallback(
@@ -1080,7 +1070,7 @@ export function MapPage() {
         onReportPinMove={onReportPinMove}
         onPopupStateChange={setMapPopupOpen}
         interactionPaused={blockMarkerRefresh}
-        online={online}
+        online={networkOnline}
         offlineZoomLimits={offlineZoomLimits}
         savedRegions={offlineTiles.regions}
         activeSavedRegionId={activeRegionId}
