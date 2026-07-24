@@ -232,7 +232,7 @@ select {
 
 .map-title-wrap {
   display: inline-flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 0.4rem;
   min-width: 0;
 }
@@ -318,6 +318,36 @@ select {
   color: #0f172a;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.map-bih-github-link {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  align-self: stretch;
+  aspect-ratio: 1;
+  height: auto;
+  min-height: 1.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
+  text-decoration: none;
+  pointer-events: auto;
+}
+
+.map-bih-github-link:hover,
+.map-bih-github-link:focus-visible {
+  border-color: #93c5fd;
+  outline: none;
+}
+
+.map-bih-github-icon {
+  display: block;
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 .map-overlay-controls {

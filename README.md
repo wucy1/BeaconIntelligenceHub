@@ -1,8 +1,19 @@
 # Beacon Intelligence Hub (BIH)
 
-**Maintainer:** BIH Team · [info@crointel.com](mailto:info@crointel.com)
+**Maintainer:** BIH Team · [info@crointel.com](mailto:info@crointel.com) · [GitHub](https://github.com/wucy1/BeaconIntelligenceHub)
 
 Community damage reporting and operations review for UNDP-style rapid assessment workflows. The product is **map-first for contributors** and **role-based for staff** (crisis leads, coordinators, system administrators).
+
+## Live demo
+
+| Surface | URL |
+|---------|-----|
+| **Web UI** | https://beacon.cila.workers.dev/ |
+| **API** | https://beaconintelligencehub.onrender.com |
+
+The contributor map is at the UI root (`/`). Staff tools: `/ops/login`, `/ops`, `/ops/map`, `/dashboard`.
+
+**Notes for testers:** Render free tier may cold-start for **30–60 seconds**; wait for `/health` before judging API failures. Demo data is synthetic and may be reset periodically.
 
 ## What works today (demo-ready)
 
@@ -79,13 +90,17 @@ Open <http://127.0.0.1:5173/>. Vite proxies `/v1` and `/health` to port 8000.
 
 ## Demo / tester notes
 
-When testing the hosted demo:
+Hosted UI: https://beacon.cila.workers.dev/ · API: https://beaconintelligencehub.onrender.com
 
 1. **API cold start** — Render free tier may need **30–60 seconds** after sleep; the ops console shows a reconnect banner when enabled in org settings.
 2. **Neon migrations** — Apply all files in `backend/db/migrations/` through **`015_saved_report_zone_snapshots.sql`** before testing saved query reports or profile locale.
-3. **Contributor flow** — Open the public map → place a pin → submit with photo → confirm marker appears.
+3. **Contributor flow** — Open the public map → place a pin → submit with photo → confirm marker appears. Demo crises include synthetic NYC flood and Manila earthquake footprints.
 4. **Staff flow** — Log in → operations console → create/activate crisis → draw zones on ops map → run archive → save a browse query → open dashboard **Saved queries** tab.
 5. **R2** — Without `R2_*` vars, uploads use local storage on the API host (fine for local dev only).
+6. **Reset synthetic demo data** (ops only):
+
+   - **Preferred on Windows if local Neon TLS fails:** open [Neon Console](https://console.neon.tech) → SQL Editor → paste and run `backend/scripts/seed_demo_synthetic.sql`.
+   - Or from `backend/` when DB connects: `python scripts/seed_demo_synthetic.py --yes` (auto-uses Neon direct host, not `-pooler`).
 
 ## Key routes
 

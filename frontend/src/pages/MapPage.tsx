@@ -1418,6 +1418,16 @@ export function MapPage() {
               {online ? t('status.online') : t('status.offline')}
             </span>
           </span>
+          <a
+            className="map-bih-github-link"
+            href="https://github.com/wucy1/BeaconIntelligenceHub"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Beacon Intelligence Hub on GitHub"
+            title="GitHub"
+          >
+            <img src="/bih-logo.svg" alt="" width={22} height={22} className="map-bih-github-icon" />
+          </a>
         </div>
         <div className="map-overlay-right">
           <label className="lang-switcher map-crisis-switcher">
