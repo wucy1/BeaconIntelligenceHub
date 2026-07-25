@@ -48,7 +48,7 @@ See **`docs/DEPLOYMENT.md`** for environment variables, R2 CORS, and Cloudflare 
 ### 1. Database
 
 ```powershell
-cd d:\Cursor-Projects\BeaconIntelligenceHub
+# from repository root
 docker compose up -d
 ```
 
@@ -99,7 +99,7 @@ Hosted UI: https://beacon.cila.workers.dev/ · API: https://beaconintelligencehu
 5. **R2** — Without `R2_*` vars, uploads use local storage on the API host (fine for local dev only).
 6. **Reset synthetic demo data** (ops only):
 
-   - **Preferred on Windows if local Neon TLS fails:** open [Neon Console](https://console.neon.tech) → SQL Editor → paste and run `backend/scripts/seed_demo_synthetic.sql`.
+   - **Preferred on Windows if local Neon TLS fails:** Neon Console → SQL Editor → run `seed_demo_synthetic_part1.sql`, then `seed_demo_synthetic_part2.sql` (or the combined `seed_demo_synthetic.sql`). If the console shows **ROLLBACK required**, click **ROLLBACK** first (nothing was committed), then re-run.
    - Or from `backend/` when DB connects: `python scripts/seed_demo_synthetic.py --yes` (auto-uses Neon direct host, not `-pooler`).
 
 ## Key routes
@@ -135,6 +135,7 @@ Do **not** use `--fill-english` for release builds; it only scaffolds missing ke
 
 | Doc | Topic |
 |-----|-------|
+| `AUTHORS.md` | Maintainer contact & optional commit identity |
 | `docs/DEPLOYMENT.md` | Cloudflare, Neon, R2, env vars |
 | `docs/CRISIS_LIFECYCLE.md` | Draft → active → archived |
 | `docs/CLASSIFICATION_AND_ZONES.md` | Zones, archive links, auto-classify |

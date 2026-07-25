@@ -1,14 +1,21 @@
 # Authors
 
 **BIH Team**  
-Contact: [info@crointel.com](mailto:info@crointel.com)
+Public contact: [info@crointel.com](mailto:info@crointel.com)
 
-This repository is maintained by BIH Team for the Beacon Intelligence Hub (BIH) project.
+Beacon Intelligence Hub (BIH) is maintained by BIH Team.
 
-When committing to this repository, use:
+## Git commit identity (optional)
+
+To keep a consistent author on GitHub for project commits, you can set **local** (repo-only) git identity:
 
 ```text
 BIH Team <bih-team@users.noreply.github.com>
 ```
 
-Keep `info@crointel.com` as the public contact email, and use `bih-team@users.noreply.github.com` for git commits to preserve a single team-style display on GitHub.
+```powershell
+git config user.name "BIH Team"
+git config user.email "bih-team@users.noreply.github.com"
+```
+
+Do **not** change your global `user.name` / `user.email` unless you intend to. Forks and external contributors should use their own GitHub identity.

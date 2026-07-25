@@ -1,12 +1,16 @@
 -- Demo wipe + synthetic seed for Beacon Intelligence Hub (Neon SQL Editor).
 --
--- 1) Old data: YES — deletes reports/images/links, zones, buildings, saved queries,
---    audit log, and all crises except system "unspecified". Keeps ops_users + org_settings.
--- 2) Permissions: YES — clears user_zone_assignments + crisis_lead_assignments, then
---    recreates them against the new demo crises/zones from existing active ops_users.
--- 3) Cities: NYC coastal flood + Manila earthquake (not Taipei).
+-- Prefer the split scripts if the console shows "ROLLBACK required" / truncates history:
+--   1) seed_demo_synthetic_part1.sql
+--   2) seed_demo_synthetic_part2.sql
 --
--- Run in Neon Console → SQL Editor. Do NOT run against a DB with real field data you must keep.
+-- 1) Old data: YES ??deletes reports/images/links, zones, buildings, saved queries,
+--    audit log, and all crises except system "unspecified". Keeps ops_users + org_settings.
+-- 2) Permissions: YES ??clears then recreates crisis_lead + zone assignments.
+-- 3) Cities: NYC coastal flood + Manila earthquake.
+--
+-- If Neon shows Failed transaction: click ROLLBACK first (nothing was committed), then
+-- re-run part1 ??part2.
 
 BEGIN;
 
@@ -34,7 +38,7 @@ INSERT INTO crises (id, slug, name, bounds, archive_status)
 VALUES (
   'a0000000-0000-0000-0000-000000000001',
   'unspecified',
-  '{"en":"Unspecified event (open reporting)","zh":"未指定事件（开放回报）","zh-Hant":"未指定事件（開放回報）"}'::jsonb,
+  '{"en":"Unspecified event (open reporting)","zh":"?芣?摰?隞塚?撘?曉??伐?","zh-Hant":"?芣?摰?隞塚???嚗?}'::jsonb,
   NULL,
   'active'
 )
@@ -48,7 +52,7 @@ VALUES
 (
   'c1000000-0000-4000-8000-000000000001',
   'demo-nyc-flood-2026',
-  '{"en":"Demo: NYC coastal flood 2026","zh":"演示：纽约海岸洪水 2026","zh-Hant":"示範：紐約海岸洪水 2026"}'::jsonb,
+  '{"en":"Demo: NYC coastal flood 2026","zh":"瞍內嚗瑤蝥行絲撗豢揪瘞?2026","zh-Hant":"蝷箇?嚗?蝝絲撗豢揪瘞?2026"}'::jsonb,
   ST_GeomFromText('POLYGON((-74.02 40.70, -73.97 40.70, -73.97 40.74, -74.02 40.74, -74.02 40.70))', 4326),
   'active',
   now() - interval '45 days',
@@ -57,8 +61,7 @@ VALUES
 (
   'c1000000-0000-4000-8000-000000000002',
   'demo-manila-quake-2026',
-  '{"en":"Demo: Manila earthquake 2026","zh":"演示：马尼拉地震 2026","zh-Hant":"示範：馬尼拉地震 2026"}'::jsonb,
-  -- Ermita / Malate sample box (approx)
+  '{"en":"Demo: Manila earthquake 2026","zh":"瞍內嚗帕撠潭??圈? 2026","zh-Hant":"蝷箇?嚗收撠潭??圈? 2026"}'::jsonb,
   ST_GeomFromText('POLYGON((120.97 14.55, 121.01 14.55, 121.01 14.59, 120.97 14.59, 120.97 14.55))', 4326),
   'active',
   now() - interval '45 days',
@@ -68,16 +71,16 @@ VALUES
 INSERT INTO zones (id, crisis_id, name, description, geom)
 VALUES
 (
-  'z1000000-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000001',
   'c1000000-0000-4000-8000-000000000001',
   'Lower Manhattan zone',
   'Synthetic ops zone for demo archive/browse flows.',
   ST_GeomFromText('POLYGON((-74.02 40.70, -73.97 40.70, -73.97 40.74, -74.02 40.74, -74.02 40.70))', 4326)
 ),
 (
-  'z1000000-0000-4000-8000-000000000002',
+  'e1000000-0000-4000-8000-000000000002',
   'c1000000-0000-4000-8000-000000000002',
-  'Ermita–Malate sample zone',
+  'Ermita?alate sample zone',
   'Synthetic zone covering central Manila demo footprints.',
   ST_GeomFromText('POLYGON((120.97 14.55, 121.01 14.55, 121.01 14.59, 120.97 14.59, 120.97 14.55))', 4326)
 );
@@ -85,7 +88,7 @@ VALUES
 -- ---------------------------------------------------------------------------
 -- Rebuild permission relationships from existing ops_users
 -- ---------------------------------------------------------------------------
--- Crisis leads: every active system_admin + crisis_lead → both demo crises
+-- Crisis leads: every active system_admin + crisis_lead ??both demo crises
 INSERT INTO crisis_lead_assignments (user_id, crisis_id)
 SELECT u.id, c.id
 FROM ops_users u
@@ -95,7 +98,7 @@ CROSS JOIN (
 WHERE u.is_active = true
   AND u.role::text IN ('system_admin', 'crisis_lead');
 
--- Zone coordinators: active coordinators → all demo zones (role = coordinator)
+-- Zone coordinators: active coordinators ??all demo zones (role = coordinator)
 INSERT INTO user_zone_assignments (user_id, zone_id, assignment_role)
 SELECT u.id, z.id, 'coordinator'
 FROM ops_users u
@@ -158,7 +161,7 @@ INSERT INTO reports (
   captured_at_client, received_at_server, admin_reviewed, admin_flagged
 ) VALUES
 (
-  'r1000000-0000-4000-8000-000000000001', gen_random_uuid(),
+  'd1000000-0000-4000-8000-000000000001', gen_random_uuid(),
   'c1000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000001',
   ST_GeomFromText('POINT(-74.0164 40.7034)', 4326), 'Battery Park pavilion',
   'partial', ARRAY['building'], 'Battery Park pavilion', ARRAY['flood'],
@@ -166,7 +169,7 @@ INSERT INTO reports (
   now() - interval '20 hours', now() - interval '20 hours' + interval '3 minutes', true, false
 ),
 (
-  'r1000000-0000-4000-8000-000000000002', gen_random_uuid(),
+  'd1000000-0000-4000-8000-000000000002', gen_random_uuid(),
   'c1000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000002',
   ST_GeomFromText('POINT(-74.0104 40.7077)', 4326), 'Financial District block',
   'complete', ARRAY['building','road'], 'Financial District block', ARRAY['flood'],
@@ -174,7 +177,7 @@ INSERT INTO reports (
   now() - interval '36 hours', now() - interval '36 hours' + interval '3 minutes', true, false
 ),
 (
-  'r1000000-0000-4000-8000-000000000003', gen_random_uuid(),
+  'd1000000-0000-4000-8000-000000000003', gen_random_uuid(),
   'c1000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000003',
   ST_GeomFromText('POINT(-74.0037 40.7061)', 4326), 'South Street warehouse',
   'partial', ARRAY['building'], 'South Street warehouse', ARRAY['flood'],
@@ -182,7 +185,7 @@ INSERT INTO reports (
   now() - interval '12 hours', now() - interval '12 hours' + interval '3 minutes', false, false
 ),
 (
-  'r1000000-0000-4000-8000-000000000004', gen_random_uuid(),
+  'd1000000-0000-4000-8000-000000000004', gen_random_uuid(),
   'c1000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000004',
   ST_GeomFromText('POINT(-73.9986 40.7088)', 4326), 'Brooklyn Bridge approach',
   'minimal', ARRAY['road','bridge'], 'Brooklyn Bridge approach', ARRAY['flood'],
@@ -190,7 +193,7 @@ INSERT INTO reports (
   now() - interval '8 hours', now() - interval '8 hours' + interval '3 minutes', false, false
 ),
 (
-  'r1000000-0000-4000-8000-000000000005', gen_random_uuid(),
+  'd1000000-0000-4000-8000-000000000005', gen_random_uuid(),
   'a0000000-0000-0000-0000-000000000001', NULL,
   ST_GeomFromText('POINT(-74.0080 40.7110)', 4326), 'Utility cabinet near Fulton',
   'partial', ARRAY['power','telecom'], 'Utility cabinet near Fulton', ARRAY['flood'],
@@ -198,10 +201,10 @@ INSERT INTO reports (
   now() - interval '5 hours', now() - interval '5 hours' + interval '3 minutes', false, false
 ),
 (
-  'r1000000-0000-4000-8000-000000000006', gen_random_uuid(),
+  'd1000000-0000-4000-8000-000000000006', gen_random_uuid(),
   'a0000000-0000-0000-0000-000000000001', NULL,
-  ST_GeomFromText('POINT(-74.0140 40.7050)', 4326), 'Hydrant line — West St',
-  'minimal', ARRAY['water_supply'], 'Hydrant line — West St', ARRAY['flood'],
+  ST_GeomFromText('POINT(-74.0140 40.7050)', 4326), 'Hydrant line ??West St',
+  'minimal', ARRAY['water_supply'], 'Hydrant line ??West St', ARRAY['flood'],
   false, 'Synthetic: minor leak after pressure surge; no collapse.', 'en', '{}'::jsonb,
   now() - interval '48 hours', now() - interval '48 hours' + interval '3 minutes', true, false
 );
@@ -214,7 +217,7 @@ INSERT INTO reports (
   captured_at_client, received_at_server, admin_reviewed, admin_flagged
 ) VALUES
 (
-  'r1000000-0000-4000-8000-000000000011', gen_random_uuid(),
+  'd1000000-0000-4000-8000-000000000011', gen_random_uuid(),
   'c1000000-0000-4000-8000-000000000002', 'b1000000-0000-4000-8000-000000000011',
   ST_GeomFromText('POINT(120.9843 14.5763)', 4326), 'Rizal Park pavilion',
   'partial', ARRAY['building'], 'Rizal Park pavilion', ARRAY['earthquake'],
@@ -222,7 +225,7 @@ INSERT INTO reports (
   now() - interval '30 hours', now() - interval '30 hours' + interval '3 minutes', true, false
 ),
 (
-  'r1000000-0000-4000-8000-000000000012', gen_random_uuid(),
+  'd1000000-0000-4000-8000-000000000012', gen_random_uuid(),
   'c1000000-0000-4000-8000-000000000002', 'b1000000-0000-4000-8000-000000000012',
   ST_GeomFromText('POINT(120.9888 14.5698)', 4326), 'Malate mid-rise',
   'complete', ARRAY['building'], 'Malate mid-rise', ARRAY['earthquake'],
@@ -230,7 +233,7 @@ INSERT INTO reports (
   now() - interval '40 hours', now() - interval '40 hours' + interval '3 minutes', true, false
 ),
 (
-  'r1000000-0000-4000-8000-000000000013', gen_random_uuid(),
+  'd1000000-0000-4000-8000-000000000013', gen_random_uuid(),
   'c1000000-0000-4000-8000-000000000002', 'b1000000-0000-4000-8000-000000000013',
   ST_GeomFromText('POINT(120.9923 14.5823)', 4326), 'Ermita clinic annex',
   'minimal', ARRAY['building','health'], 'Ermita clinic annex', ARRAY['earthquake'],
@@ -238,7 +241,7 @@ INSERT INTO reports (
   now() - interval '18 hours', now() - interval '18 hours' + interval '3 minutes', false, false
 ),
 (
-  'r1000000-0000-4000-8000-000000000014', gen_random_uuid(),
+  'd1000000-0000-4000-8000-000000000014', gen_random_uuid(),
   'c1000000-0000-4000-8000-000000000002', 'b1000000-0000-4000-8000-000000000014',
   ST_GeomFromText('POINT(120.9808 14.5651)', 4326), 'Roxas Blvd arcade',
   'partial', ARRAY['building','commerce'], 'Roxas Blvd arcade', ARRAY['earthquake'],
@@ -246,7 +249,7 @@ INSERT INTO reports (
   now() - interval '10 hours', now() - interval '10 hours' + interval '3 minutes', false, false
 ),
 (
-  'r1000000-0000-4000-8000-000000000015', gen_random_uuid(),
+  'd1000000-0000-4000-8000-000000000015', gen_random_uuid(),
   'a0000000-0000-0000-0000-000000000001', NULL,
   ST_GeomFromText('POINT(120.9950 14.5750)', 4326), 'Taft Ave lane closure',
   'minimal', ARRAY['road'], 'Taft Ave lane closure', ARRAY['earthquake'],
@@ -254,7 +257,7 @@ INSERT INTO reports (
   now() - interval '6 hours', now() - interval '6 hours' + interval '3 minutes', false, false
 ),
 (
-  'r1000000-0000-4000-8000-000000000021', gen_random_uuid(),
+  'd1000000-0000-4000-8000-000000000021', gen_random_uuid(),
   'a0000000-0000-0000-0000-000000000001', NULL,
   ST_GeomFromText('POINT(-73.9857 40.7484)', 4326), 'Open report (demo)',
   'minimal', ARRAY['building'], 'Open report (demo)', ARRAY['other'],
@@ -262,7 +265,7 @@ INSERT INTO reports (
   now() - interval '3 hours', now() - interval '3 hours' + interval '3 minutes', false, false
 ),
 (
-  'r1000000-0000-4000-8000-000000000022', gen_random_uuid(),
+  'd1000000-0000-4000-8000-000000000022', gen_random_uuid(),
   'a0000000-0000-0000-0000-000000000001', NULL,
   ST_GeomFromText('POINT(120.9842 14.5995)', 4326), 'Open report (demo)',
   'minimal', ARRAY['building'], 'Open report (demo)', ARRAY['other'],
@@ -271,17 +274,17 @@ INSERT INTO reports (
 );
 
 INSERT INTO report_crisis_links (report_id, crisis_id, link_source) VALUES
-('r1000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000001', 'batch_archive'),
-('r1000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000001', 'batch_archive'),
-('r1000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000001', 'batch_archive'),
-('r1000000-0000-4000-8000-000000000004', 'c1000000-0000-4000-8000-000000000001', 'batch_archive'),
-('r1000000-0000-4000-8000-000000000005', 'c1000000-0000-4000-8000-000000000001', 'batch_archive'),
-('r1000000-0000-4000-8000-000000000006', 'c1000000-0000-4000-8000-000000000001', 'batch_archive'),
-('r1000000-0000-4000-8000-000000000011', 'c1000000-0000-4000-8000-000000000002', 'batch_archive'),
-('r1000000-0000-4000-8000-000000000012', 'c1000000-0000-4000-8000-000000000002', 'batch_archive'),
-('r1000000-0000-4000-8000-000000000013', 'c1000000-0000-4000-8000-000000000002', 'batch_archive'),
-('r1000000-0000-4000-8000-000000000014', 'c1000000-0000-4000-8000-000000000002', 'batch_archive'),
-('r1000000-0000-4000-8000-000000000015', 'c1000000-0000-4000-8000-000000000002', 'batch_archive');
+('d1000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000001', 'batch_archive'),
+('d1000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000001', 'batch_archive'),
+('d1000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000001', 'batch_archive'),
+('d1000000-0000-4000-8000-000000000004', 'c1000000-0000-4000-8000-000000000001', 'batch_archive'),
+('d1000000-0000-4000-8000-000000000005', 'c1000000-0000-4000-8000-000000000001', 'batch_archive'),
+('d1000000-0000-4000-8000-000000000006', 'c1000000-0000-4000-8000-000000000001', 'batch_archive'),
+('d1000000-0000-4000-8000-000000000011', 'c1000000-0000-4000-8000-000000000002', 'batch_archive'),
+('d1000000-0000-4000-8000-000000000012', 'c1000000-0000-4000-8000-000000000002', 'batch_archive'),
+('d1000000-0000-4000-8000-000000000013', 'c1000000-0000-4000-8000-000000000002', 'batch_archive'),
+('d1000000-0000-4000-8000-000000000014', 'c1000000-0000-4000-8000-000000000002', 'batch_archive'),
+('d1000000-0000-4000-8000-000000000015', 'c1000000-0000-4000-8000-000000000002', 'batch_archive');
 
 COMMIT;
 

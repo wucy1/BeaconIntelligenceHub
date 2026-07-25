@@ -91,11 +91,10 @@ Cloudflare「Connect to a repository」若出現 **Deploy command（Required）*
 ### GitHub → Cloudflare Pages
 
 1. **GitHub 儲存庫**
-   - 建立 repo（例如 `crointel/BeaconIntelligenceHub`）。
+   - 使用公開 repo：[`wucy1/BeaconIntelligenceHub`](https://github.com/wucy1/BeaconIntelligenceHub)（或你自己的 fork）。
    - 專案署名：**BIH Team** · **info@crointel.com**（見根目錄 `AUTHORS.md`）。
    - 本機僅在此 repo 設定 commit 作者（勿改全域 git config）：
      ```powershell
-     git init
      git config user.name "BIH Team"
      git config user.email "bih-team@users.noreply.github.com"
      ```
@@ -198,7 +197,7 @@ Cloudflare「Connect to a repository」若出現 **Deploy command（Required）*
 本 repo 已含 `backend/Dockerfile`、`backend/fly.toml`。Windows 指令為 **`flyctl`**（安裝：`iwr https://fly.io/install.ps1 -useb | iex`）。
 
 ```powershell
-cd d:\Cursor-Projects\BeaconIntelligenceHub\backend
+cd backend
 flyctl auth login
 flyctl apps create bih-api
 flyctl deploy

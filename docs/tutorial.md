@@ -7,7 +7,7 @@
 
 1. Open the BIH web app (or installed PWA / Capacitor build).
 2. Switch UI language if needed (EN, 繁中, 简中, AR, FR, RU, ES, DE, PT).
-3. On **Home**, tap the active crisis (e.g. *Demo Earthquake — Taipei AOI*).
+3. On **Home**, tap the active crisis (e.g. *Demo: Manila earthquake 2026* or *Demo: NYC coastal flood 2026*).
 
 ## Scene 2 — Photo & damage (0:15–0:45)
 
