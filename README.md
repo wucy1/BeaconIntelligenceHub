@@ -149,6 +149,8 @@ Do **not** use `--fill-english` for release builds; it only scaffolds missing ke
 - Crisis: `a0000000-0000-0000-0000-000000000001`
 - Buildings: `b0000000-0000-0000-0000-000000000001` … `000003`
 
-## License / contact
+## License
 
-For deployment support or demo feedback, contact [info@crointel.com](mailto:info@crointel.com).
+Licensed under the [Apache License 2.0](LICENSE).
+
+Copyright 2026 BIH Team · Contact: [info@crointel.com](mailto:info@crointel.com)
